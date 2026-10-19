@@ -1,0 +1,1757 @@
+{
+  "generatedAt": "2026-10-19T23:26:27.174Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "role",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["analista", "corretor", "admin"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "empreendimentos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "id_empreendimento",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome_empreendimento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "razao_social",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cossegurado_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cossegurado_cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "endereco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cidade",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "uf",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "atividade",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "atividade_exercida",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ano_inicio_atividades",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ano_construcao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "area_construida_m2",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "area_terreno_m2",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "num_andares",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "num_unidades",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "possui_piscina",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "possui_elevador",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "num_elevadores",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vagas_estacionamento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "num_funcionarios",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "faturamento_12m_rs",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_construcao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_extintores",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_hidrantes",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_sprinklers",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_detector_fumaca",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_alarme_incendio",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_brigada_incendio",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_pararraios",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reserva_agua_incendio_m3",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "dist_bombeiros_km",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_vigilancia",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vigilancia_armada",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vigilancia_24h",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_alarme_roubo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_cftv",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_controle_entrada",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_cofres",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_cerca_eletrica",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_grade_protecao",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sinistros_ultimos_5anos",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "detalhe_sinistros",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_cartao_risco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "segmento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_documento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confianca",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "extraido_por_ia",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "imported_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "imported_by",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_emp_id_emp ON empreendimentos (id_empreendimento)",
+        "CREATE INDEX idx_emp_uf ON empreendimentos (uf)",
+        "CREATE INDEX idx_emp_cnpj ON empreendimentos (cnpj)"
+      ]
+    },
+    {
+      "name": "apolices",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "id_apolice",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "id_empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "segurado_na_apolice",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cnpj_segurado",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "seguradora",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_apolice",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ramo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "corretor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_inicio",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_fim",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_liquido",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_em_risco_dm",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_em_risco_lc",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmga",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmi_incendio_basica",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "razao_lmi_vr_dm",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["ativa", "a vencer", "vencida", "renovada", "não renovada", "prospect"]
+        },
+        {
+          "name": "prospect_retorno",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_arquivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "comissao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "iof",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "endossos",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_documento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confianca",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "extraido_por_ia",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "imported_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "imported_by",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_apolices_id_apolice ON apolices (id_apolice)",
+        "CREATE INDEX idx_apolices_seguradora ON apolices (seguradora)",
+        "CREATE INDEX idx_apolices_data_fim ON apolices (data_fim)",
+        "CREATE INDEX idx_apolices_status ON apolices (status)"
+      ]
+    },
+    {
+      "name": "coberturas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "id_apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "nome_cobertura",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "categoria_normalizada",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmi_rs",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "franquia_pos",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_cobertura",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_documento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confianca",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "extraido_por_ia",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_cob_apolice ON coberturas (id_apolice)",
+        "CREATE INDEX idx_cob_cat ON coberturas (categoria_normalizada)"
+      ]
+    },
+    {
+      "name": "sinistros",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "id_empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "id_apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "origem_periodo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_sinistro",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_sinistro",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cobertura_acionada",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_indenizado_rs",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_sinistros_emp ON sinistros (id_empreendimento)"]
+    },
+    {
+      "name": "matriz",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "categoria_normalizada",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "id_apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "lmi",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_matriz_cat ON matriz (categoria_normalizada)",
+        "CREATE INDEX idx_matriz_apolice ON matriz (id_apolice)"
+      ]
+    },
+    {
+      "name": "rastreabilidade",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "tabela",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "registro",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "campos",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_atual",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "documento_fonte",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "localizacao_no_documento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confianca",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "imported_by",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "divergencias",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "id_empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "campo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_cartao_risco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_final_apolice",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "apolice_referencia",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "notas_base",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "conteudo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "seguradoras",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "contatos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "posicionamento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "apetite_segmentos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "faixa_lmi",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "condicoes_tipicas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "historico_relacionamento",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX idx_seguradoras_nome ON seguradoras (nome)"]
+    },
+    {
+      "name": "rfq",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "conta_empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "seguradoras_solicitadas",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "seguradoras"
+        },
+        {
+          "name": "data_envio",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prazo_limite",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Aberto", "Enviado", "Respondido", "Fechado"]
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_rfq_status ON rfq (status)"]
+    },
+    {
+      "name": "propostas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "rfq",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rfq"
+        },
+        {
+          "name": "seguradora",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "seguradoras"
+        },
+        {
+          "name": "data_proposta",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "coberturas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pos_franquias",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "clausulas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "exclusoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmi_lmg",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_liquido",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_bruto",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "iof",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Pendente", "Tabulada", "Selecionada", "Não selecionada"]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_propostas_status ON propostas (status)"]
+    },
+    {
+      "name": "auditoria",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "pdf_apolice",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Em auditoria", "Apto", "Desvios a ajustar", "Aprovado"]
+        },
+        {
+          "name": "analista",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "data_aprovacao",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "itens",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_auditoria_status ON auditoria (status)"]
+    },
+    {
+      "name": "documentos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "Cartão de Risco",
+            "QAR",
+            "Questionário",
+            "Proposta",
+            "Apólice PDF",
+            "Apresentação",
+            "Outro"
+          ]
+        },
+        {
+          "name": "arquivo",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "versao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vinculado_empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "vinculado_apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "rfq",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rfq"
+        },
+        {
+          "name": "extraido_por_ia",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_docs_tipo ON documentos (tipo)"]
+    },
+    {
+      "name": "contratacao_versoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "produto_cobertura",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "wording",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "principais_clausulas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pos_franquias_padrao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "exclusoes_usuais",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "versao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["rascunho", "publicada"]
+        },
+        {
+          "name": "autor",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "log_alteracoes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "playbook",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "segmento",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "mapa_riscos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "checklist_coberturas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "objecoes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "crosssell",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "etapas_prospeccao",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "modelos_email",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "versao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "autor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "historico",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "registro_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tabela",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cia",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "autor",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "timestamp",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_hist_reg ON historico (registro_id)",
+        "CREATE INDEX idx_hist_tab ON historico (tabela)"
+      ]
+    },
+    {
+      "name": "chat_messages",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "role",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["user", "assistant", "system"]
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "contas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "segmento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contatos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    }
+  ]
+}
