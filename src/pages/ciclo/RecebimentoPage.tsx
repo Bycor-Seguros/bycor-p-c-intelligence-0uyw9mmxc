@@ -551,14 +551,21 @@ export default function RecebimentoPage() {
                   </button>
 
                   {showDiagnostics && (
-                    <div className="p-3 bg-white space-y-2.5 max-h-60 overflow-y-auto text-xs">
+                    <div className="p-3 bg-white space-y-2.5 max-h-72 overflow-y-auto text-xs">
                       {importSummary.diagnostics.map((diag, idx) => (
                         <div
                           key={idx}
-                          className="p-2.5 rounded border border-gray-100 bg-gray-50/70 space-y-1"
+                          className="p-2.5 rounded border border-gray-100 bg-gray-50/70 space-y-1.5"
                         >
                           <div className="flex items-center justify-between font-semibold text-gray-800">
-                            <span>{diag.sheetName}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span>{diag.sheetName}</span>
+                              {diag.isPivoted && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700">
+                                  Matriz Pivotada
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[11px] text-gray-500 font-normal">
                               Linha de Cabeçalho:{' '}
                               {diag.foundHeaderRowIndex > 0
@@ -567,30 +574,85 @@ export default function RecebimentoPage() {
                             </span>
                           </div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
-                            <span>
-                              Linhas processadas: <strong>{diag.processedRows}</strong>
-                            </span>
-                            <span>
-                              Linhas ignoradas: <strong>{diag.ignoredRows}</strong>
-                            </span>
+                            {diag.isPivoted ? (
+                              <>
+                                <span>
+                                  Categorias lidas: <strong>{diag.categoriesCount ?? 0}</strong>
+                                </span>
+                                <span>
+                                  Colunas vinculadas:{' '}
+                                  <strong className="text-emerald-700">
+                                    {diag.matchedColumnsCount ?? 0}
+                                  </strong>
+                                </span>
+                                <span>
+                                  Registros gravados: <strong>{diag.processedRows}</strong>
+                                </span>
+                                {(diag.unmatchedColumnsCount ?? 0) > 0 && (
+                                  <span className="text-amber-700 font-medium">
+                                    Colunas não casadas: {diag.unmatchedColumnsCount}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span>
+                                  Linhas processadas: <strong>{diag.processedRows}</strong>
+                                </span>
+                                <span>
+                                  Linhas ignoradas: <strong>{diag.ignoredRows}</strong>
+                                </span>
+                              </>
+                            )}
                           </div>
                           <div className="text-[11px]">
-                            <span className="text-gray-500">Chaves requeridas: </span>
-                            {diag.requiredKeys.map((k) => {
-                              const isFound = !diag.missingKeys.includes(k)
-                              return (
+                            <span className="text-gray-500">
+                              {diag.isPivoted ? 'Validação estrutural: ' : 'Chaves requeridas: '}
+                            </span>
+                            {diag.isPivoted ? (
+                              <>
+                                <span className="inline-block mr-1 px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800 font-medium">
+                                  Formato Pivotado (Categoria x Apólice) ✓
+                                </span>
                                 <span
-                                  key={k}
                                   className={`inline-block mr-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                                    isFound
+                                    (diag.matchedColumnsCount ?? 0) > 0
                                       ? 'bg-emerald-100 text-emerald-800 font-medium'
                                       : 'bg-red-100 text-red-800 font-bold'
                                   }`}
                                 >
-                                  {k} {isFound ? '✓' : '✗ ausente'}
+                                  {diag.matchedColumnsCount ?? 0} apólices casadas{' '}
+                                  {(diag.matchedColumnsCount ?? 0) > 0 ? '✓' : '✗ nenhuma'}
                                 </span>
-                              )
-                            })}
+                                {diag.unmatchedColumns && diag.unmatchedColumns.length > 0 && (
+                                  <div className="mt-1 text-[10px] text-amber-700">
+                                    Colunas ignoradas sem apólice correspondente:{' '}
+                                    <span className="font-mono">
+                                      {diag.unmatchedColumns.slice(0, 4).join(', ')}
+                                      {diag.unmatchedColumns.length > 4
+                                        ? ` (+${diag.unmatchedColumns.length - 4})`
+                                        : ''}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              diag.requiredKeys.map((k) => {
+                                const isFound = !diag.missingKeys.includes(k)
+                                return (
+                                  <span
+                                    key={k}
+                                    className={`inline-block mr-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                                      isFound
+                                        ? 'bg-emerald-100 text-emerald-800 font-medium'
+                                        : 'bg-red-100 text-red-800 font-bold'
+                                    }`}
+                                  >
+                                    {k} {isFound ? '✓' : '✗ ausente'}
+                                  </span>
+                                )
+                              })
+                            )}
                           </div>
                         </div>
                       ))}
