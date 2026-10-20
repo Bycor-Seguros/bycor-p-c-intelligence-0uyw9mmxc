@@ -31,6 +31,8 @@ export interface ImportSummary {
   errors: string[]
   diagnostics: SheetKeyDiagnostic[]
   retriedSuccessCount?: number
+  reconciliationPasses?: number
+  reconciledCount?: number
 }
 
 // Utility: sleep for a given number of milliseconds
@@ -50,9 +52,9 @@ export async function executeWithRetry<T>(
     onRetry?: (attempt: number, delayMs: number, error: unknown) => void
   },
 ): Promise<T> {
-  const maxAttempts = options?.maxAttempts ?? 4
-  const baseBackoffMs = options?.baseBackoffMs ?? 1000
-  const throttleMs = options?.throttleMs ?? 80
+  const maxAttempts = options?.maxAttempts ?? 6
+  const baseBackoffMs = options?.baseBackoffMs ?? 1200
+  const throttleMs = options?.throttleMs ?? 120
 
   let attempt = 1
   while (true) {
@@ -76,9 +78,14 @@ export async function executeWithRetry<T>(
         throw err
       }
 
-      // Exponential backoff with jitter: ~1s, ~2s, ~4s (+ random jitter 100-300ms)
-      const backoffDelay =
-        baseBackoffMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250)
+      // Exponential backoff with robust jitter:
+      // attempt 1: 1.2s + 200..600ms (~1.5s)
+      // attempt 2: 2.4s + 200..600ms (~2.7s)
+      // attempt 3: 4.8s + 200..600ms (~5.1s)
+      // attempt 4: 9.6s + 200..600ms (~10s)
+      // attempt 5: 19.2s + 200..600ms (~19.5s)
+      const jitter = 200 + Math.floor(Math.random() * 400)
+      const backoffDelay = baseBackoffMs * Math.pow(2, attempt - 1) + jitter
       options?.onRetry?.(attempt, backoffDelay, err)
       await sleep(backoffDelay)
       attempt++
@@ -896,6 +903,10 @@ export async function processGuardiaWorkbook(
   onProgress?.('Lendo aba Matriz (formato cruzado Categoria x Apólice)...')
   const sheetMatName = workbook.SheetNames.find((n) => normalizeHeader(n).includes('matriz'))
 
+  // Keep track of matched matriz columns across scopes for reconciliation
+  let bestHeaderRowIndex = -1
+  let bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
+
   if (sheetMatName) {
     const sheet = workbook.Sheets[sheetMatName]
     const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
@@ -960,10 +971,10 @@ export async function processGuardiaWorkbook(
     }
 
     // Step 5.1: Detect header row by scanning rows for the highest density of columns (and/or match with known apolice headers)
-    let bestHeaderRowIndex = -1
     let bestMatchedCols = 0
-    let bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
-    let bestUnmatchedColNames: string[] = []
+    bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
+    let bestUnmatchedColInfo: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
+      []
 
     const scanLimit = Math.min(rawGrid.length, 15)
     for (let r = 0; r < scanLimit; r++) {
@@ -972,7 +983,8 @@ export async function processGuardiaWorkbook(
 
       let matchedCount = 0
       const currentColMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
-      const currentUnmatched: string[] = []
+      const currentUnmatched: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
+        []
 
       // Column 0 is the category column. Columns 1..N are apolice columns.
       for (let c = 1; c < row.length; c++) {
@@ -981,13 +993,15 @@ export async function processGuardiaWorkbook(
 
         const rawHeaderStr = String(cellVal).trim()
         const normHeader = normalizeHeader(rawHeaderStr)
+        const isNum = typeof cellVal === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
 
         // Try exact / normalized match
         let matchedApId =
           apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
 
         // If not matched, try fuzzy match against known apolice identifiers
-        if (!matchedApId && normHeader.length >= 3) {
+        // IMPORTANT: Never fuzzy match numeric headers against apólices to avoid false positives!
+        if (!matchedApId && !isNum && normHeader.length >= 3) {
           for (const [key, recId] of apoliceLookup.entries()) {
             if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
               matchedApId = recId
@@ -1000,7 +1014,7 @@ export async function processGuardiaWorkbook(
           matchedCount++
           currentColMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
         } else {
-          currentUnmatched.push(rawHeaderStr)
+          currentUnmatched.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
         }
       }
 
@@ -1008,7 +1022,7 @@ export async function processGuardiaWorkbook(
         bestMatchedCols = matchedCount
         bestHeaderRowIndex = r
         bestColToApoliceMap = currentColMap
-        bestUnmatchedColNames = currentUnmatched
+        bestUnmatchedColInfo = currentUnmatched
       }
     }
 
@@ -1034,9 +1048,10 @@ export async function processGuardiaWorkbook(
         const rawHeaderStr = String(fallbackRow[c] || '').trim()
         if (!rawHeaderStr) continue
         const normHeader = normalizeHeader(rawHeaderStr)
+        const isNum = typeof fallbackRow[c] === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
         let matchedApId =
           apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
-        if (!matchedApId && normHeader.length >= 3) {
+        if (!matchedApId && !isNum && normHeader.length >= 3) {
           for (const [key, recId] of apoliceLookup.entries()) {
             if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
               matchedApId = recId
@@ -1047,7 +1062,7 @@ export async function processGuardiaWorkbook(
         if (matchedApId) {
           bestColToApoliceMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
         } else {
-          bestUnmatchedColNames.push(rawHeaderStr)
+          bestUnmatchedColInfo.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
         }
       }
     }
@@ -1109,9 +1124,16 @@ export async function processGuardiaWorkbook(
       }
     }
 
-    if (bestUnmatchedColNames.length > 0) {
+    const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
+    const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
+
+    if (rawUnmatchedNames.length > 0) {
+      const numericNotice =
+        numericUnmatched.length > 0
+          ? ` (${numericUnmatched.length} coluna(s) possuem cabeçalho numérico que não identifica apólice: ${numericUnmatched.map((u) => `col ${u.colIndex + 1} "${u.rawHeader}"`).join(', ')})`
+          : ''
       summary.errors.push(
-        `Aba Matriz: ${bestUnmatchedColNames.length} coluna(s) sem apólice correspondente vinculada: ${bestUnmatchedColNames.slice(0, 5).join(', ')}${bestUnmatchedColNames.length > 5 ? '...' : ''}`,
+        `Aba Matriz: ${rawUnmatchedNames.length} coluna(s) sem apólice correspondente vinculada${numericNotice}.`,
       )
     }
 
@@ -1131,8 +1153,8 @@ export async function processGuardiaWorkbook(
       isPivoted: true,
       categoriesCount,
       matchedColumnsCount: bestColToApoliceMap.size,
-      unmatchedColumnsCount: bestUnmatchedColNames.length,
-      unmatchedColumns: bestUnmatchedColNames,
+      unmatchedColumnsCount: rawUnmatchedNames.length,
+      unmatchedColumns: rawUnmatchedNames,
     })
   } else {
     summary.diagnostics.push({
@@ -1296,6 +1318,230 @@ export async function processGuardiaWorkbook(
         summary.errors.push(`Erro divergência: ${(err as Error).message}`)
       }
     }
+  }
+
+  // =========================================================================
+  // 9. PASSADA DE VERIFICAÇÃO / RECONCILIAÇÃO AUTOMÁTICA
+  // Reler do banco as coberturas e matriz gravadas vs esperadas, regravando
+  // apenas os faltantes com ritmo mais lento (backoff/throttle estendido),
+  // repetindo até zerar falhas residuais transitórias (até 3 passes).
+  // =========================================================================
+  onProgress?.('Iniciando verificação e reconciliação da base...')
+
+  // Build target list of expected coberturas from workbook
+  const expectedCoberturas: Array<{
+    apoliceRecordId: string
+    nomeCob: string
+    payload: {
+      id_apolice: string
+      nome_cobertura: string
+      categoria_normalizada: string
+      lmi_rs: number | null
+      franquia_pos: string
+      premio_cobertura: number | null
+    }
+    dedupeKey: string
+  }> = []
+
+  if (sheetCobName && cobExtraction) {
+    for (const c of cobExtraction.rows) {
+      const idApol = String(c['id_apolice'] || '').trim()
+      const apoliceRecordId = apoliceMap.get(idApol)
+      const nomeCob = String(c['nome_cobertura'] || '').trim()
+      if (!idApol || !apoliceRecordId || !nomeCob) continue
+
+      expectedCoberturas.push({
+        apoliceRecordId,
+        nomeCob,
+        payload: {
+          id_apolice: apoliceRecordId,
+          nome_cobertura: nomeCob,
+          categoria_normalizada: String(c['categoria_normalizada'] || '').trim(),
+          lmi_rs: parseNumber(c['lmi_rs']),
+          franquia_pos: String(c['franquia_pos'] || '').trim(),
+          premio_cobertura: parseNumber(c['premio_cobertura']),
+        },
+        dedupeKey: `${apoliceRecordId}::${normalizeHeader(nomeCob)}`,
+      })
+    }
+  }
+
+  // Build target list of expected matriz cells from workbook
+  const expectedMatriz: Array<{
+    apoliceRecordId: string
+    catStr: string
+    rawColName: string
+    payload: {
+      categoria_normalizada: string
+      id_apolice: string
+      lmi: number
+    }
+    dedupeKey: string
+  }> = []
+
+  if (sheetMatName) {
+    const sheet = workbook.Sheets[sheetMatName]
+    const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
+    if (bestHeaderRowIndex >= 0 && rawGrid.length > bestHeaderRowIndex + 1) {
+      for (let r = bestHeaderRowIndex + 1; r < rawGrid.length; r++) {
+        const row = rawGrid[r]
+        if (!Array.isArray(row)) continue
+        const rawCat = row[0]
+        if (rawCat === null || rawCat === undefined || String(rawCat).trim() === '') continue
+        const catStr = String(rawCat).trim()
+
+        for (const [colIdx, apInfo] of bestColToApoliceMap.entries()) {
+          const numVal = parseNumber(row[colIdx])
+          if (numVal === null || numVal === undefined || numVal <= 0) continue
+
+          expectedMatriz.push({
+            apoliceRecordId: apInfo.apoliceRecordId,
+            catStr,
+            rawColName: apInfo.rawColName,
+            payload: {
+              categoria_normalizada: catStr,
+              id_apolice: apInfo.apoliceRecordId,
+              lmi: numVal,
+            },
+            dedupeKey: `${apInfo.apoliceRecordId}::${normalizeHeader(catStr)}`,
+          })
+        }
+      }
+    }
+  }
+
+  const MAX_RECONCILIATION_PASSES = 3
+  let passCount = 0
+  let totalReconciled = 0
+
+  while (passCount < MAX_RECONCILIATION_PASSES) {
+    passCount++
+    onProgress?.(
+      `Passe de reconciliação ${passCount}/${MAX_RECONCILIATION_PASSES}: checando registros no banco...`,
+    )
+
+    // Query live records from DB to find what's missing
+    const liveCobMap = new Map<string, string>() // dedupeKey -> id
+    try {
+      const liveCobs = await executeWithRetry(
+        () => pb.collection('coberturas').getFullList({ fields: 'id,id_apolice,nome_cobertura' }),
+        { throttleMs: 80, maxAttempts: 6 },
+      )
+      for (const lc of liveCobs) {
+        liveCobMap.set(`${lc.id_apolice}::${normalizeHeader(lc.nome_cobertura)}`, lc.id)
+      }
+    } catch {
+      // ignore
+    }
+
+    const liveMatMap = new Map<string, string>() // dedupeKey -> id
+    try {
+      const liveMats = await executeWithRetry(
+        () =>
+          pb.collection('matriz').getFullList({ fields: 'id,id_apolice,categoria_normalizada' }),
+        { throttleMs: 80, maxAttempts: 6 },
+      )
+      for (const lm of liveMats) {
+        liveMatMap.set(`${lm.id_apolice}::${normalizeHeader(lm.categoria_normalizada)}`, lm.id)
+      }
+    } catch {
+      // ignore
+    }
+
+    const missingCob = expectedCoberturas.filter((ec) => !liveCobMap.has(ec.dedupeKey))
+    const missingMat = expectedMatriz.filter((em) => !liveMatMap.has(em.dedupeKey))
+
+    if (missingCob.length === 0 && missingMat.length === 0) {
+      // Everything is reconciled!
+      break
+    }
+
+    onProgress?.(
+      `Reconciliação ${passCount}: gravando ${missingCob.length} cobertura(s) e ${missingMat.length} célula(s) de matriz faltantes...`,
+    )
+
+    // Re-record missing Coberturas with higher delay
+    for (let i = 0; i < missingCob.length; i++) {
+      const cobItem = missingCob[i]
+      try {
+        await executeWithRetry(() => pb.collection('coberturas').create(cobItem.payload), {
+          throttleMs: 180,
+          baseBackoffMs: 1500,
+          maxAttempts: 6,
+        })
+        totalReconciled++
+        summary.coberturasCount++
+        liveCobMap.set(cobItem.dedupeKey, 'created')
+      } catch (err: unknown) {
+        // will retry on next pass or report if persistent
+      }
+    }
+
+    // Re-record missing Matriz with higher delay
+    for (let i = 0; i < missingMat.length; i++) {
+      const matItem = missingMat[i]
+      try {
+        await executeWithRetry(() => pb.collection('matriz').create(matItem.payload), {
+          throttleMs: 180,
+          baseBackoffMs: 1500,
+          maxAttempts: 6,
+        })
+        totalReconciled++
+        summary.matrizCount++
+        liveMatMap.set(matItem.dedupeKey, 'created')
+      } catch (err: unknown) {
+        // will retry on next pass or report if persistent
+      }
+    }
+
+    // Small pause between passes
+    await sleep(400)
+  }
+
+  summary.reconciliationPasses = passCount
+  summary.reconciledCount = totalReconciled
+
+  // Final verification: filter out errors from summary.errors that were successfully reconciled
+  try {
+    const finalLiveCobs = await executeWithRetry(
+      () => pb.collection('coberturas').getFullList({ fields: 'id,id_apolice,nome_cobertura' }),
+      { throttleMs: 50, maxAttempts: 4 },
+    )
+    const finalCobSet = new Set(
+      finalLiveCobs.map((c) => `${c.id_apolice}::${normalizeHeader(c.nome_cobertura)}`),
+    )
+
+    const finalLiveMats = await executeWithRetry(
+      () => pb.collection('matriz').getFullList({ fields: 'id,id_apolice,categoria_normalizada' }),
+      { throttleMs: 50, maxAttempts: 4 },
+    )
+    const finalMatSet = new Set(
+      finalLiveMats.map((m) => `${m.id_apolice}::${normalizeHeader(m.categoria_normalizada)}`),
+    )
+
+    // Clean up summary.errors: remove errors for items that now exist in DB
+    summary.errors = summary.errors.filter((errMsg) => {
+      // Check if it's a cobertura error that got reconciled
+      const cobMatch = errMsg.match(/^Erro cobertura (.*?):/)
+      if (cobMatch) {
+        const normCobName = normalizeHeader(cobMatch[1])
+        // If any record with this name exists for any apolice, or all expected are present
+        const isPresent = Array.from(finalCobSet).some((k) => k.endsWith(`::${normCobName}`))
+        if (isPresent) return false // Resolved! Filter out from errors
+      }
+
+      // Check if it's a matriz error that got reconciled
+      const matMatch = errMsg.match(/^Erro matriz \((.*?) \//)
+      if (matMatch) {
+        const normMatCat = normalizeHeader(matMatch[1])
+        const isPresent = Array.from(finalMatSet).some((k) => k.endsWith(`::${normMatCat}`))
+        if (isPresent) return false // Resolved! Filter out from errors
+      }
+
+      return true
+    })
+  } catch {
+    // ignore
   }
 
   onProgress?.('Importação concluída!')

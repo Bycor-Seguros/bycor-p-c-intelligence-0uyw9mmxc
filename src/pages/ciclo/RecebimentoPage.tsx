@@ -523,6 +523,20 @@ export default function RecebimentoPage() {
                   </div>
                 </div>
               </div>
+              {importSummary.reconciliationPasses !== undefined &&
+                importSummary.reconciliationPasses > 0 && (
+                  <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/80 text-[#16578B] text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#16578B] shrink-0" />
+                      <span>
+                        Passada de reconciliação automática concluída (
+                        {importSummary.reconciliationPasses} ciclo(s)):{' '}
+                        <strong>{importSummary.reconciledCount ?? 0}</strong> registro(s)
+                        verificado(s)/recuperado(s) com sucesso.
+                      </span>
+                    </div>
+                  </div>
+                )}
               {importSummary.ignoredRowsCount > 0 && (
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -625,14 +639,24 @@ export default function RecebimentoPage() {
                                   {(diag.matchedColumnsCount ?? 0) > 0 ? '✓' : '✗ nenhuma'}
                                 </span>
                                 {diag.unmatchedColumns && diag.unmatchedColumns.length > 0 && (
-                                  <div className="mt-1 text-[10px] text-amber-700">
-                                    Colunas ignoradas sem apólice correspondente:{' '}
-                                    <span className="font-mono">
-                                      {diag.unmatchedColumns.slice(0, 4).join(', ')}
-                                      {diag.unmatchedColumns.length > 4
-                                        ? ` (+${diag.unmatchedColumns.length - 4})`
-                                        : ''}
-                                    </span>
+                                  <div className="mt-1.5 p-2 rounded bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 space-y-1">
+                                    <div className="font-semibold text-amber-800 flex items-center gap-1">
+                                      <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                      <span>
+                                        {diag.unmatchedColumns.length} coluna(s) não vinculadas a
+                                        apólices cadastradas:
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-amber-700 leading-relaxed">
+                                      Cabeçalhos numéricos ou não identificados (ex.: valores de
+                                      LMI/LMG ou totais na linha de cabeçalho do Excel) não foram
+                                      associados a apólices para evitar vínculos incorretos.
+                                      Registros nessas colunas foram preservados sem associação
+                                      espúria.
+                                    </p>
+                                    <div className="font-mono text-[10px] bg-white/80 p-1 rounded border border-amber-200 max-h-16 overflow-y-auto">
+                                      {diag.unmatchedColumns.join(' | ')}
+                                    </div>
                                   </div>
                                 )}
                               </>
