@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { executeWithRetry } from './guardiaImporter'
 
 export interface ClearDatabaseResult {
   success: boolean
@@ -58,14 +59,20 @@ export async function clearGuardiaImportedData(): Promise<ClearDatabaseResult> {
 
   for (const colName of collectionsToDelete) {
     try {
-      const records = await pb.collection(colName).getFullList({
-        fields: 'id',
-        batch: 200,
-      })
+      const records = await executeWithRetry(
+        () =>
+          pb.collection(colName).getFullList({
+            fields: 'id',
+            batch: 200,
+          }),
+        { throttleMs: 50 },
+      )
 
       for (const r of records) {
         try {
-          await pb.collection(colName).delete(r.id)
+          await executeWithRetry(() => pb.collection(colName).delete(r.id), {
+            throttleMs: 60,
+          })
           result.counts[colName]++
         } catch (err: unknown) {
           result.errors.push(`Erro ao deletar de ${colName} (${r.id}): ${(err as Error).message}`)

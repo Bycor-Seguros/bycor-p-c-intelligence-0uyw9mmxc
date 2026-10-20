@@ -30,6 +30,60 @@ export interface ImportSummary {
   ignoredRowsCount: number
   errors: string[]
   diagnostics: SheetKeyDiagnostic[]
+  retriedSuccessCount?: number
+}
+
+// Utility: sleep for a given number of milliseconds
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Execute a backend operation with exponential backoff on 429 (rate-limit) or transient network errors.
+ * Ensures throttling delay between requests to prevent hitting PocketBase rate limits.
+ */
+export async function executeWithRetry<T>(
+  operation: () => Promise<T>,
+  options?: {
+    maxAttempts?: number
+    baseBackoffMs?: number
+    throttleMs?: number
+    onRetry?: (attempt: number, delayMs: number, error: unknown) => void
+  },
+): Promise<T> {
+  const maxAttempts = options?.maxAttempts ?? 4
+  const baseBackoffMs = options?.baseBackoffMs ?? 1000
+  const throttleMs = options?.throttleMs ?? 80
+
+  let attempt = 1
+  while (true) {
+    try {
+      const result = await operation()
+      if (throttleMs > 0) {
+        await sleep(throttleMs)
+      }
+      return result
+    } catch (err: unknown) {
+      const status =
+        (err as { status?: number; response?: { status?: number } })?.status ||
+        (err as { status?: number; response?: { status?: number } })?.response?.status
+      const msg = (err as Error)?.message || ''
+      const isRateLimit =
+        status === 429 || /too many requests/i.test(msg) || /rate limit/i.test(msg)
+      const isNetworkError = /network|failed to fetch|timeout|econnreset|aborterror/i.test(msg)
+
+      const shouldRetry = (isRateLimit || isNetworkError) && attempt < maxAttempts
+      if (!shouldRetry) {
+        throw err
+      }
+
+      // Exponential backoff with jitter: ~1s, ~2s, ~4s (+ random jitter 100-300ms)
+      const backoffDelay =
+        baseBackoffMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250)
+      options?.onRetry?.(attempt, backoffDelay, err)
+      await sleep(backoffDelay)
+      attempt++
+    }
+  }
 }
 
 // Helper to normalize column names and strings for fuzzy key matching
@@ -323,9 +377,10 @@ export async function processGuardiaWorkbook(
   // Pre-load existing IDs into maps for cross-referencing and idempotency
   const empMap = new Map<string, string>() // id_empreendimento -> PB record ID
   try {
-    const existingEmps = await pb
-      .collection('empreendimentos')
-      .getFullList({ fields: 'id,id_empreendimento' })
+    const existingEmps = await executeWithRetry(
+      () => pb.collection('empreendimentos').getFullList({ fields: 'id,id_empreendimento' }),
+      { throttleMs: 50 },
+    )
     for (const e of existingEmps) {
       if (e.id_empreendimento) empMap.set(String(e.id_empreendimento).trim(), e.id)
     }
@@ -335,7 +390,10 @@ export async function processGuardiaWorkbook(
 
   const apoliceMap = new Map<string, string>() // id_apolice -> PB record ID
   try {
-    const existingApols = await pb.collection('apolices').getFullList({ fields: 'id,id_apolice' })
+    const existingApols = await executeWithRetry(
+      () => pb.collection('apolices').getFullList({ fields: 'id,id_apolice' }),
+      { throttleMs: 50 },
+    )
     for (const a of existingApols) {
       if (a.id_apolice) apoliceMap.set(String(a.id_apolice).trim(), a.id)
     }
@@ -362,14 +420,18 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let rowIdx = 0
 
     for (const r of rows) {
+      rowIdx++
       const idEmp = String(r['id_empreendimento'] || '').trim()
       if (!idEmp) {
         ignoredCount++
         summary.ignoredRowsCount++
         continue
       }
+
+      onProgress?.(`Gravando empreendimento ${rowIdx}/${rows.length}: ${idEmp}...`)
 
       const payload = {
         id_empreendimento: idEmp,
@@ -425,19 +487,29 @@ export async function processGuardiaWorkbook(
       try {
         const existingId = empMap.get(idEmp)
         if (existingId) {
-          const updated = await pb.collection('empreendimentos').update(existingId, payload)
+          const updated = await executeWithRetry(() =>
+            pb.collection('empreendimentos').update(existingId, payload),
+          )
           empMap.set(idEmp, updated.id)
         } else {
           // Double check in PB if not in local map
-          const existing = await pb
-            .collection('empreendimentos')
-            .getFirstListItem(`id_empreendimento="${idEmp}"`)
-            .catch(() => null)
+          const existing = await executeWithRetry(
+            () =>
+              pb
+                .collection('empreendimentos')
+                .getFirstListItem(`id_empreendimento="${idEmp}"`)
+                .catch(() => null),
+            { throttleMs: 30 },
+          )
           if (existing) {
-            const updated = await pb.collection('empreendimentos').update(existing.id, payload)
+            const updated = await executeWithRetry(() =>
+              pb.collection('empreendimentos').update(existing.id, payload),
+            )
             empMap.set(idEmp, updated.id)
           } else {
-            const created = await pb.collection('empreendimentos').create(payload)
+            const created = await executeWithRetry(() =>
+              pb.collection('empreendimentos').create(payload),
+            )
             empMap.set(idEmp, created.id)
           }
         }
@@ -508,14 +580,18 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let rowIdx = 0
 
     for (const r of rows) {
+      rowIdx++
       const idApolice = String(r['id_apolice'] || '').trim()
       if (!idApolice) {
         ignoredCount++
         summary.ignoredRowsCount++
         continue
       }
+
+      onProgress?.(`Gravando apólice ${rowIdx}/${rows.length}: ${idApolice}...`)
 
       const idEmp = String(r['id_empreendimento'] || '').trim()
       const empRecordId = empMap.get(idEmp) || null
@@ -573,18 +649,26 @@ export async function processGuardiaWorkbook(
       try {
         const existingId = apoliceMap.get(idApolice)
         if (existingId) {
-          const updated = await pb.collection('apolices').update(existingId, payload)
+          const updated = await executeWithRetry(() =>
+            pb.collection('apolices').update(existingId, payload),
+          )
           apoliceMap.set(idApolice, updated.id)
         } else {
-          const existing = await pb
-            .collection('apolices')
-            .getFirstListItem(`id_apolice="${idApolice}"`)
-            .catch(() => null)
+          const existing = await executeWithRetry(
+            () =>
+              pb
+                .collection('apolices')
+                .getFirstListItem(`id_apolice="${idApolice}"`)
+                .catch(() => null),
+            { throttleMs: 30 },
+          )
           if (existing) {
-            const updated = await pb.collection('apolices').update(existing.id, payload)
+            const updated = await executeWithRetry(() =>
+              pb.collection('apolices').update(existing.id, payload),
+            )
             apoliceMap.set(idApolice, updated.id)
           } else {
-            const created = await pb.collection('apolices').create(payload)
+            const created = await executeWithRetry(() => pb.collection('apolices').create(payload))
             apoliceMap.set(idApolice, created.id)
           }
         }
@@ -628,14 +712,16 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let rowIdx = 0
 
     // Deduplicate / idempotent tracking for this run:
     // Key: id_apolice_record + normalized_nome_cobertura
     const existingCobMap = new Map<string, string>()
     try {
-      const existingCobs = await pb
-        .collection('coberturas')
-        .getFullList({ fields: 'id,id_apolice,nome_cobertura' })
+      const existingCobs = await executeWithRetry(
+        () => pb.collection('coberturas').getFullList({ fields: 'id,id_apolice,nome_cobertura' }),
+        { throttleMs: 50 },
+      )
       for (const ec of existingCobs) {
         const k = `${ec.id_apolice}::${normalizeHeader(ec.nome_cobertura)}`
         existingCobMap.set(k, ec.id)
@@ -645,6 +731,7 @@ export async function processGuardiaWorkbook(
     }
 
     for (const c of rows) {
+      rowIdx++
       const idApol = String(c['id_apolice'] || '').trim()
       const apoliceRecordId = apoliceMap.get(idApol)
       const nomeCob = String(c['nome_cobertura'] || '').trim()
@@ -653,6 +740,10 @@ export async function processGuardiaWorkbook(
         ignoredCount++
         summary.ignoredRowsCount++
         continue
+      }
+
+      if (rowIdx % 25 === 0 || rowIdx === rows.length) {
+        onProgress?.(`Gravando coberturas (${rowIdx}/${rows.length})...`)
       }
 
       const payload = {
@@ -669,9 +760,9 @@ export async function processGuardiaWorkbook(
 
       try {
         if (existingCobId) {
-          await pb.collection('coberturas').update(existingCobId, payload)
+          await executeWithRetry(() => pb.collection('coberturas').update(existingCobId, payload))
         } else {
-          const created = await pb.collection('coberturas').create(payload)
+          const created = await executeWithRetry(() => pb.collection('coberturas').create(payload))
           existingCobMap.set(cobDedupeKey, created.id)
         }
         summary.coberturasCount++
@@ -710,14 +801,19 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let rowIdx = 0
 
     // Deduplication map for sinistros
     // Key: id_empreendimento_record + (numero_sinistro || data_sinistro + cobertura)
     const existingSinMap = new Map<string, string>()
     try {
-      const existingSins = await pb.collection('sinistros').getFullList({
-        fields: 'id,id_empreendimento,numero_sinistro,data_sinistro,cobertura_acionada',
-      })
+      const existingSins = await executeWithRetry(
+        () =>
+          pb.collection('sinistros').getFullList({
+            fields: 'id,id_empreendimento,numero_sinistro,data_sinistro,cobertura_acionada',
+          }),
+        { throttleMs: 50 },
+      )
       for (const es of existingSins) {
         const num = String(es.numero_sinistro || '')
           .trim()
@@ -732,12 +828,17 @@ export async function processGuardiaWorkbook(
     }
 
     for (const s of rows) {
+      rowIdx++
       const idEmp = String(s['id_empreendimento'] || '').trim()
       const empRecordId = empMap.get(idEmp) || null
       if (!idEmp || !empRecordId) {
         ignoredCount++
         summary.ignoredRowsCount++
         continue
+      }
+
+      if (rowIdx % 10 === 0 || rowIdx === rows.length) {
+        onProgress?.(`Gravando sinistros (${rowIdx}/${rows.length})...`)
       }
 
       const idApol = String(s['id_apolice'] || '').trim()
@@ -767,9 +868,9 @@ export async function processGuardiaWorkbook(
 
       try {
         if (existingSinId) {
-          await pb.collection('sinistros').update(existingSinId, payload)
+          await executeWithRetry(() => pb.collection('sinistros').update(existingSinId, payload))
         } else {
-          const created = await pb.collection('sinistros').create(payload)
+          const created = await executeWithRetry(() => pb.collection('sinistros').create(payload))
           existingSinMap.set(sinDedupeKey, created.id)
         }
         summary.sinistrosCount++
@@ -803,10 +904,14 @@ export async function processGuardiaWorkbook(
     // Maps various identifiers (id_apolice, numero_apolice, seguradora, ramo, nome_empreendimento) to apolice PB record ID
     const apoliceLookup = new Map<string, string>()
     try {
-      const fullApols = await pb.collection('apolices').getFullList({
-        fields: 'id,id_apolice,numero_apolice,seguradora,ramo,id_empreendimento',
-        expand: 'id_empreendimento',
-      })
+      const fullApols = await executeWithRetry(
+        () =>
+          pb.collection('apolices').getFullList({
+            fields: 'id,id_apolice,numero_apolice,seguradora,ramo,id_empreendimento',
+            expand: 'id_empreendimento',
+          }),
+        { throttleMs: 50 },
+      )
       for (const a of fullApols) {
         if (a.id_apolice) {
           apoliceLookup.set(normalizeHeader(a.id_apolice), a.id)
@@ -839,9 +944,13 @@ export async function processGuardiaWorkbook(
     // Key: id_apolice_record + normalized_categoria
     const existingMatMap = new Map<string, string>()
     try {
-      const existingMats = await pb.collection('matriz').getFullList({
-        fields: 'id,id_apolice,categoria_normalizada',
-      })
+      const existingMats = await executeWithRetry(
+        () =>
+          pb.collection('matriz').getFullList({
+            fields: 'id,id_apolice,categoria_normalizada',
+          }),
+        { throttleMs: 50 },
+      )
       for (const em of existingMats) {
         const k = `${em.id_apolice}::${normalizeHeader(em.categoria_normalizada)}`
         existingMatMap.set(k, em.id)
@@ -982,13 +1091,16 @@ export async function processGuardiaWorkbook(
 
         try {
           if (existingMatId) {
-            await pb.collection('matriz').update(existingMatId, payload)
+            await executeWithRetry(() => pb.collection('matriz').update(existingMatId, payload))
           } else {
-            const created = await pb.collection('matriz').create(payload)
+            const created = await executeWithRetry(() => pb.collection('matriz').create(payload))
             existingMatMap.set(matDedupeKey, created.id)
           }
           summary.matrizCount++
           processedCount++
+          if (processedCount % 20 === 0) {
+            onProgress?.(`Gravando matriz (${processedCount} células processadas)...`)
+          }
         } catch (err: unknown) {
           summary.errors.push(
             `Erro matriz (${catStr} / col ${apInfo.rawColName}): ${(err as Error).message}`,
@@ -1046,9 +1158,13 @@ export async function processGuardiaWorkbook(
     // Existing notas in PB to make import 100% idempotent
     const existingNotasMap = new Map<string, string>() // normalized_titulo -> record ID
     try {
-      const existingNotas = await pb.collection('notas_base').getFullList({
-        fields: 'id,titulo,conteudo',
-      })
+      const existingNotas = await executeWithRetry(
+        () =>
+          pb.collection('notas_base').getFullList({
+            fields: 'id,titulo,conteudo',
+          }),
+        { throttleMs: 50 },
+      )
       for (const en of existingNotas) {
         const k = normalizeHeader(en.titulo)
         if (k) existingNotasMap.set(k, en.id)
@@ -1096,15 +1212,19 @@ export async function processGuardiaWorkbook(
       try {
         if (existingNoteId) {
           // Update existing note instead of creating duplicate
-          await pb.collection('notas_base').update(existingNoteId, {
-            titulo: noteTitle,
-            conteudo,
-          })
+          await executeWithRetry(() =>
+            pb.collection('notas_base').update(existingNoteId, {
+              titulo: noteTitle,
+              conteudo,
+            }),
+          )
         } else {
-          const created = await pb.collection('notas_base').create({
-            titulo: noteTitle,
-            conteudo,
-          })
+          const created = await executeWithRetry(() =>
+            pb.collection('notas_base').create({
+              titulo: noteTitle,
+              conteudo,
+            }),
+          )
           existingNotasMap.set(noteNormKey, created.id)
         }
         summary.notasCount++
@@ -1133,19 +1253,21 @@ export async function processGuardiaWorkbook(
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetRastName])
     for (const r of rows) {
       try {
-        await pb.collection('rastreabilidade').create({
-          tabela: String(r['tabela'] || '').trim(),
-          registro: String(r['registro'] || '').trim(),
-          campos: String(r['campos'] || '').trim(),
-          valor_atual: String(r['valor_atual'] || '').trim(),
-          documento_fonte: String(r['documento_fonte'] || '').trim(),
-          localizacao_no_documento: String(r['localizacao_no_documento'] || '').trim(),
-          confianca: String(r['confianca'] || 'Direto do documento').trim(),
-          imported_by: currentUserEmail,
-        })
+        await executeWithRetry(() =>
+          pb.collection('rastreabilidade').create({
+            tabela: String(r['tabela'] || '').trim(),
+            registro: String(r['registro'] || '').trim(),
+            campos: String(r['campos'] || '').trim(),
+            valor_atual: String(r['valor_atual'] || '').trim(),
+            documento_fonte: String(r['documento_fonte'] || '').trim(),
+            localizacao_no_documento: String(r['localizacao_no_documento'] || '').trim(),
+            confianca: String(r['confianca'] || 'Direto do documento').trim(),
+            imported_by: currentUserEmail,
+          }),
+        )
         summary.rastreabilidadeCount++
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        summary.errors.push(`Erro rastreabilidade: ${(err as Error).message}`)
       }
     }
   }
@@ -1159,17 +1281,19 @@ export async function processGuardiaWorkbook(
       const idEmp = String(d['id_empreendimento'] || '').trim()
       const empRecordId = empMap.get(idEmp) || null
       try {
-        await pb.collection('divergencias').create({
-          id_empreendimento: empRecordId,
-          campo: String(d['campo'] || '').trim(),
-          valor_cartao_risco: String(d['valor_cartao_risco'] || '').trim(),
-          valor_final_apolice: String(d['valor_final_apolice'] || '').trim(),
-          apolice_referencia: String(d['apolice_referencia'] || '').trim(),
-          observacao: String(d['observacao'] || '').trim(),
-        })
+        await executeWithRetry(() =>
+          pb.collection('divergencias').create({
+            id_empreendimento: empRecordId,
+            campo: String(d['campo'] || '').trim(),
+            valor_cartao_risco: String(d['valor_cartao_risco'] || '').trim(),
+            valor_final_apolice: String(d['valor_final_apolice'] || '').trim(),
+            apolice_referencia: String(d['apolice_referencia'] || '').trim(),
+            observacao: String(d['observacao'] || '').trim(),
+          }),
+        )
         summary.divergenciasCount++
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        summary.errors.push(`Erro divergência: ${(err as Error).message}`)
       }
     }
   }

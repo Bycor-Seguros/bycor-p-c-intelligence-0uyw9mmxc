@@ -660,11 +660,28 @@ export default function RecebimentoPage() {
                   )}
                 </div>
               )}
-              {importSummary.errors.length > 0 && (
-                <div className="max-h-32 overflow-y-auto p-2 bg-red-50 rounded text-[11px] text-red-700 space-y-1">
-                  {importSummary.errors.map((err, i) => (
-                    <div key={i}>{err}</div>
-                  ))}
+              {importSummary.errors.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="text-xs font-semibold text-red-800 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                    <span>Falhas residuais ({importSummary.errors.length}):</span>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto p-2.5 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 space-y-1">
+                    {importSummary.errors.map((err, i) => (
+                      <div key={i} className="flex items-start gap-1">
+                        <span className="text-red-500 font-bold">•</span>
+                        <span>{err}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    Todas as abas e registros foram gravados com sucesso, sem erros residuais de
+                    rede ou taxa de requisições.
+                  </span>
                 </div>
               )}
               <div className="pt-2 flex justify-end gap-2">
