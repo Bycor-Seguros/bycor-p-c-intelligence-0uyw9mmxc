@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-20T01:44:32.497Z",
+  "generatedAt": "2026-10-20T01:57:33.777Z",
   "collections": [
     {
       "name": "users",
@@ -1342,7 +1342,8 @@
             "Proposta",
             "Apólice PDF",
             "Apresentação",
-            "Outro"
+            "Outro",
+            "Base de Apólices"
           ]
         },
         {

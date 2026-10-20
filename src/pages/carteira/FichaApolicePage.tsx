@@ -917,6 +917,7 @@ export default function FichaApolicePage() {
                 onChange={(e) => setDocTipo(e.target.value)}
                 className="w-full h-8 border rounded px-2 bg-white mt-1"
               >
+                <option value="Base de Apólices">Base de Apólices</option>
                 <option value="Cartão de Risco">Cartão de Risco</option>
                 <option value="QAR">QAR</option>
                 <option value="Questionário">Questionário</option>

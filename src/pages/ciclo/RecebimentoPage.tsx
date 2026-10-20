@@ -74,7 +74,7 @@ export default function RecebimentoPage() {
 
   // Manual upload state
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
-  const [manualTipo, setManualTipo] = useState('Cartão de Risco')
+  const [manualTipo, setManualTipo] = useState('Base de Apólices')
   const [manualVersao, setManualVersao] = useState('v1.0')
   const [manualData, setManualData] = useState(new Date().toISOString().slice(0, 10))
   const [manualFile, setManualFile] = useState<File | null>(null)
@@ -128,7 +128,7 @@ export default function RecebimentoPage() {
       try {
         const formData = new FormData()
         formData.append('arquivo', file)
-        formData.append('tipo', 'Cartão de Risco')
+        formData.append('tipo', 'Base de Apólices')
         formData.append('versao', 'Importação Base Hotéis e Resorts')
         formData.append('data', new Date().toISOString().slice(0, 10))
         await pb.collection('documentos').create(formData)
@@ -270,6 +270,7 @@ export default function RecebimentoPage() {
             <div className="flex flex-wrap gap-1">
               {[
                 'todos',
+                'Base de Apólices',
                 'Cartão de Risco',
                 'QAR',
                 'Questionário',
@@ -790,6 +791,7 @@ export default function RecebimentoPage() {
                 onChange={(e) => setManualTipo(e.target.value)}
                 className="w-full text-xs h-9 rounded-md border border-gray-300 bg-white px-3 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
               >
+                <option value="Base de Apólices">Base de Apólices</option>
                 <option value="Cartão de Risco">Cartão de Risco</option>
                 <option value="QAR">QAR</option>
                 <option value="Questionário">Questionário</option>
