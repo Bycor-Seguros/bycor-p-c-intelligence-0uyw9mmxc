@@ -473,6 +473,37 @@ export default function RecebimentoPage() {
                   </p>
                 </div>
               </div>
+              {/* Resumo de mutações: Criados / Atualizados / Inalterados (escritas evitadas) */}
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200">
+                  <div className="text-lg font-bold text-emerald-700">
+                    {importSummary.createdCount ?? 0}
+                  </div>
+                  <div className="text-[10px] text-emerald-800 font-semibold uppercase tracking-wider">
+                    Criados Novos
+                  </div>
+                  <div className="text-[9px] text-emerald-600">Inserções no banco</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200">
+                  <div className="text-lg font-bold text-[#16578B]">
+                    {importSummary.updatedCount ?? 0}
+                  </div>
+                  <div className="text-[10px] text-[#0F2B46] font-semibold uppercase tracking-wider">
+                    Atualizados
+                  </div>
+                  <div className="text-[9px] text-blue-600">Alterações gravadas</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-lg font-bold text-gray-700">
+                    {importSummary.unchangedCount ?? 0}
+                  </div>
+                  <div className="text-[10px] text-gray-700 font-semibold uppercase tracking-wider">
+                    Inalterados (Pulados)
+                  </div>
+                  <div className="text-[9px] text-gray-500">Escritas evitadas</div>
+                </div>
+              </div>
+              {/* Totalizadores por coleção */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-center">
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -481,6 +512,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Empreendimentos
                   </div>
+                  {importSummary.statsByCollection?.empreendimentos && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.empreendimentos.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -489,6 +525,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Apólices
                   </div>
+                  {importSummary.statsByCollection?.apolices && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.apolices.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -497,6 +538,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Coberturas
                   </div>
+                  {importSummary.statsByCollection?.coberturas && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.coberturas.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -505,6 +551,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Sinistros
                   </div>
+                  {importSummary.statsByCollection?.sinistros && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.sinistros.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -513,6 +564,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Matriz
                   </div>
+                  {importSummary.statsByCollection?.matriz && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.matriz.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                   <div className="text-base font-bold text-[#0F2B46]">
@@ -521,6 +577,11 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Notas
                   </div>
+                  {importSummary.statsByCollection?.notas_base && (
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {importSummary.statsByCollection.notas_base.unchanged} inalt.
+                    </div>
+                  )}
                 </div>
               </div>
               {importSummary.reconciliationPasses !== undefined &&
@@ -613,11 +674,35 @@ export default function RecebimentoPage() {
                                 <span>
                                   Linhas processadas: <strong>{diag.processedRows}</strong>
                                 </span>
+                                {diag.unchangedRows !== undefined && diag.unchangedRows > 0 && (
+                                  <span className="text-gray-600 font-medium">
+                                    Inalterados:{' '}
+                                    <strong className="text-gray-800">{diag.unchangedRows}</strong>
+                                  </span>
+                                )}
+                                {diag.updatedRows !== undefined && diag.updatedRows > 0 && (
+                                  <span className="text-blue-700 font-medium">
+                                    Atualizados: <strong>{diag.updatedRows}</strong>
+                                  </span>
+                                )}
+                                {diag.createdRows !== undefined && diag.createdRows > 0 && (
+                                  <span className="text-emerald-700 font-medium">
+                                    Novos: <strong>{diag.createdRows}</strong>
+                                  </span>
+                                )}
                                 <span>
                                   Linhas ignoradas: <strong>{diag.ignoredRows}</strong>
                                 </span>
                               </>
                             )}
+                            {diag.isPivoted &&
+                              diag.unchangedRows !== undefined &&
+                              diag.unchangedRows > 0 && (
+                                <span className="text-gray-600 font-medium">
+                                  Células inalteradas:{' '}
+                                  <strong className="text-gray-800">{diag.unchangedRows}</strong>
+                                </span>
+                              )}
                           </div>
                           <div className="text-[11px]">
                             <span className="text-gray-500">

@@ -1,6 +1,12 @@
 import * as XLSX from 'xlsx'
 import pb from '@/lib/pocketbase/client'
 
+export interface CollectionChangeStats {
+  created: number
+  updated: number
+  unchanged: number
+}
+
 export interface SheetKeyDiagnostic {
   sheetName: string
   foundHeaderRowIndex: number
@@ -10,6 +16,10 @@ export interface SheetKeyDiagnostic {
   totalRows: number
   processedRows: number
   ignoredRows: number
+  // Change breakdown
+  createdRows?: number
+  updatedRows?: number
+  unchangedRows?: number
   // Specific details for pivoted sheets like Matriz
   isPivoted?: boolean
   categoriesCount?: number
@@ -28,6 +38,20 @@ export interface ImportSummary {
   rastreabilidadeCount: number
   divergenciasCount: number
   ignoredRowsCount: number
+  // Change counters
+  createdCount: number
+  updatedCount: number
+  unchangedCount: number
+  statsByCollection: {
+    empreendimentos: CollectionChangeStats
+    apolices: CollectionChangeStats
+    coberturas: CollectionChangeStats
+    sinistros: CollectionChangeStats
+    matriz: CollectionChangeStats
+    notas_base: CollectionChangeStats
+    rastreabilidade: CollectionChangeStats
+    divergencias: CollectionChangeStats
+  }
   errors: string[]
   diagnostics: SheetKeyDiagnostic[]
   retriedSuccessCount?: number
@@ -38,6 +62,81 @@ export interface ImportSummary {
 // Utility: sleep for a given number of milliseconds
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Compare two values for functional equality when determining whether an existing
+ * PocketBase record needs updating or can be skipped (unchanged).
+ * Normalizes types (strings, numbers, booleans, dates) and handles null/undefined/empty consistently.
+ */
+export function areValuesEqual(
+  existingVal: unknown,
+  incomingVal: unknown,
+  isDate = false,
+): boolean {
+  // Normalize undefined and null
+  const isExistingEmpty =
+    existingVal === null ||
+    existingVal === undefined ||
+    (typeof existingVal === 'string' && existingVal.trim() === '')
+  const isIncomingEmpty =
+    incomingVal === null ||
+    incomingVal === undefined ||
+    (typeof incomingVal === 'string' && incomingVal.trim() === '')
+
+  if (isExistingEmpty && isIncomingEmpty) return true
+  if (isExistingEmpty !== isIncomingEmpty) return false
+
+  // Date normalization: compare YYYY-MM-DD
+  if (isDate) {
+    const d1 = String(existingVal || '').slice(0, 10)
+    const d2 = String(incomingVal || '').slice(0, 10)
+    return d1 === d2
+  }
+
+  // Boolean normalization
+  if (typeof incomingVal === 'boolean' || typeof existingVal === 'boolean') {
+    return Boolean(existingVal) === Boolean(incomingVal)
+  }
+
+  // Number comparison (allow tiny float precision tolerance)
+  if (typeof incomingVal === 'number' || typeof existingVal === 'number') {
+    const n1 = typeof existingVal === 'number' ? existingVal : parseFloat(String(existingVal))
+    const n2 = typeof incomingVal === 'number' ? incomingVal : parseFloat(String(incomingVal))
+    if (isNaN(n1) && isNaN(n2)) return true
+    if (isNaN(n1) || isNaN(n2)) return false
+    return Math.abs(n1 - n2) < 0.0001
+  }
+
+  // String comparison: trim and collapse excess internal whitespace
+  const s1 = String(existingVal).trim().replace(/\s+/g, ' ')
+  const s2 = String(incomingVal).trim().replace(/\s+/g, ' ')
+  return s1 === s2
+}
+
+/**
+ * Checks if all fields of incoming payload already match the existing record.
+ * dateFields lists field names that should be compared as dates (YYYY-MM-DD).
+ */
+export function isRecordIdentical(
+  existingRecord: Record<string, unknown>,
+  incomingPayload: Record<string, unknown>,
+  dateFields: string[] = ['data_inicio', 'data_fim', 'data_sinistro', 'data'],
+): boolean {
+  for (const [key, incomingVal] of Object.entries(incomingPayload)) {
+    // Skip internal/import-specific metadata fields from the comparison
+    if (key === 'imported_at' || key === 'imported_by') {
+      continue
+    }
+
+    const existingVal = existingRecord[key]
+    const isDate = dateFields.includes(key)
+
+    if (!areValuesEqual(existingVal, incomingVal, isDate)) {
+      return false
+    }
+  }
+  return true
+}
 
 /**
  * Execute a backend operation with exponential backoff on 429 (rate-limit) or transient network errors.
@@ -375,37 +474,58 @@ export async function processGuardiaWorkbook(
     rastreabilidadeCount: 0,
     divergenciasCount: 0,
     ignoredRowsCount: 0,
+    createdCount: 0,
+    updatedCount: 0,
+    unchangedCount: 0,
+    statsByCollection: {
+      empreendimentos: { created: 0, updated: 0, unchanged: 0 },
+      apolices: { created: 0, updated: 0, unchanged: 0 },
+      coberturas: { created: 0, updated: 0, unchanged: 0 },
+      sinistros: { created: 0, updated: 0, unchanged: 0 },
+      matriz: { created: 0, updated: 0, unchanged: 0 },
+      notas_base: { created: 0, updated: 0, unchanged: 0 },
+      rastreabilidade: { created: 0, updated: 0, unchanged: 0 },
+      divergencias: { created: 0, updated: 0, unchanged: 0 },
+    },
     errors: [],
     diagnostics: [],
   }
 
   const timestamp = new Date().toISOString()
 
-  // Pre-load existing IDs into maps for cross-referencing and idempotency
-  const empMap = new Map<string, string>() // id_empreendimento -> PB record ID
+  // Pre-load existing records into maps for cross-referencing, idempotency and fast equality comparison
+  // empMap: id_empreendimento -> PB record
+  const empMap = new Map<string, Record<string, unknown>>()
   try {
     const existingEmps = await executeWithRetry(
-      () => pb.collection('empreendimentos').getFullList({ fields: 'id,id_empreendimento' }),
-      { throttleMs: 50 },
+      () => pb.collection('empreendimentos').getFullList({ batch: 200 }),
+      { throttleMs: 50, maxAttempts: 6 },
     )
     for (const e of existingEmps) {
-      if (e.id_empreendimento) empMap.set(String(e.id_empreendimento).trim(), e.id)
+      if (e.id_empreendimento) {
+        empMap.set(String(e.id_empreendimento).trim(), e as unknown as Record<string, unknown>)
+      }
     }
-  } catch {
-    // ignore
+  } catch (err: unknown) {
+    const errMsg = `Falha crítica ao carregar empreendimentos existentes do banco: ${(err as Error).message}. Vínculos de apólices e sinistros podem ser afetados.`
+    summary.errors.push(errMsg)
   }
 
-  const apoliceMap = new Map<string, string>() // id_apolice -> PB record ID
+  // apoliceMap: id_apolice -> PB record
+  const apoliceMap = new Map<string, Record<string, unknown>>()
   try {
     const existingApols = await executeWithRetry(
-      () => pb.collection('apolices').getFullList({ fields: 'id,id_apolice' }),
-      { throttleMs: 50 },
+      () => pb.collection('apolices').getFullList({ batch: 200 }),
+      { throttleMs: 50, maxAttempts: 6 },
     )
     for (const a of existingApols) {
-      if (a.id_apolice) apoliceMap.set(String(a.id_apolice).trim(), a.id)
+      if (a.id_apolice) {
+        apoliceMap.set(String(a.id_apolice).trim(), a as unknown as Record<string, unknown>)
+      }
     }
-  } catch {
-    // ignore
+  } catch (err: unknown) {
+    const errMsg = `Falha crítica ao carregar apólices existentes do banco: ${(err as Error).message}.`
+    summary.errors.push(errMsg)
   }
 
   // 1. Empreendimentos
@@ -427,6 +547,9 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let createdCount = 0
+    let updatedCount = 0
+    let unchangedCount = 0
     let rowIdx = 0
 
     for (const r of rows) {
@@ -437,8 +560,6 @@ export async function processGuardiaWorkbook(
         summary.ignoredRowsCount++
         continue
       }
-
-      onProgress?.(`Gravando empreendimento ${rowIdx}/${rows.length}: ${idEmp}...`)
 
       const payload = {
         id_empreendimento: idEmp,
@@ -492,33 +613,52 @@ export async function processGuardiaWorkbook(
       }
 
       try {
-        const existingId = empMap.get(idEmp)
-        if (existingId) {
-          const updated = await executeWithRetry(() =>
-            pb.collection('empreendimentos').update(existingId, payload),
-          )
-          empMap.set(idEmp, updated.id)
-        } else {
+        let existingRecord = empMap.get(idEmp)
+        if (!existingRecord) {
           // Double check in PB if not in local map
-          const existing = await executeWithRetry(
+          const fetched = await executeWithRetry(
             () =>
               pb
                 .collection('empreendimentos')
                 .getFirstListItem(`id_empreendimento="${idEmp}"`)
                 .catch(() => null),
-            { throttleMs: 30 },
+            { throttleMs: 30, maxAttempts: 4 },
           )
-          if (existing) {
-            const updated = await executeWithRetry(() =>
-              pb.collection('empreendimentos').update(existing.id, payload),
-            )
-            empMap.set(idEmp, updated.id)
-          } else {
-            const created = await executeWithRetry(() =>
-              pb.collection('empreendimentos').create(payload),
-            )
-            empMap.set(idEmp, created.id)
+          if (fetched) {
+            existingRecord = fetched as unknown as Record<string, unknown>
+            empMap.set(idEmp, existingRecord)
           }
+        }
+
+        if (existingRecord) {
+          // Compare before updating: skip write if already identical
+          const recordId = String(existingRecord.id)
+          if (isRecordIdentical(existingRecord, payload)) {
+            unchangedCount++
+            summary.unchangedCount++
+            summary.statsByCollection.empreendimentos.unchanged++
+            summary.empreendimentosCount++
+            processedCount++
+            continue
+          }
+
+          onProgress?.(`Atualizando empreendimento ${rowIdx}/${rows.length}: ${idEmp}...`)
+          const updated = await executeWithRetry(() =>
+            pb.collection('empreendimentos').update(recordId, payload),
+          )
+          empMap.set(idEmp, updated as unknown as Record<string, unknown>)
+          updatedCount++
+          summary.updatedCount++
+          summary.statsByCollection.empreendimentos.updated++
+        } else {
+          onProgress?.(`Criando empreendimento ${rowIdx}/${rows.length}: ${idEmp}...`)
+          const created = await executeWithRetry(() =>
+            pb.collection('empreendimentos').create(payload),
+          )
+          empMap.set(idEmp, created as unknown as Record<string, unknown>)
+          createdCount++
+          summary.createdCount++
+          summary.statsByCollection.empreendimentos.created++
         }
         summary.empreendimentosCount++
         processedCount++
@@ -536,6 +676,9 @@ export async function processGuardiaWorkbook(
       totalRows: totalRawRows,
       processedRows: processedCount,
       ignoredRows: ignoredCount,
+      createdRows: createdCount,
+      updatedRows: updatedCount,
+      unchangedRows: unchangedCount,
     })
   } else {
     summary.diagnostics.push({
@@ -587,6 +730,9 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let createdCount = 0
+    let updatedCount = 0
+    let unchangedCount = 0
     let rowIdx = 0
 
     for (const r of rows) {
@@ -598,10 +744,9 @@ export async function processGuardiaWorkbook(
         continue
       }
 
-      onProgress?.(`Gravando apólice ${rowIdx}/${rows.length}: ${idApolice}...`)
-
       const idEmp = String(r['id_empreendimento'] || '').trim()
-      const empRecordId = empMap.get(idEmp) || null
+      const empRecord = empMap.get(idEmp)
+      const empRecordId = empRecord ? String(empRecord.id) : null
 
       const valorEmRiscoDm = parseNumber(r['valor_em_risco_dm'])
       const lmiIncendioBasica =
@@ -654,30 +799,48 @@ export async function processGuardiaWorkbook(
       }
 
       try {
-        const existingId = apoliceMap.get(idApolice)
-        if (existingId) {
-          const updated = await executeWithRetry(() =>
-            pb.collection('apolices').update(existingId, payload),
-          )
-          apoliceMap.set(idApolice, updated.id)
-        } else {
-          const existing = await executeWithRetry(
+        let existingRecord = apoliceMap.get(idApolice)
+        if (!existingRecord) {
+          const fetched = await executeWithRetry(
             () =>
               pb
                 .collection('apolices')
                 .getFirstListItem(`id_apolice="${idApolice}"`)
                 .catch(() => null),
-            { throttleMs: 30 },
+            { throttleMs: 30, maxAttempts: 4 },
           )
-          if (existing) {
-            const updated = await executeWithRetry(() =>
-              pb.collection('apolices').update(existing.id, payload),
-            )
-            apoliceMap.set(idApolice, updated.id)
-          } else {
-            const created = await executeWithRetry(() => pb.collection('apolices').create(payload))
-            apoliceMap.set(idApolice, created.id)
+          if (fetched) {
+            existingRecord = fetched as unknown as Record<string, unknown>
+            apoliceMap.set(idApolice, existingRecord)
           }
+        }
+
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          if (isRecordIdentical(existingRecord, payload)) {
+            unchangedCount++
+            summary.unchangedCount++
+            summary.statsByCollection.apolices.unchanged++
+            summary.apolicesCount++
+            processedCount++
+            continue
+          }
+
+          onProgress?.(`Atualizando apólice ${rowIdx}/${rows.length}: ${idApolice}...`)
+          const updated = await executeWithRetry(() =>
+            pb.collection('apolices').update(recordId, payload),
+          )
+          apoliceMap.set(idApolice, updated as unknown as Record<string, unknown>)
+          updatedCount++
+          summary.updatedCount++
+          summary.statsByCollection.apolices.updated++
+        } else {
+          onProgress?.(`Criando apólice ${rowIdx}/${rows.length}: ${idApolice}...`)
+          const created = await executeWithRetry(() => pb.collection('apolices').create(payload))
+          apoliceMap.set(idApolice, created as unknown as Record<string, unknown>)
+          createdCount++
+          summary.createdCount++
+          summary.statsByCollection.apolices.created++
         }
         summary.apolicesCount++
         processedCount++
@@ -695,6 +858,9 @@ export async function processGuardiaWorkbook(
       totalRows: totalRawRows,
       processedRows: processedCount,
       ignoredRows: ignoredCount,
+      createdRows: createdCount,
+      updatedRows: updatedCount,
+      unchangedRows: unchangedCount,
     })
   } else {
     summary.diagnostics.push({
@@ -722,35 +888,43 @@ export async function processGuardiaWorkbook(
     let rowIdx = 0
 
     // Deduplicate / idempotent tracking for this run:
-    // Key: id_apolice_record + normalized_nome_cobertura
-    const existingCobMap = new Map<string, string>()
+    // Key: id_apolice_record + normalized_nome_cobertura -> PB record
+    const existingCobMap = new Map<string, Record<string, unknown>>()
     try {
       const existingCobs = await executeWithRetry(
-        () => pb.collection('coberturas').getFullList({ fields: 'id,id_apolice,nome_cobertura' }),
-        { throttleMs: 50 },
+        () =>
+          pb.collection('coberturas').getFullList({
+            fields:
+              'id,id_apolice,nome_cobertura,categoria_normalizada,lmi_rs,franquia_pos,premio_cobertura',
+            batch: 200,
+          }),
+        { throttleMs: 50, maxAttempts: 6 },
       )
       for (const ec of existingCobs) {
         const k = `${ec.id_apolice}::${normalizeHeader(ec.nome_cobertura)}`
-        existingCobMap.set(k, ec.id)
+        existingCobMap.set(k, ec as unknown as Record<string, unknown>)
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      summary.errors.push(
+        `Aviso: Não foi possível pré-carregar coberturas existentes do banco (${(err as Error).message}).`,
+      )
     }
+
+    let createdCount = 0
+    let updatedCount = 0
+    let unchangedCount = 0
 
     for (const c of rows) {
       rowIdx++
       const idApol = String(c['id_apolice'] || '').trim()
-      const apoliceRecordId = apoliceMap.get(idApol)
+      const apoliceRecord = apoliceMap.get(idApol)
+      const apoliceRecordId = apoliceRecord ? String(apoliceRecord.id) : null
       const nomeCob = String(c['nome_cobertura'] || '').trim()
 
       if (!idApol || !apoliceRecordId || !nomeCob) {
         ignoredCount++
         summary.ignoredRowsCount++
         continue
-      }
-
-      if (rowIdx % 25 === 0 || rowIdx === rows.length) {
-        onProgress?.(`Gravando coberturas (${rowIdx}/${rows.length})...`)
       }
 
       const payload = {
@@ -763,14 +937,40 @@ export async function processGuardiaWorkbook(
       }
 
       const cobDedupeKey = `${apoliceRecordId}::${normalizeHeader(nomeCob)}`
-      const existingCobId = existingCobMap.get(cobDedupeKey)
+      const existingRecord = existingCobMap.get(cobDedupeKey)
 
       try {
-        if (existingCobId) {
-          await executeWithRetry(() => pb.collection('coberturas').update(existingCobId, payload))
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          // Compare before updating: skip write if already identical
+          if (isRecordIdentical(existingRecord, payload)) {
+            unchangedCount++
+            summary.unchangedCount++
+            summary.statsByCollection.coberturas.unchanged++
+            summary.coberturasCount++
+            processedCount++
+            continue
+          }
+
+          if (rowIdx % 25 === 0 || rowIdx === rows.length) {
+            onProgress?.(`Atualizando coberturas (${rowIdx}/${rows.length})...`)
+          }
+          const updated = await executeWithRetry(() =>
+            pb.collection('coberturas').update(recordId, payload),
+          )
+          existingCobMap.set(cobDedupeKey, updated as unknown as Record<string, unknown>)
+          updatedCount++
+          summary.updatedCount++
+          summary.statsByCollection.coberturas.updated++
         } else {
+          if (rowIdx % 25 === 0 || rowIdx === rows.length) {
+            onProgress?.(`Criando coberturas (${rowIdx}/${rows.length})...`)
+          }
           const created = await executeWithRetry(() => pb.collection('coberturas').create(payload))
-          existingCobMap.set(cobDedupeKey, created.id)
+          existingCobMap.set(cobDedupeKey, created as unknown as Record<string, unknown>)
+          createdCount++
+          summary.createdCount++
+          summary.statsByCollection.coberturas.created++
         }
         summary.coberturasCount++
         processedCount++
@@ -788,6 +988,9 @@ export async function processGuardiaWorkbook(
       totalRows: totalRawRows,
       processedRows: processedCount,
       ignoredRows: ignoredCount,
+      createdRows: createdCount,
+      updatedRows: updatedCount,
+      unchangedRows: unchangedCount,
     })
   }
 
@@ -811,45 +1014,50 @@ export async function processGuardiaWorkbook(
     let rowIdx = 0
 
     // Deduplication map for sinistros
-    // Key: id_empreendimento_record + (numero_sinistro || data_sinistro + cobertura)
-    const existingSinMap = new Map<string, string>()
+    // Key: id_empreendimento_record + (numero_sinistro || data_sinistro + cobertura) -> PB record
+    const existingSinMap = new Map<string, Record<string, unknown>>()
     try {
       const existingSins = await executeWithRetry(
         () =>
           pb.collection('sinistros').getFullList({
-            fields: 'id,id_empreendimento,numero_sinistro,data_sinistro,cobertura_acionada',
+            batch: 200,
           }),
-        { throttleMs: 50 },
+        { throttleMs: 50, maxAttempts: 6 },
       )
       for (const es of existingSins) {
         const num = String(es.numero_sinistro || '')
           .trim()
           .toLowerCase()
+        const dtNorm = String(es.data_sinistro || '').slice(0, 10)
         const k = num
           ? `${es.id_empreendimento}::num::${num}`
-          : `${es.id_empreendimento}::dt::${es.data_sinistro}::${normalizeHeader(es.cobertura_acionada)}`
-        existingSinMap.set(k, es.id)
+          : `${es.id_empreendimento}::dt::${dtNorm}::${normalizeHeader(es.cobertura_acionada)}`
+        existingSinMap.set(k, es as unknown as Record<string, unknown>)
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      summary.errors.push(
+        `Aviso: Não foi possível pré-carregar sinistros existentes do banco (${(err as Error).message}).`,
+      )
     }
+
+    let createdCount = 0
+    let updatedCount = 0
+    let unchangedCount = 0
 
     for (const s of rows) {
       rowIdx++
       const idEmp = String(s['id_empreendimento'] || '').trim()
-      const empRecordId = empMap.get(idEmp) || null
+      const empRecord = empMap.get(idEmp)
+      const empRecordId = empRecord ? String(empRecord.id) : null
       if (!idEmp || !empRecordId) {
         ignoredCount++
         summary.ignoredRowsCount++
         continue
       }
 
-      if (rowIdx % 10 === 0 || rowIdx === rows.length) {
-        onProgress?.(`Gravando sinistros (${rowIdx}/${rows.length})...`)
-      }
-
       const idApol = String(s['id_apolice'] || '').trim()
-      const apoliceRecordId = apoliceMap.get(idApol) || null
+      const apoliceRecord = apoliceMap.get(idApol)
+      const apoliceRecordId = apoliceRecord ? String(apoliceRecord.id) : null
 
       const numeroSinistro = String(s['numero_sinistro'] || '').trim()
       const dataSinistro = parseExcelDate(s['data_sinistro'])
@@ -868,17 +1076,44 @@ export async function processGuardiaWorkbook(
         fonte: String(s['fonte'] || '').trim(),
       }
 
+      const dtNorm = String(dataSinistro || '').slice(0, 10)
       const sinDedupeKey = numeroSinistro
         ? `${empRecordId}::num::${numeroSinistro.toLowerCase()}`
-        : `${empRecordId}::dt::${dataSinistro}::${normalizeHeader(cobAcionada)}`
-      const existingSinId = existingSinMap.get(sinDedupeKey)
+        : `${empRecordId}::dt::${dtNorm}::${normalizeHeader(cobAcionada)}`
+      const existingRecord = existingSinMap.get(sinDedupeKey)
 
       try {
-        if (existingSinId) {
-          await executeWithRetry(() => pb.collection('sinistros').update(existingSinId, payload))
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          // Compare before updating: skip write if already identical
+          if (isRecordIdentical(existingRecord, payload)) {
+            unchangedCount++
+            summary.unchangedCount++
+            summary.statsByCollection.sinistros.unchanged++
+            summary.sinistrosCount++
+            processedCount++
+            continue
+          }
+
+          if (rowIdx % 10 === 0 || rowIdx === rows.length) {
+            onProgress?.(`Atualizando sinistros (${rowIdx}/${rows.length})...`)
+          }
+          const updated = await executeWithRetry(() =>
+            pb.collection('sinistros').update(recordId, payload),
+          )
+          existingSinMap.set(sinDedupeKey, updated as unknown as Record<string, unknown>)
+          updatedCount++
+          summary.updatedCount++
+          summary.statsByCollection.sinistros.updated++
         } else {
+          if (rowIdx % 10 === 0 || rowIdx === rows.length) {
+            onProgress?.(`Criando sinistros (${rowIdx}/${rows.length})...`)
+          }
           const created = await executeWithRetry(() => pb.collection('sinistros').create(payload))
-          existingSinMap.set(sinDedupeKey, created.id)
+          existingSinMap.set(sinDedupeKey, created as unknown as Record<string, unknown>)
+          createdCount++
+          summary.createdCount++
+          summary.statsByCollection.sinistros.created++
         }
         summary.sinistrosCount++
         processedCount++
@@ -896,11 +1131,17 @@ export async function processGuardiaWorkbook(
       totalRows: totalRawRows,
       processedRows: processedCount,
       ignoredRows: ignoredCount,
+      createdRows: createdCount,
+      updatedRows: updatedCount,
+      unchangedRows: unchangedCount,
     })
   }
 
+  // =========================================================================
   // 5. Matriz (formato pivotado/cruzado: Categoria x Apólice)
-  onProgress?.('Lendo aba Matriz (formato cruzado Categoria x Apólice)...')
+  // PAUSA DE RESPIRO DELIBERADA (3-5 segundos) antes de processar a Matriz
+  // para permitir que o rate limit do backend se recupere completamente.
+  // =========================================================================
   const sheetMatName = workbook.SheetNames.find((n) => normalizeHeader(n).includes('matriz'))
 
   // Keep track of matched matriz columns across scopes for reconciliation
@@ -908,20 +1149,30 @@ export async function processGuardiaWorkbook(
   let bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
 
   if (sheetMatName) {
+    onProgress?.(
+      'Aguardando antes de processar a Matriz (pausa de respiro para recuperação do rate limit)...',
+    )
+    await sleep(3500)
+    onProgress?.('Lendo aba Matriz (formato cruzado Categoria x Apólice)...')
+
     const sheet = workbook.Sheets[sheetMatName]
     const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
 
     // Build comprehensive lookup map from existing apólices in PB
-    // Maps various identifiers (id_apolice, numero_apolice, seguradora, ramo, nome_empreendimento) to apolice PB record ID
+    // NÃO FALHAR EM SILÊNCIO: Usar executeWithRetry e se falhar, ABORTAR a etapa da Matriz!
     const apoliceLookup = new Map<string, string>()
+    let apoliceFetchFailed = false
+    let apoliceFetchErrorMsg = ''
+
     try {
       const fullApols = await executeWithRetry(
         () =>
           pb.collection('apolices').getFullList({
             fields: 'id,id_apolice,numero_apolice,seguradora,ramo,id_empreendimento',
             expand: 'id_empreendimento',
+            batch: 200,
           }),
-        { throttleMs: 50 },
+        { throttleMs: 60, maxAttempts: 6, baseBackoffMs: 1500 },
       )
       for (const a of fullApols) {
         if (a.id_apolice) {
@@ -942,220 +1193,275 @@ export async function processGuardiaWorkbook(
           }
         }
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      apoliceFetchFailed = true
+      apoliceFetchErrorMsg = (err as Error).message || 'Falha de conexão / rate limit'
     }
+
     // Also merge from apoliceMap loaded during this run
-    for (const [idAp, recId] of apoliceMap.entries()) {
+    for (const [idAp, rec] of apoliceMap.entries()) {
+      const recId = String(rec.id)
       apoliceLookup.set(normalizeHeader(idAp), recId)
       apoliceLookup.set(idAp.trim().toLowerCase(), recId)
     }
 
-    // Deduplication map for matriz records
-    // Key: id_apolice_record + normalized_categoria
-    const existingMatMap = new Map<string, string>()
-    try {
-      const existingMats = await executeWithRetry(
-        () =>
-          pb.collection('matriz').getFullList({
-            fields: 'id,id_apolice,categoria_normalizada',
-          }),
-        { throttleMs: 50 },
-      )
-      for (const em of existingMats) {
-        const k = `${em.id_apolice}::${normalizeHeader(em.categoria_normalizada)}`
-        existingMatMap.set(k, em.id)
+    // Se a leitura falhou E não há apólices conhecidas para casar, ABORTAR a etapa da Matriz
+    if (apoliceFetchFailed && apoliceLookup.size === 0) {
+      const abortMsg = `Não foi possível carregar as apólices para vincular as colunas da Matriz (${apoliceFetchErrorMsg}) — nenhuma célula da Matriz foi gravada nesta rodada. Aguarde alguns instantes e reimporte.`
+      summary.errors.push(abortMsg)
+      summary.diagnostics.push({
+        sheetName: sheetMatName,
+        foundHeaderRowIndex: 0,
+        requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
+        foundKeys: [],
+        missingKeys: [abortMsg],
+        totalRows: rawGrid.length,
+        processedRows: 0,
+        ignoredRows: 0,
+        createdRows: 0,
+        updatedRows: 0,
+        unchangedRows: 0,
+        isPivoted: true,
+        categoriesCount: 0,
+        matchedColumnsCount: 0,
+        unmatchedColumnsCount: 0,
+        unmatchedColumns: [],
+      })
+    } else {
+      // Deduplication map for matriz records: key -> PB record
+      const existingMatMap = new Map<string, Record<string, unknown>>()
+      try {
+        const existingMats = await executeWithRetry(
+          () =>
+            pb.collection('matriz').getFullList({
+              fields: 'id,id_apolice,categoria_normalizada,lmi',
+              batch: 200,
+            }),
+          { throttleMs: 50, maxAttempts: 6 },
+        )
+        for (const em of existingMats) {
+          const k = `${em.id_apolice}::${normalizeHeader(em.categoria_normalizada)}`
+          existingMatMap.set(k, em as unknown as Record<string, unknown>)
+        }
+      } catch (err: unknown) {
+        summary.errors.push(
+          `Aviso: Não foi possível pré-carregar registros existentes da Matriz (${(err as Error).message}).`,
+        )
       }
-    } catch {
-      // ignore
-    }
 
-    // Step 5.1: Detect header row by scanning rows for the highest density of columns (and/or match with known apolice headers)
-    let bestMatchedCols = 0
-    bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
-    let bestUnmatchedColInfo: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
-      []
-
-    const scanLimit = Math.min(rawGrid.length, 15)
-    for (let r = 0; r < scanLimit; r++) {
-      const row = rawGrid[r]
-      if (!Array.isArray(row)) continue
-
-      let matchedCount = 0
-      const currentColMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
-      const currentUnmatched: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
+      // Step 5.1: Detect header row by scanning rows for the highest density of columns (and/or match with known apolice headers)
+      let bestMatchedCols = 0
+      bestColToApoliceMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
+      let bestUnmatchedColInfo: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
         []
 
-      // Column 0 is the category column. Columns 1..N are apolice columns.
-      for (let c = 1; c < row.length; c++) {
-        const cellVal = row[c]
-        if (cellVal === null || cellVal === undefined || String(cellVal).trim() === '') continue
-
-        const rawHeaderStr = String(cellVal).trim()
-        const normHeader = normalizeHeader(rawHeaderStr)
-        const isNum = typeof cellVal === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
-
-        // Try exact / normalized match
-        let matchedApId =
-          apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
-
-        // If not matched, try fuzzy match against known apolice identifiers
-        // IMPORTANT: Never fuzzy match numeric headers against apólices to avoid false positives!
-        if (!matchedApId && !isNum && normHeader.length >= 3) {
-          for (const [key, recId] of apoliceLookup.entries()) {
-            if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
-              matchedApId = recId
-              break
-            }
-          }
-        }
-
-        if (matchedApId) {
-          matchedCount++
-          currentColMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
-        } else {
-          currentUnmatched.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
-        }
-      }
-
-      if (matchedCount > bestMatchedCols) {
-        bestMatchedCols = matchedCount
-        bestHeaderRowIndex = r
-        bestColToApoliceMap = currentColMap
-        bestUnmatchedColInfo = currentUnmatched
-      }
-    }
-
-    // Fallback: If no apolice matched directly (e.g. apólices sheet was empty or headers use unfamiliar labels),
-    // find the first row after row 0 that has multiple columns filled (row 2 typically in Guardia V5)
-    if (bestHeaderRowIndex === -1 && rawGrid.length > 0) {
+      const scanLimit = Math.min(rawGrid.length, 15)
       for (let r = 0; r < scanLimit; r++) {
         const row = rawGrid[r]
         if (!Array.isArray(row)) continue
-        const filledCols = row.filter(
-          (v) => v !== null && v !== undefined && String(v).trim() !== '',
-        ).length
-        if (filledCols >= 5) {
-          bestHeaderRowIndex = r
-          break
-        }
-      }
-      if (bestHeaderRowIndex === -1) bestHeaderRowIndex = 0
 
-      // Re-populate bestColToApoliceMap for the fallback header row
-      const fallbackRow = rawGrid[bestHeaderRowIndex] || []
-      for (let c = 1; c < fallbackRow.length; c++) {
-        const rawHeaderStr = String(fallbackRow[c] || '').trim()
-        if (!rawHeaderStr) continue
-        const normHeader = normalizeHeader(rawHeaderStr)
-        const isNum = typeof fallbackRow[c] === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
-        let matchedApId =
-          apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
-        if (!matchedApId && !isNum && normHeader.length >= 3) {
-          for (const [key, recId] of apoliceLookup.entries()) {
-            if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
-              matchedApId = recId
-              break
+        let matchedCount = 0
+        const currentColMap = new Map<number, { apoliceRecordId: string; rawColName: string }>()
+        const currentUnmatched: Array<{ colIndex: number; rawHeader: string; isNumeric: boolean }> =
+          []
+
+        // Column 0 is the category column. Columns 1..N are apolice columns.
+        for (let c = 1; c < row.length; c++) {
+          const cellVal = row[c]
+          if (cellVal === null || cellVal === undefined || String(cellVal).trim() === '') continue
+
+          const rawHeaderStr = String(cellVal).trim()
+          const normHeader = normalizeHeader(rawHeaderStr)
+          const isNum = typeof cellVal === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
+
+          // Try exact / normalized match
+          let matchedApId =
+            apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
+
+          // If not matched, try fuzzy match against known apolice identifiers
+          // IMPORTANT: Never fuzzy match numeric headers against apólices to avoid false positives!
+          if (!matchedApId && !isNum && normHeader.length >= 3) {
+            for (const [key, recId] of apoliceLookup.entries()) {
+              if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
+                matchedApId = recId
+                break
+              }
             }
           }
+
+          if (matchedApId) {
+            matchedCount++
+            currentColMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
+          } else {
+            currentUnmatched.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
+          }
         }
-        if (matchedApId) {
-          bestColToApoliceMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
-        } else {
-          bestUnmatchedColInfo.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
+
+        if (matchedCount > bestMatchedCols) {
+          bestMatchedCols = matchedCount
+          bestHeaderRowIndex = r
+          bestColToApoliceMap = currentColMap
+          bestUnmatchedColInfo = currentUnmatched
         }
       }
-    }
 
-    let processedCount = 0
-    let ignoredCount = 0
-    let categoriesCount = 0
+      // Fallback: If no apolice matched directly (e.g. apólices sheet was empty or headers use unfamiliar labels),
+      // find the first row after row 0 that has multiple columns filled (row 2 typically in Guardia V5)
+      if (bestHeaderRowIndex === -1 && rawGrid.length > 0) {
+        for (let r = 0; r < scanLimit; r++) {
+          const row = rawGrid[r]
+          if (!Array.isArray(row)) continue
+          const filledCols = row.filter(
+            (v) => v !== null && v !== undefined && String(v).trim() !== '',
+          ).length
+          if (filledCols >= 5) {
+            bestHeaderRowIndex = r
+            break
+          }
+        }
+        if (bestHeaderRowIndex === -1) bestHeaderRowIndex = 0
 
-    // Step 5.2: Iterate through rows starting after headerRowIndex
-    for (let r = bestHeaderRowIndex + 1; r < rawGrid.length; r++) {
-      const row = rawGrid[r]
-      if (!Array.isArray(row)) continue
-
-      const rawCat = row[0]
-      if (rawCat === null || rawCat === undefined || String(rawCat).trim() === '') {
-        ignoredCount++
-        continue
+        // Re-populate bestColToApoliceMap for the fallback header row
+        const fallbackRow = rawGrid[bestHeaderRowIndex] || []
+        for (let c = 1; c < fallbackRow.length; c++) {
+          const rawHeaderStr = String(fallbackRow[c] || '').trim()
+          if (!rawHeaderStr) continue
+          const normHeader = normalizeHeader(rawHeaderStr)
+          const isNum = typeof fallbackRow[c] === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
+          let matchedApId =
+            apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
+          if (!matchedApId && !isNum && normHeader.length >= 3) {
+            for (const [key, recId] of apoliceLookup.entries()) {
+              if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
+                matchedApId = recId
+                break
+              }
+            }
+          }
+          if (matchedApId) {
+            bestColToApoliceMap.set(c, { apoliceRecordId: matchedApId, rawColName: rawHeaderStr })
+          } else {
+            bestUnmatchedColInfo.push({ colIndex: c, rawHeader: rawHeaderStr, isNumeric: isNum })
+          }
+        }
       }
 
-      const catStr = String(rawCat).trim()
-      categoriesCount++
+      let processedCount = 0
+      let ignoredCount = 0
+      let categoriesCount = 0
+      let createdCount = 0
+      let updatedCount = 0
+      let unchangedCount = 0
 
-      // For each matched apolice column, read cell value
-      for (const [colIdx, apInfo] of bestColToApoliceMap.entries()) {
-        const cellVal = row[colIdx]
-        const numVal = parseNumber(cellVal)
+      // Step 5.2: Iterate through rows starting after headerRowIndex
+      for (let r = bestHeaderRowIndex + 1; r < rawGrid.length; r++) {
+        const row = rawGrid[r]
+        if (!Array.isArray(row)) continue
 
-        // Non-negotiable rule: Células vazias/zeras NÃO geram registro (célula em branco = não contratada)
-        if (numVal === null || numVal === undefined || numVal <= 0) {
+        const rawCat = row[0]
+        if (rawCat === null || rawCat === undefined || String(rawCat).trim() === '') {
+          ignoredCount++
           continue
         }
 
-        const payload = {
-          categoria_normalizada: catStr,
-          id_apolice: apInfo.apoliceRecordId,
-          lmi: numVal,
-        }
+        const catStr = String(rawCat).trim()
+        categoriesCount++
 
-        const matDedupeKey = `${apInfo.apoliceRecordId}::${normalizeHeader(catStr)}`
-        const existingMatId = existingMatMap.get(matDedupeKey)
+        // For each matched apolice column, read cell value
+        for (const [colIdx, apInfo] of bestColToApoliceMap.entries()) {
+          const cellVal = row[colIdx]
+          const numVal = parseNumber(cellVal)
 
-        try {
-          if (existingMatId) {
-            await executeWithRetry(() => pb.collection('matriz').update(existingMatId, payload))
-          } else {
-            const created = await executeWithRetry(() => pb.collection('matriz').create(payload))
-            existingMatMap.set(matDedupeKey, created.id)
+          // Non-negotiable rule: Células vazias/zeras NÃO geram registro (célula em branco = não contratada)
+          if (numVal === null || numVal === undefined || numVal <= 0) {
+            continue
           }
-          summary.matrizCount++
-          processedCount++
-          if (processedCount % 20 === 0) {
-            onProgress?.(`Gravando matriz (${processedCount} células processadas)...`)
+
+          const payload = {
+            categoria_normalizada: catStr,
+            id_apolice: apInfo.apoliceRecordId,
+            lmi: numVal,
           }
-        } catch (err: unknown) {
-          summary.errors.push(
-            `Erro matriz (${catStr} / col ${apInfo.rawColName}): ${(err as Error).message}`,
-          )
+
+          const matDedupeKey = `${apInfo.apoliceRecordId}::${normalizeHeader(catStr)}`
+          const existingRecord = existingMatMap.get(matDedupeKey)
+
+          try {
+            if (existingRecord) {
+              const recordId = String(existingRecord.id)
+              // Compare before updating: skip write if already identical
+              if (isRecordIdentical(existingRecord, payload)) {
+                unchangedCount++
+                summary.unchangedCount++
+                summary.statsByCollection.matriz.unchanged++
+                summary.matrizCount++
+                processedCount++
+                continue
+              }
+
+              const updated = await executeWithRetry(() =>
+                pb.collection('matriz').update(recordId, payload),
+              )
+              existingMatMap.set(matDedupeKey, updated as unknown as Record<string, unknown>)
+              updatedCount++
+              summary.updatedCount++
+              summary.statsByCollection.matriz.updated++
+            } else {
+              const created = await executeWithRetry(() => pb.collection('matriz').create(payload))
+              existingMatMap.set(matDedupeKey, created as unknown as Record<string, unknown>)
+              createdCount++
+              summary.createdCount++
+              summary.statsByCollection.matriz.created++
+            }
+            summary.matrizCount++
+            processedCount++
+            if (processedCount % 20 === 0) {
+              onProgress?.(`Gravando matriz (${processedCount} células processadas)...`)
+            }
+          } catch (err: unknown) {
+            summary.errors.push(
+              `Erro matriz (${catStr} / col ${apInfo.rawColName}): ${(err as Error).message}`,
+            )
+          }
         }
       }
+
+      const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
+      const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
+
+      if (rawUnmatchedNames.length > 0) {
+        const numericNotice =
+          numericUnmatched.length > 0
+            ? ` (${numericUnmatched.length} coluna(s) possuem cabeçalho numérico que não identifica apólice: ${numericUnmatched.map((u) => `col ${u.colIndex + 1} "${u.rawHeader}"`).join(', ')})`
+            : ''
+        summary.errors.push(
+          `Aba Matriz: ${rawUnmatchedNames.length} coluna(s) sem apólice correspondente vinculada${numericNotice}.`,
+        )
+      }
+
+      summary.diagnostics.push({
+        sheetName: sheetMatName,
+        foundHeaderRowIndex: bestHeaderRowIndex + 1,
+        requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
+        foundKeys: [
+          `${bestColToApoliceMap.size} colunas de apólice vinculadas`,
+          `${categoriesCount} categorias lidas`,
+        ],
+        missingKeys:
+          bestColToApoliceMap.size === 0 ? ['Nenhuma apólice correspondente vinculada'] : [],
+        totalRows: rawGrid.length,
+        processedRows: processedCount,
+        ignoredRows: ignoredCount,
+        createdRows: createdCount,
+        updatedRows: updatedCount,
+        unchangedRows: unchangedCount,
+        isPivoted: true,
+        categoriesCount,
+        matchedColumnsCount: bestColToApoliceMap.size,
+        unmatchedColumnsCount: rawUnmatchedNames.length,
+        unmatchedColumns: rawUnmatchedNames,
+      })
     }
-
-    const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
-    const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
-
-    if (rawUnmatchedNames.length > 0) {
-      const numericNotice =
-        numericUnmatched.length > 0
-          ? ` (${numericUnmatched.length} coluna(s) possuem cabeçalho numérico que não identifica apólice: ${numericUnmatched.map((u) => `col ${u.colIndex + 1} "${u.rawHeader}"`).join(', ')})`
-          : ''
-      summary.errors.push(
-        `Aba Matriz: ${rawUnmatchedNames.length} coluna(s) sem apólice correspondente vinculada${numericNotice}.`,
-      )
-    }
-
-    summary.diagnostics.push({
-      sheetName: sheetMatName,
-      foundHeaderRowIndex: bestHeaderRowIndex + 1,
-      requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
-      foundKeys: [
-        `${bestColToApoliceMap.size} colunas de apólice vinculadas`,
-        `${categoriesCount} categorias lidas`,
-      ],
-      missingKeys:
-        bestColToApoliceMap.size === 0 ? ['Nenhuma apólice correspondente vinculada'] : [],
-      totalRows: rawGrid.length,
-      processedRows: processedCount,
-      ignoredRows: ignoredCount,
-      isPivoted: true,
-      categoriesCount,
-      matchedColumnsCount: bestColToApoliceMap.size,
-      unmatchedColumnsCount: rawUnmatchedNames.length,
-      unmatchedColumns: rawUnmatchedNames,
-    })
   } else {
     summary.diagnostics.push({
       sheetName: 'Matriz (não encontrada)',
@@ -1177,22 +1483,25 @@ export async function processGuardiaWorkbook(
     const sheet = workbook.Sheets[sheetNotName]
     const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
 
-    // Existing notas in PB to make import 100% idempotent
-    const existingNotasMap = new Map<string, string>() // normalized_titulo -> record ID
+    // Existing notas in PB to make import 100% idempotent: key -> PB record
+    const existingNotasMap = new Map<string, Record<string, unknown>>()
     try {
       const existingNotas = await executeWithRetry(
         () =>
           pb.collection('notas_base').getFullList({
             fields: 'id,titulo,conteudo',
+            batch: 200,
           }),
-        { throttleMs: 50 },
+        { throttleMs: 50, maxAttempts: 6 },
       )
       for (const en of existingNotas) {
         const k = normalizeHeader(en.titulo)
-        if (k) existingNotasMap.set(k, en.id)
+        if (k) existingNotasMap.set(k, en as unknown as Record<string, unknown>)
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      summary.errors.push(
+        `Aviso: Não foi possível pré-carregar notas existentes do banco (${(err as Error).message}).`,
+      )
     }
 
     // Determine if row 0 is header or note content
@@ -1214,6 +1523,9 @@ export async function processGuardiaWorkbook(
 
     let processedCount = 0
     let ignoredCount = 0
+    let createdCount = 0
+    let updatedCount = 0
+    let unchangedCount = 0
 
     for (let r = startRow; r < rawGrid.length; r++) {
       const row = rawGrid[r]
@@ -1229,25 +1541,38 @@ export async function processGuardiaWorkbook(
 
       const noteTitle = (titulo || conteudo.slice(0, 100)).slice(0, 200)
       const noteNormKey = normalizeHeader(noteTitle)
-      const existingNoteId = existingNotasMap.get(noteNormKey)
+      const payload = {
+        titulo: noteTitle,
+        conteudo,
+      }
+      const existingRecord = existingNotasMap.get(noteNormKey)
 
       try {
-        if (existingNoteId) {
-          // Update existing note instead of creating duplicate
-          await executeWithRetry(() =>
-            pb.collection('notas_base').update(existingNoteId, {
-              titulo: noteTitle,
-              conteudo,
-            }),
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          // Compare before updating: skip write if already identical
+          if (isRecordIdentical(existingRecord, payload)) {
+            unchangedCount++
+            summary.unchangedCount++
+            summary.statsByCollection.notas_base.unchanged++
+            summary.notasCount++
+            processedCount++
+            continue
+          }
+
+          const updated = await executeWithRetry(() =>
+            pb.collection('notas_base').update(recordId, payload),
           )
+          existingNotasMap.set(noteNormKey, updated as unknown as Record<string, unknown>)
+          updatedCount++
+          summary.updatedCount++
+          summary.statsByCollection.notas_base.updated++
         } else {
-          const created = await executeWithRetry(() =>
-            pb.collection('notas_base').create({
-              titulo: noteTitle,
-              conteudo,
-            }),
-          )
-          existingNotasMap.set(noteNormKey, created.id)
+          const created = await executeWithRetry(() => pb.collection('notas_base').create(payload))
+          existingNotasMap.set(noteNormKey, created as unknown as Record<string, unknown>)
+          createdCount++
+          summary.createdCount++
+          summary.statsByCollection.notas_base.created++
         }
         summary.notasCount++
         processedCount++
@@ -1265,6 +1590,9 @@ export async function processGuardiaWorkbook(
       totalRows: rawGrid.length,
       processedRows: processedCount,
       ignoredRows: ignoredCount,
+      createdRows: createdCount,
+      updatedRows: updatedCount,
+      unchangedRows: unchangedCount,
     })
   }
 
@@ -1273,20 +1601,68 @@ export async function processGuardiaWorkbook(
   if (sheetRastName) {
     onProgress?.('Lendo aba Rastreabilidade...')
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetRastName])
+
+    // Load existing rastreabilidade to avoid re-recording identical
+    const existingRastMap = new Map<string, Record<string, unknown>>()
+    try {
+      const existingRasts = await executeWithRetry(
+        () => pb.collection('rastreabilidade').getFullList({ batch: 200 }),
+        { throttleMs: 50, maxAttempts: 6 },
+      )
+      for (const er of existingRasts) {
+        const k = `${normalizeHeader(er.tabela)}::${normalizeHeader(er.registro)}::${normalizeHeader(er.campos)}`
+        existingRastMap.set(k, er as unknown as Record<string, unknown>)
+      }
+    } catch {
+      // ignore
+    }
+
     for (const r of rows) {
+      const tabela = String(r['tabela'] || '').trim()
+      const registro = String(r['registro'] || '').trim()
+      const campos = String(r['campos'] || '').trim()
+      const valor_atual = String(r['valor_atual'] || '').trim()
+      const documento_fonte = String(r['documento_fonte'] || '').trim()
+      const localizacao_no_documento = String(r['localizacao_no_documento'] || '').trim()
+      const confianca = String(r['confianca'] || 'Direto do documento').trim()
+
+      const payload = {
+        tabela,
+        registro,
+        campos,
+        valor_atual,
+        documento_fonte,
+        localizacao_no_documento,
+        confianca,
+        imported_by: currentUserEmail,
+      }
+
+      const dedupeKey = `${normalizeHeader(tabela)}::${normalizeHeader(registro)}::${normalizeHeader(campos)}`
+      const existingRecord = existingRastMap.get(dedupeKey)
+
       try {
-        await executeWithRetry(() =>
-          pb.collection('rastreabilidade').create({
-            tabela: String(r['tabela'] || '').trim(),
-            registro: String(r['registro'] || '').trim(),
-            campos: String(r['campos'] || '').trim(),
-            valor_atual: String(r['valor_atual'] || '').trim(),
-            documento_fonte: String(r['documento_fonte'] || '').trim(),
-            localizacao_no_documento: String(r['localizacao_no_documento'] || '').trim(),
-            confianca: String(r['confianca'] || 'Direto do documento').trim(),
-            imported_by: currentUserEmail,
-          }),
-        )
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          if (isRecordIdentical(existingRecord, payload)) {
+            summary.unchangedCount++
+            summary.statsByCollection.rastreabilidade.unchanged++
+            summary.rastreabilidadeCount++
+            continue
+          }
+          const updated = await executeWithRetry(() =>
+            pb.collection('rastreabilidade').update(recordId, payload),
+          )
+          existingRastMap.set(dedupeKey, updated as unknown as Record<string, unknown>)
+          summary.updatedCount++
+          summary.statsByCollection.rastreabilidade.updated++
+        } else {
+          const created = await executeWithRetry(() =>
+            pb.collection('rastreabilidade').create(payload),
+          )
+          existingRastMap.set(dedupeKey, created as unknown as Record<string, unknown>)
+          summary.createdCount++
+          summary.statsByCollection.rastreabilidade.created++
+        }
         summary.rastreabilidadeCount++
       } catch (err: unknown) {
         summary.errors.push(`Erro rastreabilidade: ${(err as Error).message}`)
@@ -1299,20 +1675,63 @@ export async function processGuardiaWorkbook(
   if (sheetDivName) {
     onProgress?.('Lendo aba Divergências...')
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetDivName])
+
+    // Load existing divergencias to avoid re-recording identical
+    const existingDivMap = new Map<string, Record<string, unknown>>()
+    try {
+      const existingDivs = await executeWithRetry(
+        () => pb.collection('divergencias').getFullList({ batch: 200 }),
+        { throttleMs: 50, maxAttempts: 6 },
+      )
+      for (const ed of existingDivs) {
+        const k = `${ed.id_empreendimento}::${normalizeHeader(ed.campo)}`
+        existingDivMap.set(k, ed as unknown as Record<string, unknown>)
+      }
+    } catch {
+      // ignore
+    }
+
     for (const d of rows) {
       const idEmp = String(d['id_empreendimento'] || '').trim()
-      const empRecordId = empMap.get(idEmp) || null
+      const empRecord = empMap.get(idEmp)
+      const empRecordId = empRecord ? String(empRecord.id) : null
+      const campo = String(d['campo'] || '').trim()
+
+      const payload = {
+        id_empreendimento: empRecordId,
+        campo,
+        valor_cartao_risco: String(d['valor_cartao_risco'] || '').trim(),
+        valor_final_apolice: String(d['valor_final_apolice'] || '').trim(),
+        apolice_referencia: String(d['apolice_referencia'] || '').trim(),
+        observacao: String(d['observacao'] || '').trim(),
+      }
+
+      const dedupeKey = `${empRecordId}::${normalizeHeader(campo)}`
+      const existingRecord = existingDivMap.get(dedupeKey)
+
       try {
-        await executeWithRetry(() =>
-          pb.collection('divergencias').create({
-            id_empreendimento: empRecordId,
-            campo: String(d['campo'] || '').trim(),
-            valor_cartao_risco: String(d['valor_cartao_risco'] || '').trim(),
-            valor_final_apolice: String(d['valor_final_apolice'] || '').trim(),
-            apolice_referencia: String(d['apolice_referencia'] || '').trim(),
-            observacao: String(d['observacao'] || '').trim(),
-          }),
-        )
+        if (existingRecord) {
+          const recordId = String(existingRecord.id)
+          if (isRecordIdentical(existingRecord, payload)) {
+            summary.unchangedCount++
+            summary.statsByCollection.divergencias.unchanged++
+            summary.divergenciasCount++
+            continue
+          }
+          const updated = await executeWithRetry(() =>
+            pb.collection('divergencias').update(recordId, payload),
+          )
+          existingDivMap.set(dedupeKey, updated as unknown as Record<string, unknown>)
+          summary.updatedCount++
+          summary.statsByCollection.divergencias.updated++
+        } else {
+          const created = await executeWithRetry(() =>
+            pb.collection('divergencias').create(payload),
+          )
+          existingDivMap.set(dedupeKey, created as unknown as Record<string, unknown>)
+          summary.createdCount++
+          summary.statsByCollection.divergencias.created++
+        }
         summary.divergenciasCount++
       } catch (err: unknown) {
         summary.errors.push(`Erro divergência: ${(err as Error).message}`)
@@ -1346,7 +1765,8 @@ export async function processGuardiaWorkbook(
   if (sheetCobName && cobExtraction) {
     for (const c of cobExtraction.rows) {
       const idApol = String(c['id_apolice'] || '').trim()
-      const apoliceRecordId = apoliceMap.get(idApol)
+      const apoliceRecord = apoliceMap.get(idApol)
+      const apoliceRecordId = apoliceRecord ? String(apoliceRecord.id) : null
       const nomeCob = String(c['nome_cobertura'] || '').trim()
       if (!idApol || !apoliceRecordId || !nomeCob) continue
 
@@ -1470,9 +1890,11 @@ export async function processGuardiaWorkbook(
           maxAttempts: 6,
         })
         totalReconciled++
+        summary.createdCount++
+        summary.statsByCollection.coberturas.created++
         summary.coberturasCount++
         liveCobMap.set(cobItem.dedupeKey, 'created')
-      } catch (err: unknown) {
+      } catch {
         // will retry on next pass or report if persistent
       }
     }
@@ -1487,9 +1909,11 @@ export async function processGuardiaWorkbook(
           maxAttempts: 6,
         })
         totalReconciled++
+        summary.createdCount++
+        summary.statsByCollection.matriz.created++
         summary.matrizCount++
         liveMatMap.set(matItem.dedupeKey, 'created')
-      } catch (err: unknown) {
+      } catch {
         // will retry on next pass or report if persistent
       }
     }
