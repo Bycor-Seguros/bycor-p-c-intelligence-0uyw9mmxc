@@ -1158,12 +1158,74 @@ export async function processGuardiaWorkbook(
     const sheet = workbook.Sheets[sheetMatName]
     const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
 
-    // Build comprehensive lookup map from existing apólices in PB
-    // NÃO FALHAR EM SILÊNCIO: Usar executeWithRetry e se falhar, ABORTAR a etapa da Matriz!
+    // Build comprehensive lookup map from existing apólices in PB and apoliceMap/empMap
+    // Tornar o apoliceLookup independente da releitura frágil:
+    // 1) Construir chaves a partir de apoliceMap e empMap da rodada atual
+    // 2) Tentar enriquecer com releitura de apolices do PB com retry reforçado
     const apoliceLookup = new Map<string, string>()
     let apoliceFetchFailed = false
     let apoliceFetchErrorMsg = ''
 
+    // Helper para registrar variantes de identificadores no lookup
+    const registerApoliceInLookup = (
+      apId: string,
+      idApoliceVal?: unknown,
+      numApoliceVal?: unknown,
+      seguradoraVal?: unknown,
+      empNameVal?: unknown,
+    ) => {
+      if (idApoliceVal) {
+        const idStr = String(idApoliceVal).trim()
+        apoliceLookup.set(normalizeHeader(idStr), apId)
+        apoliceLookup.set(idStr.toLowerCase(), apId)
+      }
+      if (numApoliceVal) {
+        const numStr = String(numApoliceVal).trim()
+        apoliceLookup.set(normalizeHeader(numStr), apId)
+        apoliceLookup.set(numStr.toLowerCase(), apId)
+      }
+      if (empNameVal) {
+        const empStr = String(empNameVal).trim()
+        apoliceLookup.set(normalizeHeader(empStr), apId)
+        apoliceLookup.set(empStr.toLowerCase(), apId)
+        if (seguradoraVal) {
+          const segStr = String(seguradoraVal).trim()
+          apoliceLookup.set(normalizeHeader(`${empStr} ${segStr}`), apId)
+          apoliceLookup.set(`${empStr.toLowerCase()} ${segStr.toLowerCase()}`, apId)
+        }
+      }
+    }
+
+    // Primeiro, preencher apoliceLookup a partir de apoliceMap e empMap da própria rodada.
+    // Isso garante que mesmo se getFullList falhar por 429, todas as chaves (inclusive nome do empreendimento
+    // e "nome do empreendimento + seguradora") já estarão disponíveis.
+    for (const [idAp, rec] of apoliceMap.entries()) {
+      const recId = String(rec.id)
+      const numApol = rec.numero_apolice
+      const seguradora = rec.seguradora
+      const idEmp = rec.id_empreendimento ? String(rec.id_empreendimento).trim() : ''
+
+      // Tentar resolver o nome do empreendimento via empMap
+      let empName: string | undefined
+      if (idEmp) {
+        const empRec = empMap.get(idEmp)
+        if (empRec) {
+          empName = (empRec.nome_empreendimento as string) || (empRec.id_empreendimento as string)
+        } else {
+          // empMap pode ter sido indexado por id_empreendimento original, tentar busca por id do registro
+          for (const e of empMap.values()) {
+            if (String(e.id) === idEmp || String(e.id_empreendimento) === idEmp) {
+              empName = (e.nome_empreendimento as string) || (e.id_empreendimento as string)
+              break
+            }
+          }
+        }
+      }
+
+      registerApoliceInLookup(recId, idAp, numApol, seguradora, empName)
+    }
+
+    // Segundo, tentar reforçar com a releitura completa do PB usando executeWithRetry com maxAttempts 6 e throttle
     try {
       const fullApols = await executeWithRetry(
         () =>
@@ -1175,34 +1237,13 @@ export async function processGuardiaWorkbook(
         { throttleMs: 60, maxAttempts: 6, baseBackoffMs: 1500 },
       )
       for (const a of fullApols) {
-        if (a.id_apolice) {
-          apoliceLookup.set(normalizeHeader(a.id_apolice), a.id)
-          apoliceLookup.set(String(a.id_apolice).trim().toLowerCase(), a.id)
-        }
-        if (a.numero_apolice) {
-          apoliceLookup.set(normalizeHeader(a.numero_apolice), a.id)
-          apoliceLookup.set(String(a.numero_apolice).trim().toLowerCase(), a.id)
-        }
-        // Expand empreendimento name if available
         const empName = (a.expand as { id_empreendimento?: { nome_empreendimento?: string } })
           ?.id_empreendimento?.nome_empreendimento
-        if (empName) {
-          apoliceLookup.set(normalizeHeader(empName), a.id)
-          if (a.seguradora) {
-            apoliceLookup.set(normalizeHeader(`${empName} ${a.seguradora}`), a.id)
-          }
-        }
+        registerApoliceInLookup(a.id, a.id_apolice, a.numero_apolice, a.seguradora, empName)
       }
     } catch (err: unknown) {
       apoliceFetchFailed = true
       apoliceFetchErrorMsg = (err as Error).message || 'Falha de conexão / rate limit'
-    }
-
-    // Also merge from apoliceMap loaded during this run
-    for (const [idAp, rec] of apoliceMap.entries()) {
-      const recId = String(rec.id)
-      apoliceLookup.set(normalizeHeader(idAp), recId)
-      apoliceLookup.set(idAp.trim().toLowerCase(), recId)
     }
 
     // Se a leitura falhou E não há apólices conhecidas para casar, ABORTAR a etapa da Matriz
@@ -1346,121 +1387,177 @@ export async function processGuardiaWorkbook(
         }
       }
 
-      let processedCount = 0
-      let ignoredCount = 0
-      let categoriesCount = 0
-      let createdCount = 0
-      let updatedCount = 0
-      let unchangedCount = 0
+      // DETECÇÃO DE CASAMENTO DEGENERADO:
+      // Contar quantas colunas preenchidas existem na linha de cabeçalho vs quantas casaram.
+      // Se a fração casada for implausivelmente baixa (< 40% das colunas preenchidas casaram,
+      // sendo que há apólices conhecidas no lookup), tratar como falha de casamento:
+      // NÃO gravar células nesta rodada, NÃO empurrar "N coluna(s) sem apólice" como erro residual,
+      // e em vez disso empurrar uma mensagem clara e acionável.
+      const headerRow = rawGrid[bestHeaderRowIndex] || []
+      const filledHeaderCols = (Array.isArray(headerRow) ? headerRow : [])
+        .slice(1)
+        .filter((v) => v !== null && v !== undefined && String(v).trim() !== '').length
+      const matchedColsCount = bestColToApoliceMap.size
+      const matchRatio = filledHeaderCols > 0 ? matchedColsCount / filledHeaderCols : 0
 
-      // Step 5.2: Iterate through rows starting after headerRowIndex
-      for (let r = bestHeaderRowIndex + 1; r < rawGrid.length; r++) {
-        const row = rawGrid[r]
-        if (!Array.isArray(row)) continue
+      const isDegenerateMatch =
+        apoliceLookup.size > 0 &&
+        filledHeaderCols >= 5 &&
+        (matchedColsCount === 0 || matchRatio < 0.4)
 
-        const rawCat = row[0]
-        if (rawCat === null || rawCat === undefined || String(rawCat).trim() === '') {
-          ignoredCount++
-          continue
-        }
+      if (isDegenerateMatch) {
+        const degenerateMsg = `Não foi possível vincular as colunas da Matriz às apólices nesta rodada (casamento degenerado: apenas ${matchedColsCount} de ${filledHeaderCols} colunas casadas) — nenhuma célula gravada; aguarde alguns instantes e reimporte.`
+        summary.errors.push(degenerateMsg)
+        summary.diagnostics.push({
+          sheetName: sheetMatName,
+          foundHeaderRowIndex: bestHeaderRowIndex + 1,
+          requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
+          foundKeys: [`${matchedColsCount} de ${filledHeaderCols} colunas reconhecidas`],
+          missingKeys: [degenerateMsg],
+          totalRows: rawGrid.length,
+          processedRows: 0,
+          ignoredRows: 0,
+          createdRows: 0,
+          updatedRows: 0,
+          unchangedRows: 0,
+          isPivoted: true,
+          categoriesCount: 0,
+          matchedColumnsCount: matchedColsCount,
+          unmatchedColumnsCount: bestUnmatchedColInfo.length,
+          unmatchedColumns: bestUnmatchedColInfo.map((u) => u.rawHeader),
+        })
+      } else {
+        let processedCount = 0
+        let ignoredCount = 0
+        let categoriesCount = 0
+        let createdCount = 0
+        let updatedCount = 0
+        let unchangedCount = 0
 
-        const catStr = String(rawCat).trim()
-        categoriesCount++
+        // Step 5.2: Iterate through rows starting after headerRowIndex
+        for (let r = bestHeaderRowIndex + 1; r < rawGrid.length; r++) {
+          const row = rawGrid[r]
+          if (!Array.isArray(row)) continue
 
-        // For each matched apolice column, read cell value
-        for (const [colIdx, apInfo] of bestColToApoliceMap.entries()) {
-          const cellVal = row[colIdx]
-          const numVal = parseNumber(cellVal)
-
-          // Non-negotiable rule: Células vazias/zeras NÃO geram registro (célula em branco = não contratada)
-          if (numVal === null || numVal === undefined || numVal <= 0) {
+          const rawCat = row[0]
+          if (rawCat === null || rawCat === undefined || String(rawCat).trim() === '') {
+            ignoredCount++
             continue
           }
 
-          const payload = {
-            categoria_normalizada: catStr,
-            id_apolice: apInfo.apoliceRecordId,
-            lmi: numVal,
-          }
+          const catStr = String(rawCat).trim()
+          categoriesCount++
 
-          const matDedupeKey = `${apInfo.apoliceRecordId}::${normalizeHeader(catStr)}`
-          const existingRecord = existingMatMap.get(matDedupeKey)
+          // For each matched apolice column, read cell value
+          for (const [colIdx, apInfo] of bestColToApoliceMap.entries()) {
+            const cellVal = row[colIdx]
+            const numVal = parseNumber(cellVal)
 
-          try {
-            if (existingRecord) {
-              const recordId = String(existingRecord.id)
-              // Compare before updating: skip write if already identical
-              if (isRecordIdentical(existingRecord, payload)) {
-                unchangedCount++
-                summary.unchangedCount++
-                summary.statsByCollection.matriz.unchanged++
-                summary.matrizCount++
-                processedCount++
-                continue
+            // Non-negotiable rule: Células vazias/zeras NÃO geram registro (célula em branco = não contratada)
+            if (numVal === null || numVal === undefined || numVal <= 0) {
+              continue
+            }
+
+            const payload = {
+              categoria_normalizada: catStr,
+              id_apolice: apInfo.apoliceRecordId,
+              lmi: numVal,
+            }
+
+            const matDedupeKey = `${apInfo.apoliceRecordId}::${normalizeHeader(catStr)}`
+            const existingRecord = existingMatMap.get(matDedupeKey)
+
+            try {
+              if (existingRecord) {
+                const recordId = String(existingRecord.id)
+                // Compare before updating: skip write if already identical
+                if (isRecordIdentical(existingRecord, payload)) {
+                  unchangedCount++
+                  summary.unchangedCount++
+                  summary.statsByCollection.matriz.unchanged++
+                  summary.matrizCount++
+                  processedCount++
+                  continue
+                }
+
+                const updated = await executeWithRetry(() =>
+                  pb.collection('matriz').update(recordId, payload),
+                )
+                existingMatMap.set(matDedupeKey, updated as unknown as Record<string, unknown>)
+                updatedCount++
+                summary.updatedCount++
+                summary.statsByCollection.matriz.updated++
+              } else {
+                const created = await executeWithRetry(() =>
+                  pb.collection('matriz').create(payload),
+                )
+                existingMatMap.set(matDedupeKey, created as unknown as Record<string, unknown>)
+                createdCount++
+                summary.createdCount++
+                summary.statsByCollection.matriz.created++
               }
-
-              const updated = await executeWithRetry(() =>
-                pb.collection('matriz').update(recordId, payload),
+              summary.matrizCount++
+              processedCount++
+              if (processedCount % 20 === 0) {
+                onProgress?.(`Gravando matriz (${processedCount} células processadas)...`)
+              }
+            } catch (err: unknown) {
+              summary.errors.push(
+                `Erro matriz (${catStr} / col ${apInfo.rawColName}): ${(err as Error).message}`,
               )
-              existingMatMap.set(matDedupeKey, updated as unknown as Record<string, unknown>)
-              updatedCount++
-              summary.updatedCount++
-              summary.statsByCollection.matriz.updated++
-            } else {
-              const created = await executeWithRetry(() => pb.collection('matriz').create(payload))
-              existingMatMap.set(matDedupeKey, created as unknown as Record<string, unknown>)
-              createdCount++
-              summary.createdCount++
-              summary.statsByCollection.matriz.created++
             }
-            summary.matrizCount++
-            processedCount++
-            if (processedCount % 20 === 0) {
-              onProgress?.(`Gravando matriz (${processedCount} células processadas)...`)
-            }
-          } catch (err: unknown) {
-            summary.errors.push(
-              `Erro matriz (${catStr} / col ${apInfo.rawColName}): ${(err as Error).message}`,
-            )
           }
         }
-      }
 
-      const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
-      const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
+        const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
+        const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
+        const nonNumericUnmatched = bestUnmatchedColInfo.filter((u) => !u.isNumeric)
 
-      if (rawUnmatchedNames.length > 0) {
-        const numericNotice =
-          numericUnmatched.length > 0
-            ? ` (${numericUnmatched.length} coluna(s) possuem cabeçalho numérico que não identifica apólice: ${numericUnmatched.map((u) => `col ${u.colIndex + 1} "${u.rawHeader}"`).join(', ')})`
-            : ''
-        summary.errors.push(
-          `Aba Matriz: ${rawUnmatchedNames.length} coluna(s) sem apólice correspondente vinculada${numericNotice}.`,
-        )
-      }
+        // Item 5: As colunas de cabeçalho puramente numérico (ex.: 500000, 50000, 5353500, 200000, 250000)
+        // continuam sendo ignoradas no casamento e são reportadas de forma explicada no diagnóstico
+        // (como colunas de valores/totais), mas agora NÃO devem entrar na contagem de "colunas sem apólice"
+        // que vira erro residual — ou seja, a mensagem de erro residual deve contar apenas colunas NÃO numéricas não casadas;
+        // as numéricas ficam apenas como nota informativa no diagnóstico.
+        if (nonNumericUnmatched.length > 0) {
+          summary.errors.push(
+            `Aba Matriz: ${nonNumericUnmatched.length} coluna(s) sem apólice correspondente vinculada.`,
+          )
+        }
 
-      summary.diagnostics.push({
-        sheetName: sheetMatName,
-        foundHeaderRowIndex: bestHeaderRowIndex + 1,
-        requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
-        foundKeys: [
+        const diagKeys = [
           `${bestColToApoliceMap.size} colunas de apólice vinculadas`,
           `${categoriesCount} categorias lidas`,
-        ],
-        missingKeys:
-          bestColToApoliceMap.size === 0 ? ['Nenhuma apólice correspondente vinculada'] : [],
-        totalRows: rawGrid.length,
-        processedRows: processedCount,
-        ignoredRows: ignoredCount,
-        createdRows: createdCount,
-        updatedRows: updatedCount,
-        unchangedRows: unchangedCount,
-        isPivoted: true,
-        categoriesCount,
-        matchedColumnsCount: bestColToApoliceMap.size,
-        unmatchedColumnsCount: rawUnmatchedNames.length,
-        unmatchedColumns: rawUnmatchedNames,
-      })
+        ]
+        if (numericUnmatched.length > 0) {
+          diagKeys.push(
+            `${numericUnmatched.length} coluna(s) com cabeçalho numérico/totais identificadas e desconsideradas para vínculo`,
+          )
+        }
+
+        summary.diagnostics.push({
+          sheetName: sheetMatName,
+          foundHeaderRowIndex: bestHeaderRowIndex + 1,
+          requiredKeys: ['Formato Pivotado (Categoria x Apólice)'],
+          foundKeys: diagKeys,
+          missingKeys:
+            bestColToApoliceMap.size === 0
+              ? ['Nenhuma apólice correspondente vinculada']
+              : nonNumericUnmatched.length > 0
+                ? nonNumericUnmatched.map((u) => `Coluna sem apólice: "${u.rawHeader}"`)
+                : [],
+          totalRows: rawGrid.length,
+          processedRows: processedCount,
+          ignoredRows: ignoredCount,
+          createdRows: createdCount,
+          updatedRows: updatedCount,
+          unchangedRows: unchangedCount,
+          isPivoted: true,
+          categoriesCount,
+          matchedColumnsCount: bestColToApoliceMap.size,
+          unmatchedColumnsCount: nonNumericUnmatched.length,
+          unmatchedColumns: rawUnmatchedNames,
+        })
+      }
     }
   } else {
     summary.diagnostics.push({
