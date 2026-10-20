@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { processGuardiaWorkbook, ImportSummary } from '@/services/guardiaImporter'
+import { clearGuardiaImportedData, ClearDatabaseResult } from '@/services/guardiaCleaner'
 import {
   FileSpreadsheet,
   UploadCloud,
@@ -15,6 +16,10 @@ import {
   Database,
   ArrowUpRight,
   Info,
+  Trash2,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,6 +59,18 @@ export default function RecebimentoPage() {
   const [importProgress, setImportProgress] = useState('')
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+
+  // Clear database state (Admin only)
+  const [clearModalOpen, setClearModalOpen] = useState(false)
+  const [confirmClearInput, setConfirmClearInput] = useState('')
+  const [clearing, setClearing] = useState(false)
+  const [clearResult, setClearResult] = useState<ClearDatabaseResult | null>(null)
+
+  const isAdmin =
+    user?.role === 'admin' ||
+    user?.email === 'admin@bycor.com.br' ||
+    user?.email === 'marcos@bycor.com.br'
 
   // Manual upload state
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -126,6 +143,25 @@ export default function RecebimentoPage() {
     }
   }
 
+  const handleClearDatabase = async () => {
+    if (confirmClearInput.trim().toUpperCase() !== 'LIMPAR') {
+      alert('Digite LIMPAR para confirmar a exclusão.')
+      return
+    }
+
+    try {
+      setClearing(true)
+      const res = await clearGuardiaImportedData()
+      setClearResult(res)
+      setConfirmClearInput('')
+      fetchDocuments()
+    } catch (err: unknown) {
+      alert('Erro ao limpar base: ' + (err as Error).message)
+    } finally {
+      setClearing(false)
+    }
+  }
+
   const handleManualUpload = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!manualFile) return
@@ -178,6 +214,7 @@ export default function RecebimentoPage() {
           <Button
             onClick={() => {
               setImportSummary(null)
+              setShowDiagnostics(false)
               setImportModalOpen(true)
             }}
             className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
@@ -194,6 +231,21 @@ export default function RecebimentoPage() {
             <Plus className="w-4 h-4" />
             <span>Upload manual</span>
           </Button>
+
+          {isAdmin && (
+            <Button
+              onClick={() => {
+                setClearResult(null)
+                setConfirmClearInput('')
+                setClearModalOpen(true)
+              }}
+              variant="outline"
+              className="text-xs font-medium h-10 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Limpar base importada</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -420,48 +472,131 @@ export default function RecebimentoPage() {
                   </p>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <div className="text-lg font-bold text-[#0F2B46]">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-center">
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
                     {importSummary.empreendimentosCount}
                   </div>
-                  <div className="text-[10px] text-gray-500 uppercase font-semibold">
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Empreendimentos
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <div className="text-lg font-bold text-[#0F2B46]">
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
                     {importSummary.apolicesCount}
                   </div>
-                  <div className="text-[10px] text-gray-500 uppercase font-semibold">Apólices</div>
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
+                    Apólices
+                  </div>
                 </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <div className="text-lg font-bold text-[#0F2B46]">
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
                     {importSummary.coberturasCount}
                   </div>
-                  <div className="text-[10px] text-gray-500 uppercase font-semibold">
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
                     Coberturas
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <div className="text-lg font-bold text-[#0F2B46]">
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
                     {importSummary.sinistrosCount}
                   </div>
-                  <div className="text-[10px] text-gray-500 uppercase font-semibold">Sinistros</div>
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
+                    Sinistros
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
+                    {importSummary.matrizCount}
+                  </div>
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
+                    Matriz
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-base font-bold text-[#0F2B46]">
+                    {importSummary.notasCount}
+                  </div>
+                  <div className="text-[9px] text-gray-500 uppercase font-semibold truncate">
+                    Notas
+                  </div>
                 </div>
               </div>
-
               {importSummary.ignoredRowsCount > 0 && (
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
                     {importSummary.ignoredRowsCount} linha(s) ignorada(s) por ausência de chave
-                    identificadora.
+                    identificadora ou vínculo não encontrado.
                   </span>
                 </div>
               )}
+              {/* Diagnostic per Sheet */}
+              {importSummary.diagnostics && importSummary.diagnostics.length > 0 && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowDiagnostics(!showDiagnostics)}
+                    className="w-full bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-700 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                  >
+                    <span>
+                      Diagnóstico de Colunas-Chave por Aba ({importSummary.diagnostics.length})
+                    </span>
+                    {showDiagnostics ? (
+                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                  </button>
 
+                  {showDiagnostics && (
+                    <div className="p-3 bg-white space-y-2.5 max-h-60 overflow-y-auto text-xs">
+                      {importSummary.diagnostics.map((diag, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded border border-gray-100 bg-gray-50/70 space-y-1"
+                        >
+                          <div className="flex items-center justify-between font-semibold text-gray-800">
+                            <span>{diag.sheetName}</span>
+                            <span className="text-[11px] text-gray-500 font-normal">
+                              Linha de Cabeçalho:{' '}
+                              {diag.foundHeaderRowIndex > 0
+                                ? `Linha ${diag.foundHeaderRowIndex}`
+                                : 'Não identificada'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
+                            <span>
+                              Linhas processadas: <strong>{diag.processedRows}</strong>
+                            </span>
+                            <span>
+                              Linhas ignoradas: <strong>{diag.ignoredRows}</strong>
+                            </span>
+                          </div>
+                          <div className="text-[11px]">
+                            <span className="text-gray-500">Chaves requeridas: </span>
+                            {diag.requiredKeys.map((k) => {
+                              const isFound = !diag.missingKeys.includes(k)
+                              return (
+                                <span
+                                  key={k}
+                                  className={`inline-block mr-1 px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                                    isFound
+                                      ? 'bg-emerald-100 text-emerald-800 font-medium'
+                                      : 'bg-red-100 text-red-800 font-bold'
+                                  }`}
+                                >
+                                  {k} {isFound ? '✓' : '✗ ausente'}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {importSummary.errors.length > 0 && (
                 <div className="max-h-32 overflow-y-auto p-2 bg-red-50 rounded text-[11px] text-red-700 space-y-1">
                   {importSummary.errors.map((err, i) => (
@@ -469,7 +604,6 @@ export default function RecebimentoPage() {
                   ))}
                 </div>
               )}
-
               <div className="pt-2 flex justify-end gap-2">
                 <Button
                   onClick={() => {
@@ -479,6 +613,156 @@ export default function RecebimentoPage() {
                   className="bg-[#0F2B46] text-xs h-9"
                 >
                   Fechar e Visualizar
+                </Button>
+              </div>{' '}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: Limpar Base Importada (Admin Only) */}
+      <Dialog open={clearModalOpen} onOpenChange={setClearModalOpen}>
+        <DialogContent className="max-w-md animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-red-600">
+              <ShieldAlert className="w-5 h-5" />
+              <span>Limpar Base Importada (Guardia)</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Esta ação apaga todos os dados importados das coleções da base técnica respeitando a
+              integridade referencial.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!clearResult ? (
+            <div className="space-y-4 pt-2">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 space-y-2">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>Atenção: Ação irreversível!</span>
+                </div>
+                <p>
+                  Serão excluídos os registros de{' '}
+                  <strong>
+                    Matriz, Coberturas, Sinistros, Notas, Divergências, Rastreabilidade, Apólices e
+                    Empreendimentos
+                  </strong>
+                  .
+                </p>
+                <p className="text-[11px] text-red-700">
+                  Usuários, contas, documentos avulsos, RFQ, propostas e histórico{' '}
+                  <strong>NÃO</strong> serão afetados.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Para confirmar, digite{' '}
+                  <span className="font-mono text-red-600 font-bold">LIMPAR</span> abaixo:
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="LIMPAR"
+                  value={confirmClearInput}
+                  onChange={(e) => setConfirmClearInput(e.target.value)}
+                  className="h-9 text-xs font-mono"
+                  disabled={clearing}
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setClearModalOpen(false)}
+                  disabled={clearing}
+                  className="text-xs h-9"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleClearDatabase}
+                  disabled={confirmClearInput.trim().toUpperCase() !== 'LIMPAR' || clearing}
+                  className="bg-red-600 hover:bg-red-700 text-white text-xs h-9"
+                >
+                  {clearing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Confirmar Exclusão
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-2">
+              <div
+                className={`p-3 rounded-lg border text-xs ${clearResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
+              >
+                <div className="font-bold flex items-center gap-1.5">
+                  {clearResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  )}
+                  <span>
+                    {clearResult.success
+                      ? 'Base importada limpa com sucesso!'
+                      : 'Limpeza concluída com observações'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-xs space-y-1.5 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                <div className="font-semibold text-gray-700 mb-2">
+                  Registros apagados por coleção:
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-600">
+                  <div>
+                    Matriz: <strong>{clearResult.counts.matriz}</strong>
+                  </div>
+                  <div>
+                    Coberturas: <strong>{clearResult.counts.coberturas}</strong>
+                  </div>
+                  <div>
+                    Sinistros: <strong>{clearResult.counts.sinistros}</strong>
+                  </div>
+                  <div>
+                    Notas da Base: <strong>{clearResult.counts.notas_base}</strong>
+                  </div>
+                  <div>
+                    Divergências: <strong>{clearResult.counts.divergencias}</strong>
+                  </div>
+                  <div>
+                    Rastreabilidade: <strong>{clearResult.counts.rastreabilidade}</strong>
+                  </div>
+                  <div>
+                    Apólices: <strong>{clearResult.counts.apolices}</strong>
+                  </div>
+                  <div>
+                    Empreendimentos: <strong>{clearResult.counts.empreendimentos}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {clearResult.errors.length > 0 && (
+                <div className="max-h-24 overflow-y-auto p-2 bg-red-50 rounded text-[11px] text-red-700 space-y-1">
+                  {clearResult.errors.map((err, idx) => (
+                    <div key={idx}>{err}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end">
+                <Button
+                  onClick={() => {
+                    setClearModalOpen(false)
+                    setClearResult(null)
+                  }}
+                  className="bg-[#0F2B46] text-xs h-9"
+                >
+                  Concluir
                 </Button>
               </div>
             </div>
