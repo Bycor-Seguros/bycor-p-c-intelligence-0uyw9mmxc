@@ -245,7 +245,7 @@ export default function CarteiraPage() {
             className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-xs h-9 font-semibold text-white flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Importar Guardia</span>
+            <span>Importar Base Hotéis e Resorts</span>
           </Button>
         </div>
       </div>
@@ -332,14 +332,14 @@ export default function CarteiraPage() {
             <h3 className="text-sm font-bold text-gray-800">Nenhuma apólice registrada</h3>
             <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
               {apolices.length === 0
-                ? 'Nenhum dado importado — use o importador para carregar a base Guardia (.xlsx).'
+                ? 'Nenhum dado importado — use o importador para carregar a Base Hotéis e Resorts (.xlsx).'
                 : 'Nenhum resultado corresponde aos filtros aplicados.'}
             </p>
             {apolices.length === 0 && (
               <Link to="/c1-recebimento">
                 <Button className="mt-4 bg-[#0F2B46] text-xs h-9">
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Ir para Importador Guardia
+                  Ir para Importador Base Hotéis e Resorts
                 </Button>
               </Link>
             )}

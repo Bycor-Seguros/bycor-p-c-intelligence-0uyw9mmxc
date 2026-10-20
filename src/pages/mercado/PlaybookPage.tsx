@@ -274,7 +274,7 @@ export default function PlaybookPage() {
                   to="/c1-recebimento"
                   className="text-[#16578B] font-semibold underline mt-1 block"
                 >
-                  Importar base Guardia no Módulo C1
+                  Importar Base Hotéis e Resorts no Módulo C1
                 </Link>
               </div>
             ) : (

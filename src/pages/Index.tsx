@@ -253,7 +253,7 @@ export default function DashboardHome() {
             className="bg-white hover:bg-gray-100 text-[#0F2B46] font-semibold text-xs h-10 px-4 shadow"
           >
             <FileSpreadsheet className="w-4 h-4 mr-2 text-[#16578B]" />
-            Importar Base Guardia
+            Importar Base Hotéis e Resorts
           </Button>
           <Button
             onClick={() => fetchDashboardData()}
@@ -484,7 +484,7 @@ export default function DashboardHome() {
                 <FileSpreadsheet className="w-8 h-8 mb-2 opacity-50" />
                 <p className="text-xs font-medium">Nenhuma apólice registrada para exibição</p>
                 <Link to="/c1-recebimento" className="text-xs text-[#16578B] underline mt-1">
-                  Importar planilha Guardia
+                  Importar Base Hotéis e Resorts
                 </Link>
               </div>
             ) : (
@@ -581,7 +581,7 @@ export default function DashboardHome() {
             <h4 className="text-sm font-semibold text-gray-700">Nenhuma apólice nesta categoria</h4>
             <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
               {apolices.length === 0
-                ? 'Nenhum dado importado — use o importador in-app no Módulo C1 para carregar a base Guardia.'
+                ? 'Nenhum dado importado — use o importador in-app no Módulo C1 para carregar a Base Hotéis e Resorts.'
                 : 'Não há apólices com vigência correspondente ao filtro selecionado.'}
             </p>
             {apolices.length === 0 && (

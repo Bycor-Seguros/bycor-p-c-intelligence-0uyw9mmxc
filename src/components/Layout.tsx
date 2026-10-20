@@ -352,7 +352,7 @@ export default function Layout() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate('/c1-recebimento')}>
                   <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />
-                  Importador Guardia
+                  Importador Base Hotéis e Resorts
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-600">

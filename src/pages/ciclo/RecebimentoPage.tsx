@@ -129,7 +129,7 @@ export default function RecebimentoPage() {
         const formData = new FormData()
         formData.append('arquivo', file)
         formData.append('tipo', 'Cartão de Risco')
-        formData.append('versao', 'Importação Guardia')
+        formData.append('versao', 'Importação Base Hotéis e Resorts')
         formData.append('data', new Date().toISOString().slice(0, 10))
         await pb.collection('documentos').create(formData)
         fetchDocuments()
@@ -200,12 +200,12 @@ export default function RecebimentoPage() {
               Módulo C1
             </span>
             <h2 className="text-xl font-bold text-gray-900">
-              Recebimento de Documentos & Base Guardia
+              Recebimento de Documentos & Base Hotéis e Resorts
             </h2>
           </div>
           <p className="text-xs text-gray-500 mt-1 max-w-2xl">
             Central de ingestão de cartões de risco, questionários QAR e apólices. Realize a
-            importação da base unificada Guardia diretamente pelo navegador sem persistência
+            importação da Base Hotéis e Resorts diretamente pelo navegador sem persistência
             arbitrária de código.
           </p>
         </div>
@@ -220,7 +220,7 @@ export default function RecebimentoPage() {
             className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Importar base Guardia (Excel)</span>
+            <span>Importar Base Hotéis e Resorts (XLSX)</span>
           </Button>
 
           <Button
@@ -254,7 +254,7 @@ export default function RecebimentoPage() {
         <Info className="w-5 h-5 text-[#16578B] shrink-0 mt-0.5" />
         <div className="text-xs text-gray-700 leading-relaxed">
           <strong className="text-[#0F2B46]">Importação In-App Segura:</strong> Ao arrastar a
-          planilha da base Guardia, o sistema parseia automaticamente as abas{' '}
+          planilha da Base Hotéis e Resorts, o sistema parseia automaticamente as abas{' '}
           <em>Empreendimentos, Apólices, Coberturas, Sinistros, Matriz e Notas</em> no seu
           navegador, calculando o LMI da cobertura básica de incêndio e a razão LMI / Valor em Risco
           DM. Registros existentes são atualizados de forma idempotente.
@@ -310,15 +310,15 @@ export default function RecebimentoPage() {
               Nenhum documento ou dado importado
             </h3>
             <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
-              Utilize o botão acima para importar a base Guardia (.xlsx) ou adicione documentos
-              avulsos para iniciar a gestão técnica do ciclo P&C.
+              Utilize o botão acima para importar a Base Hotéis e Resorts (.xlsx) ou adicione
+              documentos avulsos para iniciar a gestão técnica do ciclo P&C.
             </p>
             <Button
               onClick={() => setImportModalOpen(true)}
               className="mt-4 bg-[#0F2B46] text-xs h-9"
             >
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Carregar planilha Guardia
+              Carregar planilha Base Hotéis e Resorts
             </Button>
           </div>
         ) : (
@@ -380,17 +380,17 @@ export default function RecebimentoPage() {
         )}
       </div>
 
-      {/* MODAL: Importador da Base Guardia */}
+      {/* MODAL: Importador da Base Hotéis e Resorts */}
       <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
         <DialogContent className="max-w-xl animate-scale-in">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg text-gray-900">
               <FileSpreadsheet className="w-5 h-5 text-[#16578B]" />
-              <span>Importador da Base Guardia</span>
+              <span>Importador da Base Hotéis e Resorts</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Arraste ou selecione a planilha completa (.xlsx) contendo as abas Empreendimentos,
-              Apólices, Coberturas, Sinistros e Matriz.
+              Arraste ou selecione a planilha completa (.xlsx) da Base Hotéis e Resorts contendo as
+              abas Empreendimentos, Apólices, Coberturas, Sinistros e Matriz.
             </DialogDescription>
           </DialogHeader>
 
@@ -626,10 +626,10 @@ export default function RecebimentoPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-red-600">
               <ShieldAlert className="w-5 h-5" />
-              <span>Limpar Base Importada (Guardia)</span>
+              <span>Limpar Base Importada (Base Hotéis e Resorts)</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Esta ação apaga todos os dados importados das coleções da base técnica respeitando a
+              Esta ação apaga todos os dados importados da Base Hotéis e Resorts respeitando a
               integridade referencial.
             </DialogDescription>
           </DialogHeader>
