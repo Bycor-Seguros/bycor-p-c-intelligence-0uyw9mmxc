@@ -1,0 +1,1051 @@
+import * as XLSX from 'xlsx'
+import pb from '@/lib/pocketbase/client'
+import { formatCurrency, formatCnpj, formatDate } from '@/lib/formatters'
+
+export interface SubmissionKitField {
+  id: string
+  label: string
+  value: string
+  categoria:
+    | 'Empreendimento'
+    | 'VRD e Valores'
+    | 'Construção e Riscos'
+    | 'Proteções'
+    | 'Coberturas'
+    | 'Sinistros'
+    | 'SLA e Processo'
+  destaque?: boolean
+}
+
+export interface SubmissionKitCobertura {
+  nome: string
+  categoriaNormalizada: string
+  isAtual: number | null
+  isAtualizada: number | null
+  isEscolhida: number | null
+  franquiaPos: string
+  observacao: string
+}
+
+export interface SubmissionKitSinistro {
+  origemPeriodo: string
+  dataSinistro: string
+  numeroSinistro: string
+  coberturaAcionada: string
+  descricao: string
+  valorIndenizadoRs: number | null
+  status: string
+}
+
+export interface SubmissionKitData {
+  rfqId: string
+  rfqCode: string
+  dataEnvio: string
+  prazoLimite: string
+  statusRfq: string
+  observacoesRfq: string
+  seguradorasConsultadas: Array<{ id: string; nome: string }>
+
+  // Empreendimento
+  empreendimentoId: string
+  nomeEmpreendimento: string
+  razaoSocial: string
+  cnpj: string
+  cosseguradosNome: string
+  cosseguradosCnpj: string
+  endereco: string
+  cidade: string
+  uf: string
+  atividade: string
+  atividadeExercida: string
+  anoInicioAtividades: number | null
+  anoConstrucao: number | null
+  areaConstruidaM2: number | null
+  areaTerrenoM2: number | null
+  numAndares: number | null
+  numUnidades: number | null
+  numFuncionarios: number | null
+  faturamento12m: number | null
+  tipoConstrucao: string
+  distBombeirosKm: number | null
+  reservaAguaIncendioM3: number | null
+
+  // Proteções
+  protecoes: Record<string, boolean>
+
+  // VRD
+  vrdPredio: number | null
+  vrdConteudo: number | null
+  vrdLucrosCessantes: number | null
+  vrdTotal: number | null
+  percentualIncc: number | null
+  inccLabel: string
+  tipoCobertura: string // 'Prédio' | 'Conteúdo' | 'Prédio + Conteúdo'
+
+  // Apólice anterior / Cotação
+  apoliceAnteriorSeguradora: string
+  apoliceAnteriorNumero: string
+  ramo: string
+  vigenciaInicio: string
+  vigenciaFim: string
+
+  // Coberturas
+  coberturas: SubmissionKitCobertura[]
+
+  // Sinistros
+  sinistros: SubmissionKitSinistro[]
+
+  // Lista linear de campos para cópia rápida
+  fields: SubmissionKitField[]
+}
+
+/**
+ * Carrega e sintetiza todos os dados do banco para o Kit de Submissão de um determinado RFQ
+ */
+export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKitData> {
+  const rfqRecord = await pb.collection('rfq').getOne(rfqId, {
+    expand: 'conta_empreendimento,seguradoras_solicitadas',
+  })
+
+  const empId = rfqRecord.conta_empreendimento || ''
+
+  let emp: Record<string, unknown> = {}
+  if (empId) {
+    try {
+      emp = (await pb.collection('empreendimentos').getOne(empId)) as unknown as Record<
+        string,
+        unknown
+      >
+    } catch (err) {
+      console.warn('Empreendimento não localizado:', err)
+    }
+  }
+
+  // Busca seguradoras solicitadas
+  const seguradorasList: Array<{ id: string; nome: string }> = []
+  if (
+    Array.isArray(rfqRecord.seguradoras_solicitadas) &&
+    rfqRecord.seguradoras_solicitadas.length > 0
+  ) {
+    try {
+      const allSegs = await pb.collection('seguradoras').getFullList<{ id: string; nome: string }>()
+      const map = new Map(allSegs.map((s) => [s.id, s.nome]))
+      for (const sId of rfqRecord.seguradoras_solicitadas) {
+        seguradorasList.push({
+          id: sId,
+          nome: map.get(sId) || `Seguradora ${sId.slice(0, 5)}`,
+        })
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar nomes de seguradoras:', err)
+    }
+  }
+
+  // Busca apólices associadas ao empreendimento (ordenadas pela mais recente)
+  let apolices: Array<Record<string, unknown>> = []
+  if (empId) {
+    try {
+      apolices = (await pb.collection('apolices').getFullList({
+        filter: `id_empreendimento="${empId}"`,
+        sort: '-created',
+      })) as unknown as Array<Record<string, unknown>>
+    } catch (err) {
+      console.warn('Erro ao carregar apólices do empreendimento:', err)
+    }
+  }
+
+  const apolicePrincipal = apolices[0] || {}
+
+  // Busca coberturas
+  const coberturasList: SubmissionKitCobertura[] = []
+  if (apolices.length > 0) {
+    const apoliceIds = apolices.map((a) => a.id)
+    try {
+      // PocketBase filter com múltiplos IDs
+      const filterExpr = apoliceIds.map((id) => `id_apolice="${id}"`).join(' || ')
+      const cobs = await pb.collection('coberturas').getFullList<Record<string, unknown>>({
+        filter: filterExpr,
+        sort: 'categoria_normalizada',
+      })
+      const seenCob = new Set<string>()
+      for (const c of cobs) {
+        const catKey = String(c.categoria_normalizada || c.nome_cobertura || '').trim()
+        if (catKey && !seenCob.has(catKey)) {
+          seenCob.add(catKey)
+          coberturasList.push({
+            nome: String(c.nome_cobertura || catKey),
+            categoriaNormalizada: catKey,
+            isAtual: typeof c.lmi_rs === 'number' ? c.lmi_rs : null,
+            isAtualizada: typeof c.is_atualizada === 'number' ? c.is_atualizada : null,
+            isEscolhida: typeof c.is_escolhida === 'number' ? c.is_escolhida : null,
+            franquiaPos: String(c.franquia_pos || '').trim(),
+            observacao: String(c.observacao || '').trim(),
+          })
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar coberturas:', err)
+    }
+  }
+
+  // Busca sinistros
+  const sinistrosList: SubmissionKitSinistro[] = []
+  if (empId) {
+    try {
+      const sins = await pb.collection('sinistros').getFullList<Record<string, unknown>>({
+        filter: `id_empreendimento="${empId}"`,
+        sort: '-data_sinistro',
+      })
+      for (const s of sins) {
+        sinistrosList.push({
+          origemPeriodo: String(s.origem_periodo || ''),
+          dataSinistro: String(s.data_sinistro || ''),
+          numeroSinistro: String(s.numero_sinistro || ''),
+          coberturaAcionada: String(s.cobertura_acionada || 'Sinistro Declarado'),
+          descricao: String(s.descricao || ''),
+          valorIndenizadoRs:
+            typeof s.valor_indenizado_rs === 'number' ? s.valor_indenizado_rs : null,
+          status: String(s.status || 'Liquidado'),
+        })
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar sinistros:', err)
+    }
+  }
+
+  // Proteções
+  const protecoes: Record<string, boolean> = {
+    Extintores: Boolean(emp.prot_extintores),
+    Hidrantes: Boolean(emp.prot_hidrantes),
+    Sprinklers: Boolean(emp.prot_sprinklers),
+    'Detectores de Fumaça': Boolean(emp.prot_detector_fumaca),
+    'Alarme de Incêndio': Boolean(emp.prot_alarme_incendio),
+    'Brigada de Incêndio': Boolean(emp.prot_brigada_incendio),
+    'Pára-raios (SPDA)': Boolean(emp.prot_pararraios),
+    'Vigilância Patrimonial': Boolean(emp.prot_vigilancia),
+    'Vigilância Armada': Boolean(emp.prot_vigilancia_armada),
+    'Vigilância 24h': Boolean(emp.vigilancia_24h),
+    'Alarme de Roubo': Boolean(emp.prot_alarme_roubo),
+    'CFTV (Câmeras)': Boolean(emp.prot_cftv),
+    'Controle de Acesso / Entrada': Boolean(emp.prot_controle_entrada),
+    Cofres: Boolean(emp.prot_cofres),
+    'Cerca Elétrica': Boolean(emp.prot_cerca_eletrica),
+    'Grade de Proteção': Boolean(emp.prot_grade_protecao),
+    Piscina: Boolean(emp.possui_piscina),
+    Elevadores: Boolean(emp.possui_elevador),
+  }
+
+  // VRD
+  const vrdDm =
+    typeof apolicePrincipal.valor_em_risco_dm === 'number'
+      ? apolicePrincipal.valor_em_risco_dm
+      : null
+  const vrdLc =
+    typeof apolicePrincipal.valor_em_risco_lc === 'number'
+      ? apolicePrincipal.valor_em_risco_lc
+      : null
+  const vrdTotal = vrdDm !== null || vrdLc !== null ? (vrdDm || 0) + (vrdLc || 0) : null
+
+  const ramo = String(apolicePrincipal.ramo || 'Riscos Nomeados')
+  let tipoCob = 'Prédio + Conteúdo'
+  if (ramo.toLowerCase().includes('prédio') && !ramo.toLowerCase().includes('conteúdo')) {
+    tipoCob = 'Prédio'
+  } else if (ramo.toLowerCase().includes('conteúdo') && !ramo.toLowerCase().includes('prédio')) {
+    tipoCob = 'Conteúdo'
+  }
+
+  const fields: SubmissionKitField[] = []
+  const addField = (
+    label: string,
+    val: string | number | null | undefined,
+    categoria: SubmissionKitField['categoria'],
+    destaque = false,
+  ) => {
+    if (val === null || val === undefined) return
+    const strVal = String(val).trim()
+    if (!strVal || strVal === '—' || strVal === '0') return
+    fields.push({
+      id: `${categoria}_${label}`.replace(/\s+/g, '_').toLowerCase(),
+      label,
+      value: strVal,
+      categoria,
+      destaque,
+    })
+  }
+
+  // Empreendimento
+  addField(
+    'Razão Social',
+    (emp.razao_social as string) || (emp.nome_empreendimento as string),
+    'Empreendimento',
+    true,
+  )
+  addField(
+    'Nome Fantasia / Empreendimento',
+    emp.nome_empreendimento as string,
+    'Empreendimento',
+    true,
+  )
+  addField('CNPJ', formatCnpj(emp.cnpj as string), 'Empreendimento', true)
+  addField('Cossegurado (Razão Social)', emp.cossegurado_nome as string, 'Empreendimento')
+  addField('Cossegurado (CNPJ)', formatCnpj(emp.cossegurado_cnpj as string), 'Empreendimento')
+  addField('Endereço do Risco', emp.endereco as string, 'Empreendimento', true)
+  addField(
+    'Cidade / UF',
+    emp.cidade && emp.uf ? `${emp.cidade}/${emp.uf}` : (emp.cidade as string) || (emp.uf as string),
+    'Empreendimento',
+  )
+  addField('Atividade Principal (CNAE)', emp.atividade as string, 'Empreendimento')
+  addField('Atividade Exercida no Local', emp.atividade_exercida as string, 'Empreendimento', true)
+  addField('Segmento', (emp.segmento as string) || 'Hotéis & Resorts', 'Empreendimento')
+  addField('Ano Início Atividades', emp.ano_inicio_atividades as number, 'Empreendimento')
+  addField('Número de Funcionários', emp.num_funcionarios as number, 'Empreendimento')
+  if (typeof emp.faturamento_12m_rs === 'number' && emp.faturamento_12m_rs > 0) {
+    addField('Faturamento 12 Meses', formatCurrency(emp.faturamento_12m_rs), 'Empreendimento')
+  }
+
+  // VRD e Valores
+  addField('Tipo de Cobertura Solicitada', tipoCob, 'VRD e Valores', true)
+  addField('VRD Danos Materiais (Prédio/Conteúdo)', formatCurrency(vrdDm), 'VRD e Valores', true)
+  if (vrdLc) {
+    addField('VRD Lucros Cessantes', formatCurrency(vrdLc), 'VRD e Valores', true)
+  }
+  addField('VRD Total Declarado', formatCurrency(vrdTotal), 'VRD e Valores', true)
+  if (apolicePrincipal.lmi_incendio_basica) {
+    addField(
+      'LMI Básica Solicitada',
+      formatCurrency(apolicePrincipal.lmi_incendio_basica as number),
+      'VRD e Valores',
+      true,
+    )
+  }
+
+  // Construção e Riscos
+  addField('Tipo de Construção', emp.tipo_construcao as string, 'Construção e Riscos', true)
+  addField('Ano de Construção', emp.ano_construcao as number, 'Construção e Riscos')
+  addField(
+    'Área Construída (m²)',
+    emp.area_construida_m2 ? `${emp.area_construida_m2} m²` : null,
+    'Construção e Riscos',
+  )
+  addField(
+    'Área do Terreno (m²)',
+    emp.area_terreno_m2 ? `${emp.area_terreno_m2} m²` : null,
+    'Construção e Riscos',
+  )
+  addField('Número de Andares / Pavimentos', emp.num_andares as number, 'Construção e Riscos')
+  addField('Número de Unidades / UH / Quartos', emp.num_unidades as number, 'Construção e Riscos')
+  addField('Número de Elevadores', emp.num_elevadores as number, 'Construção e Riscos')
+  addField('Vagas de Estacionamento', emp.vagas_estacionamento as number, 'Construção e Riscos')
+  addField(
+    'Distância Corpo de Bombeiros (km)',
+    emp.dist_bombeiros_km ? `${emp.dist_bombeiros_km} km` : null,
+    'Construção e Riscos',
+  )
+  addField(
+    'Reserva Técnica de Incêndio (m³)',
+    emp.reserva_agua_incendio_m3 ? `${emp.reserva_agua_incendio_m3} m³` : null,
+    'Construção e Riscos',
+  )
+
+  // Proteções ativas
+  const ativas = Object.entries(protecoes)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+  if (ativas.length > 0) {
+    addField('Proteções e Prevenções Presentes', ativas.join('; '), 'Proteções', true)
+    for (const [protNome, ativa] of Object.entries(protecoes)) {
+      if (ativa) {
+        addField(protNome, 'Sim / Instalado', 'Proteções')
+      }
+    }
+  }
+
+  // SLA e Processo
+  addField('RFQ ID', `RFQ-${rfqRecord.id.slice(0, 6).toUpperCase()}`, 'SLA e Processo')
+  addField('Data de Envio do RFQ', formatDate(rfqRecord.data_envio), 'SLA e Processo')
+  addField(
+    'Prazo Limite para Cotação (SLA)',
+    formatDate(rfqRecord.prazo_limite),
+    'SLA e Processo',
+    true,
+  )
+  if (seguradorasList.length > 0) {
+    addField(
+      'Seguradoras Consultadas',
+      seguradorasList.map((s) => s.nome).join(', '),
+      'SLA e Processo',
+    )
+  }
+  if (rfqRecord.observacoes) {
+    addField('Observações Técnicas do RFQ', rfqRecord.observacoes, 'SLA e Processo')
+  }
+  if (apolicePrincipal.numero_apolice) {
+    addField('Apólice Atual / Anterior', String(apolicePrincipal.numero_apolice), 'SLA e Processo')
+  }
+  if (apolicePrincipal.seguradora) {
+    addField('Seguradora Atual / Anterior', String(apolicePrincipal.seguradora), 'SLA e Processo')
+  }
+
+  // Coberturas destacadas
+  for (const cob of coberturasList) {
+    const isVal = cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual
+    if (isVal && isVal > 0) {
+      const extraFranquia = cob.franquiaPos ? ` (POS: ${cob.franquiaPos})` : ''
+      addField(cob.nome, `${formatCurrency(isVal)}${extraFranquia}`, 'Coberturas')
+    }
+  }
+
+  // Sinistros resumidos
+  if (sinistrosList.length === 0) {
+    addField('Histórico de Sinistros (5 anos)', 'Sem sinistros informados no período', 'Sinistros')
+  } else {
+    addField(
+      'Histórico de Sinistros (Qtd)',
+      `${sinistrosList.length} sinistro(s) registrado(s)`,
+      'Sinistros',
+      true,
+    )
+    sinistrosList.forEach((s, idx) => {
+      const valorStr = s.valorIndenizadoRs
+        ? ` - Indenizado: ${formatCurrency(s.valorIndenizadoRs)}`
+        : ''
+      addField(
+        `Sinistro #${idx + 1} (${s.coberturaAcionada})`,
+        `${formatDate(s.dataSinistro)} - ${s.descricao || s.coberturaAcionada}${valorStr} [${s.status}]`,
+        'Sinistros',
+      )
+    })
+  }
+
+  return {
+    rfqId: rfqRecord.id,
+    rfqCode: `RFQ-${rfqRecord.id.slice(0, 6).toUpperCase()}`,
+    dataEnvio: rfqRecord.data_envio || '',
+    prazoLimite: rfqRecord.prazo_limite || '',
+    statusRfq: rfqRecord.status || 'Aberto',
+    observacoesRfq: rfqRecord.observacoes || '',
+    seguradorasConsultadas: seguradorasList,
+
+    empreendimentoId: empId,
+    nomeEmpreendimento: (emp.nome_empreendimento as string) || 'Empreendimento não informado',
+    razaoSocial: (emp.razao_social as string) || (emp.nome_empreendimento as string) || '',
+    cnpj: (emp.cnpj as string) || '',
+    cosseguradosNome: (emp.cossegurado_nome as string) || '',
+    cosseguradosCnpj: (emp.cossegurado_cnpj as string) || '',
+    endereco: (emp.endereco as string) || '',
+    cidade: (emp.cidade as string) || '',
+    uf: (emp.uf as string) || '',
+    atividade: (emp.atividade as string) || '',
+    atividadeExercida: (emp.atividade_exercida as string) || '',
+    anoInicioAtividades:
+      typeof emp.ano_inicio_atividades === 'number' ? emp.ano_inicio_atividades : null,
+    anoConstrucao: typeof emp.ano_construcao === 'number' ? emp.ano_construcao : null,
+    areaConstruidaM2: typeof emp.area_construida_m2 === 'number' ? emp.area_construida_m2 : null,
+    areaTerrenoM2: typeof emp.area_terreno_m2 === 'number' ? emp.area_terreno_m2 : null,
+    numAndares: typeof emp.num_andares === 'number' ? emp.num_andares : null,
+    numUnidades: typeof emp.num_unidades === 'number' ? emp.num_unidades : null,
+    numFuncionarios: typeof emp.num_funcionarios === 'number' ? emp.num_funcionarios : null,
+    faturamento12m: typeof emp.faturamento_12m_rs === 'number' ? emp.faturamento_12m_rs : null,
+    tipoConstrucao: (emp.tipo_construcao as string) || '',
+    distBombeirosKm: typeof emp.dist_bombeiros_km === 'number' ? emp.dist_bombeiros_km : null,
+    reservaAguaIncendioM3:
+      typeof emp.reserva_agua_incendio_m3 === 'number' ? emp.reserva_agua_incendio_m3 : null,
+
+    protecoes,
+    vrdPredio: vrdDm,
+    vrdConteudo: null,
+    vrdLucrosCessantes: vrdLc,
+    vrdTotal,
+    percentualIncc: null,
+    inccLabel: '',
+    tipoCobertura: tipoCob,
+
+    apoliceAnteriorSeguradora: (apolicePrincipal.seguradora as string) || '',
+    apoliceAnteriorNumero: (apolicePrincipal.numero_apolice as string) || '',
+    ramo,
+    vigenciaInicio: (apolicePrincipal.data_inicio as string) || '',
+    vigenciaFim: (apolicePrincipal.data_fim as string) || '',
+
+    coberturas: coberturasList,
+    sinistros: sinistrosList,
+    fields,
+  }
+}
+
+/**
+ * Gera e dispara download da planilha XLSX padronizada para upload em portais de seguradoras
+ */
+export function generateSubmissionKitXlsx(data: SubmissionKitData): void {
+  const wb = XLSX.utils.book_new()
+
+  // ABA 1: RESUMO DO PEDIDO DE COTAÇÃO
+  const resumoRows: (string | number)[][] = [
+    ['BYCOR P&C INTELLIGENCE — KIT DE SUBMISSÃO DE RFQ PARA PORTAIS'],
+    ['Código RFQ', data.rfqCode],
+    ['Data de Envio', formatDate(data.dataEnvio)],
+    ['Prazo Limite SLA', formatDate(data.prazoLimite)],
+    ['Status', data.statusRfq],
+    [
+      'Seguradoras Consultadas',
+      data.seguradorasConsultadas.map((s) => s.nome).join(', ') || 'Todas as parceiras',
+    ],
+    ['Observações Técnicas', data.observacoesRfq || 'Nenhuma observação informada.'],
+    [],
+    ['DADOS CADASTRAIS DO SEGURADO'],
+    ['Razão Social', data.razaoSocial],
+    ['Nome Fantasia / Empreendimento', data.nomeEmpreendimento],
+    ['CNPJ', formatCnpj(data.cnpj)],
+    ['Cossegurado (Razão Social)', data.cosseguradosNome || 'Não há'],
+    ['Cossegurado (CNPJ)', formatCnpj(data.cosseguradosCnpj) || 'Não há'],
+    ['Endereço do Risco', data.endereco],
+    ['Cidade / UF', data.cidade ? `${data.cidade}/${data.uf}` : data.uf || '—'],
+    ['Atividade (CNAE)', data.atividade],
+    ['Atividade Exercida no Local', data.atividadeExercida],
+    ['Ano Início das Atividades', data.anoInicioAtividades || '—'],
+    ['Número de Funcionários', data.numFuncionarios || '—'],
+    ['Faturamento 12 Meses', data.faturamento12m ? formatCurrency(data.faturamento12m) : '—'],
+    [],
+    ['VALORES EM RISCO DECLARADOS (VRD)'],
+    ['Tipo de Cobertura Solicitada', data.tipoCobertura],
+    [
+      'VRD Danos Materiais (Prédio/Conteúdo)',
+      data.vrdPredio ? formatCurrency(data.vrdPredio) : '—',
+    ],
+    [
+      'VRD Lucros Cessantes',
+      data.vrdLucrosCessantes ? formatCurrency(data.vrdLucrosCessantes) : '—',
+    ],
+    ['VRD Total Declarado', data.vrdTotal ? formatCurrency(data.vrdTotal) : '—'],
+    ['Apólice Vigente / Anterior', data.apoliceAnteriorNumero || '—'],
+    ['Seguradora Vigente', data.apoliceAnteriorSeguradora || '—'],
+  ]
+  const wsResumo = XLSX.utils.aoa_to_sheet(resumoRows)
+  wsResumo['!cols'] = [{ wch: 35 }, { wch: 60 }]
+  XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo do Pedido')
+
+  // ABA 2: DADOS TÉCNICOS E CONSTRUÇÃO
+  const dadosTecnicosRows: (string | number)[][] = [
+    ['PARÂMETRO CONSTRUTIVO / PROTEÇÃO', 'VALOR / SITUAÇÃO'],
+    ['Tipo de Construção', data.tipoConstrucao || '—'],
+    ['Ano de Construção', data.anoConstrucao || '—'],
+    ['Área Construída (m²)', data.areaConstruidaM2 || '—'],
+    ['Área do Terreno (m²)', data.areaTerrenoM2 || '—'],
+    ['Número de Andares / Pavimentos', data.numAndares || '—'],
+    ['Número de Unidades / UH / Quartos', data.numUnidades || '—'],
+    ['Vagas de Estacionamento', data.numUnidades || '—'],
+    [
+      'Distância do Corpo de Bombeiros (km)',
+      data.distBombeirosKm ? `${data.distBombeirosKm} km` : '—',
+    ],
+    [
+      'Reserva Técnica de Água para Incêndio (m³)',
+      data.reservaAguaIncendioM3 ? `${data.reservaAguaIncendioM3} m³` : '—',
+    ],
+    [],
+    ['PROTEÇÕES E SISTEMAS DE SEGURANÇA', 'INSTALADO / ATIVO'],
+  ]
+  for (const [prot, ativa] of Object.entries(data.protecoes)) {
+    dadosTecnicosRows.push([prot, ativa ? 'SIM' : 'NÃO'])
+  }
+  const wsTecnico = XLSX.utils.aoa_to_sheet(dadosTecnicosRows)
+  wsTecnico['!cols'] = [{ wch: 45 }, { wch: 25 }]
+  XLSX.utils.book_append_sheet(wb, wsTecnico, 'Construção e Proteções')
+
+  // ABA 3: TABELA DE COBERTURAS E LMI (QAR PADRONIZADO)
+  const coberturasRows: (string | number)[][] = [
+    [
+      'Item',
+      'Cobertura',
+      'Categoria Canônica',
+      'LMI Solicitada / Escolhida (R$)',
+      'LMI Atualizada (R$)',
+      'LMI Vigente (R$)',
+      'Franquia / POS',
+      'Observações',
+    ],
+  ]
+  data.coberturas.forEach((cob, i) => {
+    coberturasRows.push([
+      i + 1,
+      cob.nome,
+      cob.categoriaNormalizada,
+      cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual ?? '',
+      cob.isAtualizada ?? '',
+      cob.isAtual ?? '',
+      cob.franquiaPos || 'Conforme condições padrão',
+      cob.observacao || '',
+    ])
+  })
+  if (data.coberturas.length === 0) {
+    coberturasRows.push([
+      1,
+      'Incêndio Básica (Danos Materiais)',
+      'Incêndio Básica (Danos Materiais)',
+      data.vrdTotal || '',
+      '',
+      '',
+      'Franquia padrão',
+      'Solicitar condições de mercado',
+    ])
+  }
+  const wsCoberturas = XLSX.utils.aoa_to_sheet(coberturasRows)
+  wsCoberturas['!cols'] = [
+    { wch: 6 },
+    { wch: 45 },
+    { wch: 40 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 25 },
+    { wch: 30 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsCoberturas, 'Coberturas Solicitadas')
+
+  // ABA 4: HISTÓRICO DE SINISTROS DECLARADOS
+  const sinistrosRows: (string | number)[][] = [
+    [
+      '#',
+      'Data do Sinistro',
+      'Cobertura Acionada',
+      'Descrição do Evento',
+      'Valor Indenizado (R$)',
+      'Status',
+      'Origem',
+    ],
+  ]
+  if (data.sinistros.length === 0) {
+    sinistrosRows.push([
+      '—',
+      '—',
+      'Sem sinistros informados',
+      'Nenhum sinistro registrado nos últimos 5 anos.',
+      0,
+      'Liquidado',
+      'Declaração do segurado',
+    ])
+  } else {
+    data.sinistros.forEach((sin, idx) => {
+      sinistrosRows.push([
+        idx + 1,
+        formatDate(sin.dataSinistro),
+        sin.coberturaAcionada,
+        sin.descricao,
+        sin.valorIndenizadoRs ?? 0,
+        sin.status,
+        sin.origemPeriodo || 'Cartão de Risco',
+      ])
+    })
+  }
+  const wsSinistros = XLSX.utils.aoa_to_sheet(sinistrosRows)
+  wsSinistros['!cols'] = [
+    { wch: 5 },
+    { wch: 16 },
+    { wch: 30 },
+    { wch: 50 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 25 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsSinistros, 'Histórico de Sinistros')
+
+  // Nome do arquivo seguro
+  const cleanName = (data.nomeEmpreendimento || 'Empresa')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 30)
+  const filename = `Kit_Submissao_${data.rfqCode}_${cleanName}.xlsx`
+  XLSX.writeFile(wb, filename)
+}
+
+/**
+ * Dispara impressão nativa estilizada em janela dedicada para gerar PDF do Pedido de Cotação
+ */
+export function printSubmissionKitPdf(data: SubmissionKitData): void {
+  const printWindow = window.open('', '_blank', 'width=950,height=900')
+  if (!printWindow) {
+    alert('A janela de impressão foi bloqueada pelo navegador. Permita pop-ups para gerar o PDF.')
+    return
+  }
+
+  const ativas = Object.entries(data.protecoes)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Kit de Submissão - ${data.rfqCode} - ${data.nomeEmpreendimento}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 14mm 12mm 14mm 12mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1a202c;
+      background: #fff;
+      margin: 0;
+      padding: 20px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .header {
+      border-bottom: 2px solid #0F2B46;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .logo-box h1 {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0F2B46;
+      margin: 0;
+      letter-spacing: -0.5px;
+    }
+    .logo-box p {
+      font-size: 10px;
+      color: #4a5568;
+      margin: 2px 0 0;
+    }
+    .rfq-badge {
+      background: #EBF8FF;
+      border: 1px solid #BEE3F8;
+      color: #2B6CB0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      text-align: right;
+    }
+    .rfq-badge .code {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .rfq-badge .sla {
+      font-size: 9px;
+      color: #4A5568;
+      margin-top: 2px;
+    }
+    h2 {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #0F2B46;
+      border-left: 3px solid #16578B;
+      padding-left: 6px;
+      margin: 14px 0 8px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px 14px;
+      margin-bottom: 10px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px 14px;
+      margin-bottom: 10px;
+    }
+    .item {
+      padding: 3px 0;
+      border-bottom: 1px dotted #e2e8f0;
+    }
+    .item .label {
+      font-size: 9.5px;
+      color: #718096;
+      text-transform: uppercase;
+      font-weight: 600;
+      display: block;
+    }
+    .item .value {
+      font-size: 11px;
+      color: #1a202c;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .highlight-card {
+      background: #F7FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 10px;
+    }
+    th {
+      background: #EDF2F7;
+      color: #2D3748;
+      font-weight: 700;
+      text-align: left;
+      padding: 5px 6px;
+      border: 1px solid #CBD5E0;
+      font-size: 9.5px;
+    }
+    td {
+      padding: 5px 6px;
+      border: 1px solid #E2E8F0;
+      color: #2D3748;
+    }
+    tr:nth-child(even) td {
+      background: #F7FAFC;
+    }
+    .text-right { text-align: right; }
+    .badge-tag {
+      display: inline-block;
+      background: #EDF2F7;
+      color: #2D3748;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9.5px;
+      margin: 2px;
+    }
+    .footer {
+      margin-top: 20px;
+      border-top: 1px solid #CBD5E0;
+      padding-top: 8px;
+      font-size: 9px;
+      color: #718096;
+      display: flex;
+      justify-content: space-between;
+    }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-box">
+      <h1>BYCOR P&C INTELLIGENCE</h1>
+      <p>Kit de Submissão de Edital de Cotação (RFQ) · Mercado Segurador</p>
+    </div>
+    <div class="rfq-badge">
+      <div class="code">${data.rfqCode}</div>
+      <div class="sla">Prazo Limite SLA: <strong>${formatDate(data.prazoLimite)}</strong></div>
+      <div class="sla">Data de Envio: ${formatDate(data.dataEnvio)}</div>
+    </div>
+  </div>
+
+  ${
+    data.observacoesRfq
+      ? `
+    <div class="highlight-card" style="border-left: 3px solid #D69E2E;">
+      <span class="label">Observações e Requisitos Técnicos do Corretor:</span>
+      <div class="value" style="font-weight: normal; margin-top: 2px;">${data.observacoesRfq}</div>
+    </div>
+  `
+      : ''
+  }
+
+  <h2>1. Identificação do Segurado & Local do Risco</h2>
+  <div class="grid">
+    <div class="item">
+      <span class="label">Razão Social</span>
+      <span class="value">${data.razaoSocial || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">CNPJ do Segurado</span>
+      <span class="value">${formatCnpj(data.cnpj) || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Nome Fantasia / Empreendimento</span>
+      <span class="value">${data.nomeEmpreendimento || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Segmento de Negócio</span>
+      <span class="value">Hotéis, Resorts & Hospitalidade</span>
+    </div>
+    <div class="item" style="grid-column: span 2;">
+      <span class="label">Endereço do Local do Risco</span>
+      <span class="value">${data.endereco || '—'} ${data.cidade ? `— ${data.cidade}/${data.uf}` : ''}</span>
+    </div>
+    <div class="item">
+      <span class="label">Atividade Principal (CNAE)</span>
+      <span class="value">${data.atividade || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Atividade Exercida no Local</span>
+      <span class="value">${data.atividadeExercida || '—'}</span>
+    </div>
+    ${
+      data.cosseguradosNome
+        ? `
+      <div class="item" style="grid-column: span 2;">
+        <span class="label">Cossegurado</span>
+        <span class="value">${data.cosseguradosNome} ${data.cosseguradosCnpj ? `(${formatCnpj(data.cosseguradosCnpj)})` : ''}</span>
+      </div>
+    `
+        : ''
+    }
+  </div>
+
+  <h2>2. Valores em Risco Declarados (VRD)</h2>
+  <div class="grid-3 highlight-card">
+    <div>
+      <span class="label">Tipo de Cobertura</span>
+      <div class="value" style="color: #2B6CB0; font-size: 13px;">${data.tipoCobertura}</div>
+    </div>
+    <div>
+      <span class="label">VRD Danos Materiais</span>
+      <div class="value" style="font-size: 13px;">${formatCurrency(data.vrdPredio)}</div>
+    </div>
+    <div>
+      <span class="label">VRD Lucros Cessantes</span>
+      <div class="value" style="font-size: 13px;">${data.vrdLucrosCessantes ? formatCurrency(data.vrdLucrosCessantes) : 'Não contratado'}</div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="item">
+      <span class="label">VRD Total do Risco</span>
+      <span class="value" style="color: #2D3748; font-size: 12px;">${formatCurrency(data.vrdTotal)}</span>
+    </div>
+    <div class="item">
+      <span class="label">Seguradora / Apólice Anterior</span>
+      <span class="value">${data.apoliceAnteriorSeguradora ? `${data.apoliceAnteriorSeguradora} (Nº ${data.apoliceAnteriorNumero || 'Vigente'})` : 'Cotação / Novo Risco'}</span>
+    </div>
+  </div>
+
+  <h2>3. Características Construtivas & Proteções</h2>
+  <div class="grid-3">
+    <div class="item">
+      <span class="label">Padrão Construtivo</span>
+      <span class="value">${data.tipoConstrucao || 'Alvenaria / Superior'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Ano de Construção</span>
+      <span class="value">${data.anoConstrucao || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Área Construída</span>
+      <span class="value">${data.areaConstruidaM2 ? `${data.areaConstruidaM2} m²` : '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Pavimentos / Andares</span>
+      <span class="value">${data.numAndares || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Unidades Habitacionais (UH)</span>
+      <span class="value">${data.numUnidades || '—'}</span>
+    </div>
+    <div class="item">
+      <span class="label">Distância Bombeiros</span>
+      <span class="value">${data.distBombeirosKm ? `${data.distBombeirosKm} km` : '—'}</span>
+    </div>
+  </div>
+
+  <div style="margin-top: 6px;">
+    <span class="label" style="display: block; margin-bottom: 4px;">Sistemas de Prevenção e Proteção Existentes:</span>
+    <div>
+      ${ativas.length > 0 ? ativas.map((p) => `<span class="badge-tag">✔ ${p}</span>`).join('') : '<span style="color: #718096;">Nenhuma proteção específica cadastrada.</span>'}
+    </div>
+  </div>
+
+  <h2>4. Tabela de Coberturas Solicitadas (LMI)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25px;">#</th>
+        <th>Cobertura Solicitada</th>
+        <th style="width: 130px;" class="text-right">Importância Segurada (LMI)</th>
+        <th style="width: 140px;">Franquia / POS Sugerida</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${
+        data.coberturas.length > 0
+          ? data.coberturas
+              .map((c, i) => {
+                const val = c.isEscolhida ?? c.isAtualizada ?? c.isAtual
+                return `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${c.nome}</strong></td>
+            <td class="text-right font-mono"><strong>${val ? formatCurrency(val) : '—'}</strong></td>
+            <td>${c.franquiaPos || 'Conforme condições padrão'}</td>
+          </tr>
+        `
+              })
+              .join('')
+          : `
+        <tr>
+          <td>1</td>
+          <td><strong>Incêndio Básica (Danos Materiais)</strong></td>
+          <td class="text-right"><strong>${formatCurrency(data.vrdTotal)}</strong></td>
+          <td>Condições gerais de mercado</td>
+        </tr>
+      `
+      }
+    </tbody>
+  </table>
+
+  <h2>5. Histórico de Sinistros Declarados</h2>
+  ${
+    data.sinistros.length === 0
+      ? `
+    <div class="highlight-card" style="color: #2F855A; font-weight: 600;">
+      ✔ Segurado sem registro de sinistros nos últimos 5 anos de apólice.
+    </div>
+  `
+      : `
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 25px;">#</th>
+          <th style="width: 80px;">Data</th>
+          <th style="width: 140px;">Cobertura</th>
+          <th>Descrição do Evento</th>
+          <th style="width: 100px;" class="text-right">Indenização</th>
+          <th style="width: 80px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.sinistros
+          .map(
+            (s, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${formatDate(s.dataSinistro)}</td>
+            <td><strong>${s.coberturaAcionada}</strong></td>
+            <td>${s.descricao || '—'}</td>
+            <td class="text-right">${s.valorIndenizadoRs ? formatCurrency(s.valorIndenizadoRs) : 'R$ 0,00'}</td>
+            <td>${s.status}</td>
+          </tr>
+        `,
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+  }
+
+  <div class="footer">
+    <div>Bycor Consultoria e Corretora de Seguros · Plataforma P&C Intelligence</div>
+    <div>Documento gerado automaticamente para submissão aos portais das seguradoras</div>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        window.print();
+      }, 500);
+    });
+  </script>
+</body>
+</html>
+  `
+
+  printWindow.document.open()
+  printWindow.document.write(htmlContent)
+  printWindow.document.close()
+}

@@ -14,6 +14,10 @@ import {
   Filter,
   Loader2,
   ArrowRight,
+  PackageCheck,
+  FileSpreadsheet,
+  Printer,
+  Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +30,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { formatDate, getDaysRemaining } from '@/lib/formatters'
+import {
+  SubmissionKitData,
+  loadSubmissionKitData,
+  generateSubmissionKitXlsx,
+  printSubmissionKitPdf,
+} from '@/services/submissionKitService'
+import { SubmissionKitModal } from '@/components/SubmissionKitModal'
 
 interface RfqRecord {
   id: string
@@ -77,6 +88,11 @@ export default function RfqPage() {
   // Detail Modal
   const [selectedRfq, setSelectedRfq] = useState<RfqRecord | null>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
+
+  // Submission Kit Modal state
+  const [kitModalOpen, setKitModalOpen] = useState(false)
+  const [kitData, setKitData] = useState<SubmissionKitData | null>(null)
+  const [loadingKit, setLoadingKit] = useState(false)
 
   const fetchData = async () => {
     try {
@@ -165,6 +181,21 @@ export default function RfqPage() {
     setSelectedSegs((prev) =>
       prev.includes(segId) ? prev.filter((id) => id !== segId) : [...prev, segId],
     )
+  }
+
+  const handleOpenSubmissionKit = async (rfq: RfqRecord) => {
+    try {
+      setSelectedRfq(rfq)
+      setKitModalOpen(true)
+      setLoadingKit(true)
+      const kit = await loadSubmissionKitData(rfq.id)
+      setKitData(kit)
+    } catch (err) {
+      console.error('Erro ao abrir Kit de Submissão:', err)
+      alert('Falha ao compilar dados do Kit de Submissão: ' + (err as Error).message)
+    } finally {
+      setLoadingKit(false)
+    }
   }
 
   return (
@@ -289,19 +320,32 @@ export default function RfqPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedRfq(rfq)
-                            setDetailModalOpen(true)
-                          }}
-                          className="h-7 text-xs text-[#16578B] font-semibold"
+                        <div
+                          className="flex items-center justify-end gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <span>Gerenciar</span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpenSubmissionKit(rfq)}
+                            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-[11px] h-7 px-2.5 font-semibold flex items-center gap-1 shadow-sm"
+                            title="Abrir Kit de Submissão para portais (XLSX, Cópia rápida e PDF)"
+                          >
+                            <PackageCheck className="w-3.5 h-3.5 text-blue-300" />
+                            <span>Kit Submissão</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelectedRfq(rfq)
+                              setDetailModalOpen(true)
+                            }}
+                            className="h-7 text-xs text-[#16578B] font-semibold px-2"
+                          >
+                            <span>Gerenciar</span>
+                            <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -448,6 +492,33 @@ export default function RfqPage() {
                 </div>
               )}
 
+              {/* Botão de Acesso Direto ao Kit de Submissão dentro do Modal */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#0F2B46] text-white flex items-center justify-center shrink-0">
+                    <PackageCheck className="w-4 h-4 text-blue-300" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-900 text-xs">
+                      Kit de Submissão para Portais de Seguradoras
+                    </div>
+                    <div className="text-[11px] text-gray-600">
+                      Exportar XLSX estruturado, painel com botões de cópia rápida e impressão PDF
+                      do edital.
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    handleOpenSubmissionKit(selectedRfq)
+                  }}
+                  className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 px-3 font-semibold shrink-0"
+                >
+                  Abrir Kit Completo
+                </Button>
+              </div>
+
               <div>
                 <h4 className="font-bold text-gray-800 mb-2">Seguradoras Consultadas:</h4>
                 <div className="divide-y border rounded-lg overflow-hidden bg-white">
@@ -497,6 +568,28 @@ export default function RfqPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* MODAL / DRAWER: KIT DE SUBMISSÃO (3 FORMATOS) */}
+      <Dialog open={kitModalOpen} onOpenChange={setKitModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto animate-scale-in p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <PackageCheck className="w-5 h-5 text-[#16578B]" />
+              <span>Kit de Submissão para Portais de Seguradoras</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Disponibilize as informações deste RFQ nos portais das seguradoras sem digitação
+              manual.
+            </DialogDescription>
+          </DialogHeader>
+
+          <SubmissionKitModal
+            data={kitData}
+            loading={loadingKit}
+            onClose={() => setKitModalOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
