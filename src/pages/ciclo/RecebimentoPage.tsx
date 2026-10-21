@@ -668,6 +668,13 @@ export default function RecebimentoPage() {
                                     Colunas não casadas: {diag.unmatchedColumnsCount}
                                   </span>
                                 )}
+                                {diag.unmatchedNumericColumns &&
+                                  diag.unmatchedNumericColumns.length > 0 && (
+                                    <span className="text-gray-500 font-normal">
+                                      Colunas numéricas (totais):{' '}
+                                      {diag.unmatchedNumericColumns.length}
+                                    </span>
+                                  )}
                               </>
                             ) : (
                               <>
@@ -723,27 +730,66 @@ export default function RecebimentoPage() {
                                   {diag.matchedColumnsCount ?? 0} apólices casadas{' '}
                                   {(diag.matchedColumnsCount ?? 0) > 0 ? '✓' : '✗ nenhuma'}
                                 </span>
-                                {diag.unmatchedColumns && diag.unmatchedColumns.length > 0 && (
-                                  <div className="mt-1.5 p-2 rounded bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 space-y-1">
-                                    <div className="font-semibold text-amber-800 flex items-center gap-1">
-                                      <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                {((diag.unmatchedApoliceColumns &&
+                                  diag.unmatchedApoliceColumns.length > 0) ||
+                                  (!diag.unmatchedApoliceColumns &&
+                                    diag.unmatchedColumns &&
+                                    diag.unmatchedColumns.length > 0)) && (
+                                  <div className="mt-1.5 p-2 rounded bg-red-50/80 border border-red-200 text-[11px] text-red-900 space-y-1">
+                                    <div className="font-semibold text-red-800 flex items-center gap-1">
+                                      <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
                                       <span>
-                                        {diag.unmatchedColumns.length} coluna(s) não vinculadas a
-                                        apólices cadastradas:
+                                        {
+                                          (
+                                            diag.unmatchedApoliceColumns ||
+                                            diag.unmatchedColumns ||
+                                            []
+                                          ).length
+                                        }{' '}
+                                        coluna(s) de apólice não vinculadas:
                                       </span>
                                     </div>
-                                    <p className="text-[10px] text-amber-700 leading-relaxed">
-                                      Cabeçalhos numéricos ou não identificados (ex.: valores de
-                                      LMI/LMG ou totais na linha de cabeçalho do Excel) não foram
-                                      associados a apólices para evitar vínculos incorretos.
-                                      Registros nessas colunas foram preservados sem associação
-                                      espúria.
+                                    <p className="text-[10px] text-red-700 leading-relaxed">
+                                      Colunas de apólices reais que não tiveram paridade conclusiva
+                                      com a base de apólices (par empreendimento + seguradora ou
+                                      desambiguação por ramo inconclusiva).
                                     </p>
-                                    <div className="font-mono text-[10px] bg-white/80 p-1 rounded border border-amber-200 max-h-16 overflow-y-auto">
-                                      {diag.unmatchedColumns.join(' | ')}
+                                    <div className="font-mono text-[10px] bg-white/90 p-1.5 rounded border border-red-200 max-h-24 overflow-y-auto space-y-0.5">
+                                      {(
+                                        diag.unmatchedApoliceColumns ||
+                                        diag.unmatchedColumns ||
+                                        []
+                                      ).map((col, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="truncate text-red-900 font-medium"
+                                        >
+                                          • {col}
+                                        </div>
+                                      ))}
                                     </div>
                                   </div>
                                 )}
+                                {diag.unmatchedNumericColumns &&
+                                  diag.unmatchedNumericColumns.length > 0 && (
+                                    <div className="mt-1.5 p-2 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                                      <div className="font-semibold text-slate-800 flex items-center gap-1">
+                                        <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                        <span>
+                                          {diag.unmatchedNumericColumns.length} coluna(s) numéricas
+                                          identificadas (totais / valores de LMI):
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-600 leading-relaxed">
+                                        Cabeçalhos numéricos (ex.: totais ou valores) ignorados para
+                                        vínculo de apólice conforme especificação do modelo de
+                                        dados.
+                                      </p>
+                                      <div className="font-mono text-[10px] bg-white/90 p-1 rounded border border-slate-200 max-h-16 overflow-y-auto">
+                                        {diag.unmatchedNumericColumns.join(' | ')}
+                                      </div>
+                                    </div>
+                                  )}
                               </>
                             ) : (
                               diag.requiredKeys.map((k) => {

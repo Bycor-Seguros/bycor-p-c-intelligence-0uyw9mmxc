@@ -26,6 +26,8 @@ export interface SheetKeyDiagnostic {
   matchedColumnsCount?: number
   unmatchedColumnsCount?: number
   unmatchedColumns?: string[]
+  unmatchedApoliceColumns?: string[]
+  unmatchedNumericColumns?: string[]
 }
 
 export interface ImportSummary {
@@ -201,6 +203,220 @@ export function normalizeHeader(val: unknown): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove acentos
     .replace(/[_\s\-/\\.:;,\t]+/g, '') // collapse spaces, underscores, dashes, etc
+}
+
+/**
+ * Normaliza um texto para fins de casamento flexível (tokens textuais):
+ * Converte para minúsculas, remove acentos, substitui pontuação por espaço e condensa espaços múltiplos.
+ */
+export function normalizeMatchText(val: unknown): string {
+  if (val === null || val === undefined) return ''
+  return String(val)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[()[\]{}|\\/\-_:;.,+~^`"'*?!]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Estrutura descritiva de uma apólice para casamento estruturado em duas etapas na Matriz.
+ */
+export interface ApoliceMatchCandidate {
+  recordId: string
+  idApolice: string
+  numeroApolice: string
+  seguradora: string
+  ramo: string
+  idEmpreendimento?: string
+  nomeEmpreendimento?: string
+}
+
+/**
+ * Normaliza rótulos de seguradoras conhecidas para um identificador canônico.
+ */
+export function canonicalizeInsurerName(raw: string): string {
+  const norm = normalizeMatchText(raw)
+  if (!norm) return ''
+  if (norm.includes('axa')) return 'axa'
+  if (norm.includes('chubb')) return 'chubb'
+  if (norm.includes('mitsui') || norm.includes('msig')) return 'mitsui'
+  if (norm.includes('porto')) return 'porto'
+  if (norm.includes('tokio')) return 'tokio'
+  if (norm.includes('ezze')) return 'ezze'
+  if (norm.includes('allianz')) return 'allianz'
+  if (norm.includes('bradesco')) return 'bradesco'
+  if (norm.includes('sompo')) return 'sompo'
+  if (norm.includes('mapfre')) return 'mapfre'
+  if (norm.includes('zurich')) return 'zurich'
+  if (norm.includes('hdi')) return 'hdi'
+  return norm
+}
+
+/**
+ * Extrai os tokens de prefixo significativos de um texto de empreendimento.
+ * Ex.: "btt faria lima (edificio double space)" -> ["btt faria lima", "faria lima", "btt", "double space"]
+ */
+export function extractEmpTokens(raw: string): string[] {
+  const norm = normalizeMatchText(raw)
+  if (!norm) return []
+  const tokens = new Set<string>()
+  tokens.add(norm)
+  // Remover conteúdo entre parênteses original ou tokens divididos
+  const withoutParens = raw.replace(/\(.*?\)/g, ' ')
+  const normWithoutParens = normalizeMatchText(withoutParens)
+  if (normWithoutParens) tokens.add(normWithoutParens)
+
+  // Separar palavras significativas (>= 3 chars)
+  const words = norm.split(' ').filter((w) => w.length >= 3)
+  for (const w of words) {
+    tokens.add(w)
+  }
+  // Bigramas ("btt faria", "faria lima", "btt verbo", "verbo divino")
+  for (let i = 0; i < words.length - 1; i++) {
+    tokens.add(`${words[i]} ${words[i + 1]}`)
+  }
+  return Array.from(tokens)
+}
+
+/**
+ * Testa se o nome do empreendimento do cabeçalho da Matriz é compatível com o do candidato da base.
+ * Tolerante a truncamento por largura de coluna (ex.: "Oceani", "KRBM Nor", "SUITES").
+ */
+export function matchesEmpreendimento(headerEmp: string, candEmp: string): boolean {
+  const h = normalizeMatchText(headerEmp)
+  const c = normalizeMatchText(candEmp)
+  if (!h || !c) return false
+
+  // Igualdade exata após normalização
+  if (h === c) return true
+
+  // Inclusão direta
+  if (c.includes(h) || h.includes(c)) return true
+
+  // Prefixo (truncamento de Excel: "oceani" vs "oceani beach park resort")
+  if (c.startsWith(h) || h.startsWith(c)) return true
+
+  // Tokens de empreendimento
+  const hWords = h.split(' ').filter((w) => w.length >= 3)
+  const cWords = c.split(' ').filter((w) => w.length >= 3)
+
+  // Se o cabeçalho tem várias palavras ("krbm nor"), todas as palavras significativas do cabeçalho
+  // devem coincidir ou ser prefixo das palavras da base
+  if (hWords.length >= 2) {
+    const allHMatched = hWords.every((hw) =>
+      cWords.some((cw) => cw.startsWith(hw) || hw.startsWith(cw)),
+    )
+    if (allHMatched) return true
+  }
+
+  // Token principal de busca (ex: "suites", "arvorar", "acqua", "ohana", "wyndham", "uxua")
+  const primaryH = hWords.filter(
+    (w) => w !== 'btt' && w !== 'hotel' && w !== 'cdm' && w !== 'resort',
+  )
+  if (primaryH.length > 0) {
+    const allPrimaryMatched = primaryH.every((hw) =>
+      cWords.some((cw) => cw.startsWith(hw) || hw.startsWith(cw)),
+    )
+    if (allPrimaryMatched) return true
+  }
+
+  return false
+}
+
+/**
+ * Calcula score de afinidade do ramo extraído do parêntese com o ramo/linha da apólice.
+ * Retorna pontuação positiva se houver casamento ou 0 se incompatível.
+ */
+export function scoreRamoAffinity(headerRamoRaw: string, candRamoRaw: string): number {
+  const h = normalizeMatchText(headerRamoRaw)
+  const c = normalizeMatchText(candRamoRaw)
+  if (!h || !c) return 0
+
+  let score = 0
+
+  // 1. Extrair códigos numéricos de ramo (ex.: "0118", "01.18", "0351", "0171", "0196", "01.96")
+  const hNums = headerRamoRaw.match(/\d{2,4}/g) || []
+  const cNums = candRamoRaw.match(/\d{2,4}/g) || []
+  const normHNums = hNums.map((n) => n.replace(/^0+/, '') || '0')
+  const normCNums = cNums.map((n) => n.replace(/^0+/, '') || '0')
+  const numOverlap = normHNums.some((hn) => normCNums.includes(hn))
+  if (numOverlap) {
+    score += 40
+  }
+
+  // 2. Extrair palavras-chave semânticas canônicas
+  const isHeaderRC =
+    h.includes('responsabilidade') ||
+    h.includes('responsabilidad') ||
+    /\brc\b/.test(h) ||
+    /\brcg\b/.test(h)
+  const isCandRC = c.includes('responsabilidade') || /\brc\b/.test(c) || /\brcg\b/.test(c)
+
+  const isHeaderRN =
+    h.includes('riscos nomeados') ||
+    h.includes('riscos nomead') ||
+    h.includes('nomeados') ||
+    /\brn\b/.test(h)
+  const isCandRN = c.includes('riscos nomeados') || h.includes('nomeados') || /\brn\b/.test(c)
+
+  const isHeaderRD = h.includes('riscos diversos') || h.includes('diversos') || /\brd\b/.test(h)
+  const isCandRD = c.includes('riscos diversos') || c.includes('diversos') || /\brd\b/.test(c)
+
+  const isHeaderComp =
+    h.includes('compreensivo') ||
+    h.includes('compreensiv') ||
+    h.includes('empresarial') ||
+    h.includes('empr')
+  const isCandComp = c.includes('compreensivo') || c.includes('empresarial')
+
+  const isHeaderPredio = h.includes('predio') || h.includes('predi')
+  const isCandPredio = c.includes('predio')
+
+  const isHeaderConteudo = h.includes('conteudo') || h.includes('conteud')
+  const isCandConteudo = c.includes('conteudo')
+
+  // Penalidade severa se um for puramente RC e o outro não tiver menção a RC
+  if (isHeaderRC && !isCandRC) return 0
+  if (isHeaderRC && isCandRC) score += 30
+
+  // Se header fala de Riscos Diversos (0171)
+  if (isHeaderRD && isCandRD) score += 35
+  if (isHeaderRD && !isCandRD) return 0
+
+  // Se header fala de Riscos Nomeados
+  if (isHeaderRN && isCandRN) score += 30
+
+  // Se header fala de Compreensivo / Empresarial
+  if (isHeaderComp && isCandComp) score += 20
+
+  // Desambiguação Prédio vs Conteúdo
+  if (isHeaderPredio && isCandPredio) score += 25
+  if (isHeaderConteudo && isCandConteudo) score += 25
+  if (isHeaderPredio && isCandConteudo && !isCandPredio) return 0
+  if (isHeaderConteudo && isCandPredio && !isCandConteudo) return 0
+
+  // 3. Match por prefixo/inclusão de palavras significativas (>= 4 letras)
+  const hWords = h.split(' ').filter((w) => w.length >= 4 && !/^\d+$/.test(w))
+  const cWords = c.split(' ').filter((w) => w.length >= 4 && !/^\d+$/.test(w))
+
+  let wordMatches = 0
+  for (const hw of hWords) {
+    if (cWords.some((cw) => cw.startsWith(hw) || hw.startsWith(cw) || cw.includes(hw))) {
+      wordMatches++
+    }
+  }
+
+  score += wordMatches * 10
+
+  // 4. Inclusão ou prefixo direto da string inteira
+  if (c.includes(h) || h.includes(c)) {
+    score += 20
+  }
+
+  return score
 }
 
 // Convert various excel dates to YYYY-MM-DD
@@ -1158,15 +1374,13 @@ export async function processGuardiaWorkbook(
     const sheet = workbook.Sheets[sheetMatName]
     const rawGrid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
 
-    // Build comprehensive lookup map from existing apólices in PB and apoliceMap/empMap
-    // Tornar o apoliceLookup independente da releitura frágil:
-    // 1) Construir chaves a partir de apoliceMap e empMap da rodada atual
-    // 2) Tentar enriquecer com releitura de apolices do PB com retry reforçado
+    // Build comprehensive candidate pool and lookup maps from existing apólices in PB and apoliceMap/empMap
     const apoliceLookup = new Map<string, string>()
+    const apoliceCandidates: ApoliceMatchCandidate[] = []
     let apoliceFetchFailed = false
     let apoliceFetchErrorMsg = ''
 
-    // Helper para registrar variantes de identificadores no lookup
+    // Helper para registrar variantes diretas no lookup
     const registerApoliceInLookup = (
       apId: string,
       idApoliceVal?: unknown,
@@ -1196,23 +1410,20 @@ export async function processGuardiaWorkbook(
       }
     }
 
-    // Primeiro, preencher apoliceLookup a partir de apoliceMap e empMap da própria rodada.
-    // Isso garante que mesmo se getFullList falhar por 429, todas as chaves (inclusive nome do empreendimento
-    // e "nome do empreendimento + seguradora") já estarão disponíveis.
+    // 1) Preencher candidatos a partir de apoliceMap e empMap da própria rodada.
     for (const [idAp, rec] of apoliceMap.entries()) {
       const recId = String(rec.id)
-      const numApol = rec.numero_apolice
-      const seguradora = rec.seguradora
+      const numApol = String(rec.numero_apolice || '')
+      const seguradora = String(rec.seguradora || '')
+      const ramo = String(rec.ramo || '')
       const idEmp = rec.id_empreendimento ? String(rec.id_empreendimento).trim() : ''
 
-      // Tentar resolver o nome do empreendimento via empMap
       let empName: string | undefined
       if (idEmp) {
         const empRec = empMap.get(idEmp)
         if (empRec) {
           empName = (empRec.nome_empreendimento as string) || (empRec.id_empreendimento as string)
         } else {
-          // empMap pode ter sido indexado por id_empreendimento original, tentar busca por id do registro
           for (const e of empMap.values()) {
             if (String(e.id) === idEmp || String(e.id_empreendimento) === idEmp) {
               empName = (e.nome_empreendimento as string) || (e.id_empreendimento as string)
@@ -1223,9 +1434,19 @@ export async function processGuardiaWorkbook(
       }
 
       registerApoliceInLookup(recId, idAp, numApol, seguradora, empName)
+
+      apoliceCandidates.push({
+        recordId: recId,
+        idApolice: idAp,
+        numeroApolice: numApol,
+        seguradora,
+        ramo,
+        idEmpreendimento: idEmp,
+        nomeEmpreendimento: empName || '',
+      })
     }
 
-    // Segundo, tentar reforçar com a releitura completa do PB usando executeWithRetry com maxAttempts 6 e throttle
+    // 2) Tentar enriquecer com releitura de apolices do PB
     try {
       const fullApols = await executeWithRetry(
         () =>
@@ -1240,14 +1461,142 @@ export async function processGuardiaWorkbook(
         const empName = (a.expand as { id_empreendimento?: { nome_empreendimento?: string } })
           ?.id_empreendimento?.nome_empreendimento
         registerApoliceInLookup(a.id, a.id_apolice, a.numero_apolice, a.seguradora, empName)
+
+        // Se o registro não estava nos candidatos ou faltava nomeEmpreendimento, atualizar
+        const existingCand = apoliceCandidates.find((c) => c.recordId === a.id)
+        if (!existingCand) {
+          apoliceCandidates.push({
+            recordId: a.id,
+            idApolice: String(a.id_apolice || ''),
+            numeroApolice: String(a.numero_apolice || ''),
+            seguradora: String(a.seguradora || ''),
+            ramo: String(a.ramo || ''),
+            idEmpreendimento: a.id_empreendimento ? String(a.id_empreendimento) : '',
+            nomeEmpreendimento: empName || '',
+          })
+        } else if (empName && !existingCand.nomeEmpreendimento) {
+          existingCand.nomeEmpreendimento = empName
+        }
       }
     } catch (err: unknown) {
       apoliceFetchFailed = true
       apoliceFetchErrorMsg = (err as Error).message || 'Falha de conexão / rate limit'
     }
 
+    // Função de casamento em duas etapas para cabeçalhos da Matriz:
+    // Formato padrão do cabeçalho: "Empreendimento | Seguradora (Ramo)"
+    const matchMatrizHeaderToApolice = (
+      rawHeader: string,
+    ): { apoliceRecordId: string; strategy: string } | null => {
+      const trimmedHeader = rawHeader.trim()
+      if (!trimmedHeader) return null
+
+      // Se o cabeçalho tiver separador "|"
+      if (trimmedHeader.includes('|')) {
+        const pipeParts = trimmedHeader.split('|')
+        const leftPart = pipeParts[0].trim()
+        const rightPart = pipeParts.slice(1).join('|').trim()
+
+        // Extrair texto entre parênteses do lado direito: ex.: "Mitsui (0118 Compreensivo Empr)" -> ramo="0118 Compreensivo Empr", seg="Mitsui"
+        let insurerRaw = rightPart
+        let ramoRaw = ''
+        const parenMatch = rightPart.match(/^(.*?)\((.*)\)\s*$/)
+        if (parenMatch) {
+          insurerRaw = parenMatch[1].trim()
+          ramoRaw = parenMatch[2].trim()
+        } else {
+          // Pode haver parêntese não fechado devido a truncamento no Excel: "AXA (Riscos Nomeados (Prédi"
+          const openParenIdx = rightPart.indexOf('(')
+          if (openParenIdx !== -1) {
+            insurerRaw = rightPart.slice(0, openParenIdx).trim()
+            ramoRaw = rightPart
+              .slice(openParenIdx + 1)
+              .replace(/\)+$/, '')
+              .trim()
+          }
+        }
+
+        const canonicalInsurer = canonicalizeInsurerName(insurerRaw)
+
+        // ETAPA 1: Filtrar apólices candidatas que casem o empreendimento E a seguradora
+        const candidates = apoliceCandidates.filter((cand) => {
+          // Match seguradora
+          const candInsurerNorm = canonicalizeInsurerName(cand.seguradora)
+          const insurerMatches =
+            !canonicalInsurer ||
+            candInsurerNorm === canonicalInsurer ||
+            candInsurerNorm.includes(canonicalInsurer) ||
+            canonicalInsurer.includes(candInsurerNorm)
+          if (!insurerMatches) return false
+
+          // Match empreendimento
+          // Testar contra cand.nomeEmpreendimento, cand.idEmpreendimento e cand.idApolice
+          const empMatches =
+            (cand.nomeEmpreendimento && matchesEmpreendimento(leftPart, cand.nomeEmpreendimento)) ||
+            (cand.idEmpreendimento && matchesEmpreendimento(leftPart, cand.idEmpreendimento)) ||
+            matchesEmpreendimento(leftPart, cand.idApolice)
+
+          return empMatches
+        })
+
+        if (candidates.length === 1) {
+          // Se há apenas 1 candidato e o ramo é compatível (ou vazio), casar!
+          if (!ramoRaw) {
+            return { apoliceRecordId: candidates[0].recordId, strategy: 'two-step-single' }
+          }
+          const affinity = scoreRamoAffinity(ramoRaw, candidates[0].ramo)
+          // Se não há pontuação nula por conflito explícito (ex.: RC vs Compreensivo)
+          if (affinity >= 0) {
+            return { apoliceRecordId: candidates[0].recordId, strategy: 'two-step-single' }
+          }
+        }
+
+        if (candidates.length > 1) {
+          // ETAPA 2: Desambiguação por Ramo
+          if (ramoRaw) {
+            const scored = candidates
+              .map((cand) => ({
+                cand,
+                score: scoreRamoAffinity(ramoRaw, cand.ramo),
+              }))
+              .filter((item) => item.score > 0)
+              .sort((a, b) => b.score - a.score)
+
+            if (scored.length > 0) {
+              const best = scored[0]
+              const secondBest = scored[1]
+              // Se há um vencedor claro (melhor score sem empate no primeiro lugar)
+              if (!secondBest || best.score > secondBest.score) {
+                return { apoliceRecordId: best.cand.recordId, strategy: 'two-step-disambiguated' }
+              }
+            }
+          }
+          // Se ramo não resolver ou empatar, não casar às cegas!
+          return null
+        }
+      }
+
+      // Fallback para casamento exato / direto pelo lookup histórico
+      const normH = normalizeHeader(trimmedHeader)
+      const exactMatch = apoliceLookup.get(normH) || apoliceLookup.get(trimmedHeader.toLowerCase())
+      if (exactMatch) {
+        return { apoliceRecordId: exactMatch, strategy: 'lookup-exact' }
+      }
+
+      // Fuzzy match conservador (apenas strings longas >= 6 caracteres sem números soltos)
+      if (normH.length >= 6 && !/^\d+$/.test(trimmedHeader)) {
+        for (const [key, recId] of apoliceLookup.entries()) {
+          if (key.length >= 6 && (normH === key || normH.includes(key))) {
+            return { apoliceRecordId: recId, strategy: 'lookup-fuzzy' }
+          }
+        }
+      }
+
+      return null
+    }
+
     // Se a leitura falhou E não há apólices conhecidas para casar, ABORTAR a etapa da Matriz
-    if (apoliceFetchFailed && apoliceLookup.size === 0) {
+    if (apoliceFetchFailed && apoliceCandidates.length === 0 && apoliceLookup.size === 0) {
       const abortMsg = `Não foi possível carregar as apólices para vincular as colunas da Matriz (${apoliceFetchErrorMsg}) — nenhuma célula da Matriz foi gravada nesta rodada. Aguarde alguns instantes e reimporte.`
       summary.errors.push(abortMsg)
       summary.diagnostics.push({
@@ -1267,6 +1616,8 @@ export async function processGuardiaWorkbook(
         matchedColumnsCount: 0,
         unmatchedColumnsCount: 0,
         unmatchedColumns: [],
+        unmatchedApoliceColumns: [],
+        unmatchedNumericColumns: [],
       })
     } else {
       // Deduplication map for matriz records: key -> PB record
@@ -1315,18 +1666,12 @@ export async function processGuardiaWorkbook(
           const normHeader = normalizeHeader(rawHeaderStr)
           const isNum = typeof cellVal === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
 
-          // Try exact / normalized match
-          let matchedApId =
-            apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
-
-          // If not matched, try fuzzy match against known apolice identifiers
-          // IMPORTANT: Never fuzzy match numeric headers against apólices to avoid false positives!
-          if (!matchedApId && !isNum && normHeader.length >= 3) {
-            for (const [key, recId] of apoliceLookup.entries()) {
-              if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
-                matchedApId = recId
-                break
-              }
+          // Try structured match (two-step matching + disambiguation)
+          let matchedApId: string | undefined
+          if (!isNum) {
+            const matchRes = matchMatrizHeaderToApolice(rawHeaderStr)
+            if (matchRes) {
+              matchedApId = matchRes.apoliceRecordId
             }
           }
 
@@ -1369,14 +1714,11 @@ export async function processGuardiaWorkbook(
           if (!rawHeaderStr) continue
           const normHeader = normalizeHeader(rawHeaderStr)
           const isNum = typeof fallbackRow[c] === 'number' || /^\d+(\.\d+)?$/.test(rawHeaderStr)
-          let matchedApId =
-            apoliceLookup.get(normHeader) || apoliceLookup.get(rawHeaderStr.toLowerCase())
-          if (!matchedApId && !isNum && normHeader.length >= 3) {
-            for (const [key, recId] of apoliceLookup.entries()) {
-              if (key.length >= 4 && (normHeader.includes(key) || key.includes(normHeader))) {
-                matchedApId = recId
-                break
-              }
+          let matchedApId: string | undefined
+          if (!isNum) {
+            const matchRes = matchMatrizHeaderToApolice(rawHeaderStr)
+            if (matchRes) {
+              matchedApId = matchRes.apoliceRecordId
             }
           }
           if (matchedApId) {
@@ -1400,8 +1742,17 @@ export async function processGuardiaWorkbook(
       const matchedColsCount = bestColToApoliceMap.size
       const matchRatio = filledHeaderCols > 0 ? matchedColsCount / filledHeaderCols : 0
 
+      // Separar colunas não casadas em numéricas e de apólice (texto)
+      const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
+      const numericUnmatchedCols = bestUnmatchedColInfo
+        .filter((u) => u.isNumeric)
+        .map((u) => u.rawHeader)
+      const apoliceUnmatchedCols = bestUnmatchedColInfo
+        .filter((u) => !u.isNumeric)
+        .map((u) => u.rawHeader)
+
       const isDegenerateMatch =
-        apoliceLookup.size > 0 &&
+        (apoliceCandidates.length > 0 || apoliceLookup.size > 0) &&
         filledHeaderCols >= 5 &&
         (matchedColsCount === 0 || matchRatio < 0.4)
 
@@ -1423,8 +1774,10 @@ export async function processGuardiaWorkbook(
           isPivoted: true,
           categoriesCount: 0,
           matchedColumnsCount: matchedColsCount,
-          unmatchedColumnsCount: bestUnmatchedColInfo.length,
-          unmatchedColumns: bestUnmatchedColInfo.map((u) => u.rawHeader),
+          unmatchedColumnsCount: apoliceUnmatchedCols.length,
+          unmatchedColumns: rawUnmatchedNames,
+          unmatchedApoliceColumns: apoliceUnmatchedCols,
+          unmatchedNumericColumns: numericUnmatchedCols,
         })
       } else {
         let processedCount = 0
@@ -1509,18 +1862,17 @@ export async function processGuardiaWorkbook(
           }
         }
 
-        const rawUnmatchedNames = bestUnmatchedColInfo.map((u) => u.rawHeader)
         const numericUnmatched = bestUnmatchedColInfo.filter((u) => u.isNumeric)
         const nonNumericUnmatched = bestUnmatchedColInfo.filter((u) => !u.isNumeric)
+        const numericColNames = numericUnmatched.map((u) => u.rawHeader)
+        const nonNumericColNames = nonNumericUnmatched.map((u) => u.rawHeader)
 
-        // Item 5: As colunas de cabeçalho puramente numérico (ex.: 500000, 50000, 5353500, 200000, 250000)
-        // continuam sendo ignoradas no casamento e são reportadas de forma explicada no diagnóstico
-        // (como colunas de valores/totais), mas agora NÃO devem entrar na contagem de "colunas sem apólice"
-        // que vira erro residual — ou seja, a mensagem de erro residual deve contar apenas colunas NÃO numéricas não casadas;
-        // as numéricas ficam apenas como nota informativa no diagnóstico.
+        // As colunas de cabeçalho puramente numérico (ex.: 500000, 50000) continuam ignoradas
+        // no casamento e são reportadas de forma explicada no diagnóstico (como colunas de totais),
+        // NÃO entrando na contagem de "colunas sem apólice" que gera erro residual.
         if (nonNumericUnmatched.length > 0) {
           summary.errors.push(
-            `Aba Matriz: ${nonNumericUnmatched.length} coluna(s) sem apólice correspondente vinculada.`,
+            `Aba Matriz: ${nonNumericUnmatched.length} coluna(s) de apólice sem correspondência vinculada.`,
           )
         }
 
@@ -1530,7 +1882,7 @@ export async function processGuardiaWorkbook(
         ]
         if (numericUnmatched.length > 0) {
           diagKeys.push(
-            `${numericUnmatched.length} coluna(s) com cabeçalho numérico/totais identificadas e desconsideradas para vínculo`,
+            `${numericUnmatched.length} coluna(s) com cabeçalho numérico (totais) desconsideradas`,
           )
         }
 
@@ -1556,6 +1908,8 @@ export async function processGuardiaWorkbook(
           matchedColumnsCount: bestColToApoliceMap.size,
           unmatchedColumnsCount: nonNumericUnmatched.length,
           unmatchedColumns: rawUnmatchedNames,
+          unmatchedApoliceColumns: nonNumericColNames,
+          unmatchedNumericColumns: numericColNames,
         })
       }
     }
