@@ -562,6 +562,7 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
 
   let inCosseguradosBlock = false
   let inCoberturasBlock = false
+  let currentSection = ''
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r]
@@ -691,29 +692,69 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
       }
     }
 
-    // Proteção contra Incêndios
+    // Seção ativa de proteções
     if (
       normA.includes('protecao contra incendio') ||
-      normC.includes('extintor') ||
-      normC.includes('hidrante')
+      normA.includes('protecao contra roubo') ||
+      normA.includes('construcao')
     ) {
-      const label = colC.replace(/\(\s*[xX✓✔ ]\s*\)/, '').trim()
-      if (label) {
-        result.protecaoIncendio[label] = isChecked(colC)
-        if (colF) result.protecaoIncendio[`${label}_detalhe`] = colF
+      if (normA.includes('protecao contra incendio')) {
+        currentSection = 'incendio'
+      } else if (normA.includes('protecao contra roubo')) {
+        currentSection = 'roubo'
+      } else if (normA.includes('construcao')) {
+        currentSection = 'construcao'
+      }
+    }
+
+    // Proteção contra Incêndios
+    if (currentSection === 'incendio' || normA.includes('protecao contra incendio')) {
+      // Se linha não tem rótulo em colC, pode ser continuação ou detalhe
+      const rawLabel = colC.replace(/\(\s*[xX✓✔ ]\s*\)/, '').trim()
+      const rowChecked = isChecked(colC) || isChecked(colB)
+      const subOpts = colF || colE || colD || colG
+
+      if (rawLabel) {
+        result.protecaoIncendio[rawLabel] = rowChecked
+        if (subOpts) {
+          result.protecaoIncendio[`${rawLabel}_detalhe`] = subOpts
+        }
+      } else if (subOpts && Object.keys(result.protecaoIncendio).length > 0) {
+        // Continuação da linha anterior
+        const lastKey = Object.keys(result.protecaoIncendio)
+          .filter((k) => !k.endsWith('_detalhe'))
+          .pop()
+        if (lastKey) {
+          result.protecaoIncendio[`${lastKey}_detalhe`] =
+            (result.protecaoIncendio[`${lastKey}_detalhe`]
+              ? `${result.protecaoIncendio[`${lastKey}_detalhe`]}; `
+              : '') + subOpts
+        }
       }
     }
 
     // Proteção contra Roubo
-    if (
-      normA.includes('protecao contra roubo') ||
-      normC.includes('vigilancia') ||
-      normC.includes('alarme')
-    ) {
-      const label = colC.replace(/\(\s*[xX✓✔ ]\s*\)/, '').trim()
-      if (label) {
-        result.protecaoRoubo[label] = isChecked(colC)
-        if (colF) result.protecaoRoubo[`${label}_detalhe`] = colF
+    if (currentSection === 'roubo' || normA.includes('protecao contra roubo')) {
+      const rawLabel = colC.replace(/\(\s*[xX✓✔ ]\s*\)/, '').trim()
+      const rowChecked = isChecked(colC) || isChecked(colB)
+      const subOpts = colF || colE || colD || colG
+
+      if (rawLabel) {
+        result.protecaoRoubo[rawLabel] = rowChecked
+        if (subOpts) {
+          result.protecaoRoubo[`${rawLabel}_detalhe`] = subOpts
+        }
+      } else if (subOpts && Object.keys(result.protecaoRoubo).length > 0) {
+        // Continuação da linha anterior (ex: vigilância armada/desarmada / 24h na linha seguinte)
+        const lastKey = Object.keys(result.protecaoRoubo)
+          .filter((k) => !k.endsWith('_detalhe'))
+          .pop()
+        if (lastKey) {
+          result.protecaoRoubo[`${lastKey}_detalhe`] =
+            (result.protecaoRoubo[`${lastKey}_detalhe`]
+              ? `${result.protecaoRoubo[`${lastKey}_detalhe`]}; `
+              : '') + subOpts
+        }
       }
     }
 
@@ -747,7 +788,10 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
     if (rowFullText.includes('Área Construída') || rowFullText.includes('Area Construida')) {
       result.construcao.areaConstruidaM2 = colD || colC
     }
-    if (rowFullText.includes('Aptos /Unidades') || rowFullText.includes('Aptos')) {
+    if (
+      rowFullText.includes('Aptos /Unidades') ||
+      (rowFullText.includes('Aptos') && !rowFullText.includes('~'))
+    ) {
       result.construcao.numAptosUnidades = colD || colC
     }
     if (rowFullText.includes('Estacionamento')) {
@@ -760,7 +804,25 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
       result.construcao.escadasRolantes = colD || colE
     }
     if (rowFullText.includes('Piscina')) {
-      result.construcao.piscina = isChecked(colD) && /sim/i.test(colD)
+      // Verifica se a opção Sim está marcada ou se a opção Não está marcada
+      const optSim =
+        extractCheckedOption(colD, ['Sim']) || extractCheckedOption(rowFullText, ['Sim'])
+      const optNao =
+        extractCheckedOption(colD, ['Não', 'Nao']) ||
+        extractCheckedOption(rowFullText, ['Não', 'Nao'])
+      if (optSim) {
+        result.construcao.piscina = true
+      } else if (optNao) {
+        result.construcao.piscina = false
+      } else {
+        result.construcao.piscina = isChecked(colD) && /sim/i.test(colD) && !/não|nao/i.test(colD)
+      }
+    }
+    if (
+      rowFullText.includes('Equipamentos') &&
+      (colC.includes('Equipamentos') || colA.includes('Equipamentos'))
+    ) {
+      result.construcao.equipamentos = colD || colE || ''
     }
     if (rowFullText.includes('Mercadorias Estocadas')) {
       result.construcao.mercadoriasEstocadas = colD || colE
@@ -1063,6 +1125,184 @@ export async function saveRiskCardToDatabase(
   const timestamp = new Date().toISOString()
   let empRecordId = match.matchedEmpreendimentoId || ''
 
+  // Monta mapa estruturado de proteções para persistência direta
+  const pInc = card.protecaoIncendio || {}
+  const pRoub = card.protecaoRoubo || {}
+
+  // Helper para buscar chave tolerante
+  const findKey = (map: Record<string, boolean | string>, ...fragments: string[]) => {
+    const keys = Object.keys(map)
+    for (const frag of fragments) {
+      const normFrag = normalizeMatchText(frag)
+      const found = keys.find((k) => normalizeMatchText(k).includes(normFrag))
+      if (found) return found
+    }
+    return null
+  }
+
+  const kExt = findKey(pInc, 'extintor')
+  const kHid = findKey(pInc, 'hidrante')
+  const kSpk = findKey(pInc, 'sprinkler')
+  const kDetFum = findKey(pInc, 'detector de fumaca', 'detector')
+  const kAlmInc = findKey(pInc, 'alame contra', 'alarme contra incendio', 'alarme incendio')
+  const kBrig = findKey(pInc, 'brigada de incendio', 'brigada')
+  const kFuncTr = findKey(pInc, 'funcionarios treinados')
+  const kParaR = findKey(pInc, 'para-raios', 'para raios', 'spda')
+  const kAgua = findKey(pInc, 'agua exclusivo', 'agua para combate')
+  const kCo2 = findKey(pInc, 'co2 fm200', 'co2', 'fm200')
+  const kExp24 = findKey(pInc, 'expediente 24')
+  const kInstElet = findKey(pInc, 'instalacoes eletricas protegidas', 'instalacoes eletricas')
+  const kLumProt = findKey(pInc, 'luminarias protegidas')
+  const kOutrosInc = findKey(pInc, 'outros')
+  const kBombeiros = findKey(pInc, 'corpo de bombeiros')
+
+  const kVig = findKey(pRoub, 'vigilancia')
+  const kAlmRoub = findKey(pRoub, 'alarme')
+  const kCam = findKey(pRoub, 'cameras de seguranca', 'cameras')
+  const kCftv = findKey(pRoub, 'cftv')
+  const kCtrlEnt = findKey(pRoub, 'controle de entrada', 'controle de acesso')
+  const kGrade = findKey(pRoub, 'grade de protecao')
+  const kCerca = findKey(pRoub, 'cerca eletrica')
+  const kCofre = findKey(pRoub, 'cofre')
+  const kOutrosRoub = findKey(pRoub, 'outros')
+
+  const vigDetalhe = kVig ? String(pRoub[`${kVig}_detalhe`] || '') : ''
+  const almIncDetalhe = kAlmInc ? String(pInc[`${kAlmInc}_detalhe`] || '') : ''
+  const almRoubDetalhe = kAlmRoub ? String(pRoub[`${kAlmRoub}_detalhe`] || '') : ''
+  const camDetalhe = kCam ? String(pRoub[`${kCam}_detalhe`] || '') : ''
+  const ctrlEntDetalhe = kCtrlEnt ? String(pRoub[`${kCtrlEnt}_detalhe`] || '') : ''
+
+  const isVigArmada = /armada/i.test(vigDetalhe) && !/desarmada/i.test(vigDetalhe)
+  const isVig24h = /24\s*h/i.test(vigDetalhe) || Boolean(pInc[kExp24 || ''])
+
+  // Outros textos
+  const outrosIncTexto = kOutrosInc
+    ? String(kOutrosInc.replace(/^outros\s*[:\s-]*/i, '') || pInc[`${kOutrosInc}_detalhe`] || '')
+    : ''
+  const outrosRoubTexto = kOutrosRoub
+    ? String(kOutrosRoub.replace(/^outros\s*[:\s-]*/i, '') || pRoub[`${kOutrosRoub}_detalhe`] || '')
+    : ''
+
+  // Distância bombeiros e volume de água
+  let distBombeirosKm: number | null = null
+  let distBombeirosTexto = ''
+  if (kBombeiros) {
+    const rawB = `${kBombeiros} ${pInc[`${kBombeiros}_detalhe`] || ''}`
+    const m = rawB.match(/(\d+(?:[.,]\d+)?)\s*(?:km|quil[oô]metros|m\b)/i)
+    if (m) distBombeirosKm = parseCellNumber(m[1])
+    distBombeirosTexto = rawB.replace(/.*?qual\s+a\s+dist[aâ]ncia\s*\??\s*[:\s-]*/i, '').trim()
+  }
+
+  let volumeAguaM3: number | null = null
+  let volumeAguaTexto = ''
+  if (kAgua) {
+    const rawA = `${kAgua} ${pInc[`${kAgua}_detalhe`] || ''}`
+    const m = rawA.match(/(\d+(?:[.,]\d+)?)\s*(?:m3|m³|litros|mil)/i)
+    if (m) volumeAguaM3 = parseCellNumber(m[1])
+    volumeAguaTexto = rawA.replace(/.*?qual\s+o\s+volume\s*\??\s*[:\s-]*/i, '').trim()
+  }
+
+  // Extrai número de andares / subsolo
+  let numAndaresNum: number | null = null
+  if (card.construcao.quantidadeAndares) {
+    const mAndares =
+      String(card.construcao.quantidadeAndares).match(/andares\s*[:\s-]*\s*(\d+)/i) ||
+      String(card.construcao.quantidadeAndares).match(/^(\d+)/)
+    if (mAndares) numAndaresNum = parseInt(mAndares[1], 10)
+  }
+
+  // Extrai número de unidades
+  let numUnidadesNum: number | null = null
+  if (card.construcao.numAptosUnidades) {
+    const mU = String(card.construcao.numAptosUnidades).match(/(\d+)/)
+    if (mU) numUnidadesNum = parseInt(mU[1], 10)
+  }
+
+  // Extrai área construída
+  let areaConstruidaNum: number | null = null
+  if (card.construcao.areaConstruidaM2) {
+    areaConstruidaNum = parseCellNumber(card.construcao.areaConstruidaM2)
+  }
+
+  // Elevadores
+  const hasElevadores =
+    Boolean(card.construcao.elevadores) &&
+    !/não|nao/i.test(card.construcao.elevadores.replace(/sim/i, ''))
+  let numElevadoresNum: number | null = null
+  if (card.construcao.elevadores) {
+    const mEl =
+      String(card.construcao.elevadores).match(/quantos\s*\??\s*[:\s-]*\s*(\d+)/i) ||
+      String(card.construcao.elevadores).match(/(\d+)/)
+    if (mEl) numElevadoresNum = parseInt(mEl[1], 10)
+  }
+
+  // Vagas estacionamento
+  let vagasEstacionamentoNum: number | null = null
+  if (card.construcao.estacionamento) {
+    const mVagas =
+      String(card.construcao.estacionamento).match(/autom[oó]veis\s*[:\s-]*\s*(\d+)/i) ||
+      String(card.construcao.estacionamento).match(/(\d+)/)
+    if (mVagas) vagasEstacionamentoNum = parseInt(mVagas[1], 10)
+  }
+
+  // Objeto completo com dados de proteções e risco
+  const protecoesUpdatePayload = {
+    prot_extintores: Boolean(kExt && pInc[kExt]),
+    prot_hidrantes: Boolean(kHid && pInc[kHid]),
+    prot_sprinklers: Boolean(kSpk && pInc[kSpk]),
+    prot_detector_fumaca: Boolean(kDetFum && pInc[kDetFum]),
+    prot_alarme_incendio: Boolean(kAlmInc && pInc[kAlmInc]),
+    prot_brigada_incendio: Boolean((kBrig && pInc[kBrig]) || (kFuncTr && pInc[kFuncTr])),
+    prot_pararraios: Boolean(kParaR && pInc[kParaR]),
+    prot_agua_exclusiva_incendio: Boolean(kAgua && pInc[kAgua]),
+    prot_co2_fm200: Boolean(kCo2 && pInc[kCo2]),
+    prot_expediente_24h: Boolean(kExp24 && pInc[kExp24]),
+    prot_instalacoes_eletricas_protegidas: Boolean(kInstElet && pInc[kInstElet]),
+    prot_luminarias_protegidas: Boolean(kLumProt && pInc[kLumProt]),
+    prot_outros_incendio: Boolean(kOutrosInc && pInc[kOutrosInc]),
+    prot_outros_incendio_texto: outrosIncTexto,
+
+    prot_vigilancia: Boolean(kVig && pRoub[kVig]),
+    vigilancia_armada: isVigArmada,
+    vigilancia_24h: isVig24h,
+    prot_alarme_roubo: Boolean(kAlmRoub && pRoub[kAlmRoub]),
+    prot_cameras_seguranca: Boolean(kCam && pRoub[kCam]),
+    prot_cftv: Boolean(kCftv && pRoub[kCftv]),
+    prot_controle_entrada: Boolean(kCtrlEnt && pRoub[kCtrlEnt]),
+    prot_grade_protecao: Boolean(kGrade && pRoub[kGrade]),
+    prot_cerca_eletrica: Boolean(kCerca && pRoub[kCerca]),
+    prot_cofres: Boolean(kCofre && pRoub[kCofre]),
+    prot_outros_roubo: Boolean(kOutrosRoub && pRoub[kOutrosRoub]),
+    prot_outros_roubo_texto: outrosRoubTexto,
+
+    prot_alarme_incendio_detalhe: almIncDetalhe,
+    prot_vigilancia_detalhe: vigDetalhe,
+    prot_alarme_roubo_detalhe: almRoubDetalhe,
+    prot_cameras_seguranca_detalhe: camDetalhe,
+    prot_controle_entrada_detalhe: ctrlEntDetalhe,
+    dist_bombeiros_texto: distBombeirosTexto,
+    volume_agua_exclusivo_texto: volumeAguaTexto,
+
+    reserva_agua_incendio_m3: volumeAguaM3 ?? undefined,
+    dist_bombeiros_km: distBombeirosKm ?? undefined,
+
+    // Dados de construção corretos
+    possui_piscina: card.construcao.piscina,
+    possui_elevador: hasElevadores,
+    num_elevadores: numElevadoresNum ?? undefined,
+    vagas_estacionamento: vagasEstacionamentoNum ?? undefined,
+    num_andares: numAndaresNum ?? undefined,
+    num_unidades: numUnidadesNum ?? undefined,
+    area_construida_m2: areaConstruidaNum ?? undefined,
+    ano_construcao: card.construcao.anoConstrucao ?? undefined,
+    tipo_construcao: card.construcao.tipoConstrucao || undefined,
+
+    protecoes_raw_json: {
+      incendio: pInc,
+      roubo: pRoub,
+    },
+  }
+
   // 1. Salvar ou Vincular Empreendimento
   onProgress?.('Verificando cadastro de empreendimento...')
   if (!empRecordId) {
@@ -1077,15 +1317,12 @@ export async function saveRiskCardToDatabase(
       endereco: card.endereco || card.localRisco,
       atividade: card.atividade,
       atividade_exercida: card.atividadeExercida,
-      ano_construcao: card.construcao.anoConstrucao,
-      tipo_construcao: card.construcao.tipoConstrucao,
-      possui_piscina: card.construcao.piscina,
-      possui_elevador: Boolean(card.construcao.elevadores),
       segmento: 'Hotéis & Resorts',
       fonte_cartao_risco: card.fileName,
       origem: 'Cartão de Risco',
       imported_at: timestamp,
       imported_by: currentUserEmail,
+      ...protecoesUpdatePayload,
     }
 
     try {
@@ -1100,6 +1337,20 @@ export async function saveRiskCardToDatabase(
       return summary
     }
   } else {
+    // Atualização idempotente dos dados do Cartão de Risco (proteções, construção e detalhes)
+    try {
+      await executeWithRetry(() =>
+        pb.collection('empreendimentos').update(empRecordId, {
+          ...protecoesUpdatePayload,
+          fonte_cartao_risco: card.fileName,
+        }),
+      )
+      summary.updatedCount++
+    } catch (err) {
+      summary.errors.push(
+        `Aviso ao atualizar proteções do empreendimento: ${(err as Error).message}`,
+      )
+    }
     summary.empreendimentoId = empRecordId
     summary.unchangedCount++
   }

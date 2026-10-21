@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T16:29:35.231Z",
+  "generatedAt": "2026-10-21T17:55:55.270Z",
   "collections": [
     {
       "name": "users",
@@ -385,6 +385,114 @@
         {
           "name": "origem",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_agua_exclusiva_incendio",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_co2_fm200",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_expediente_24h",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_instalacoes_eletricas_protegidas",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_luminarias_protegidas",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_cameras_seguranca",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_outros_incendio",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_outros_roubo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_outros_incendio_texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_outros_roubo_texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_alarme_incendio_detalhe",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_vigilancia_detalhe",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_alarme_roubo_detalhe",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_cameras_seguranca_detalhe",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "prot_controle_entrada_detalhe",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "volume_agua_exclusivo_texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "dist_bombeiros_texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "protecoes_raw_json",
+          "type": "json",
           "required": false,
           "system": false
         }

@@ -34,6 +34,7 @@ import {
   Building2,
   Layers,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -480,19 +481,49 @@ export default function RecebimentoPage() {
                       <td className="py-3 px-4 text-gray-500">{doc.versao || 'v1.0'}</td>
                       <td className="py-3 px-4 text-gray-500">{formatDate(doc.data)}</td>
                       <td className="py-3 px-4 text-right">
-                        {fileUrl ? (
-                          <a
-                            href={fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[#16578B] hover:underline font-medium"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Baixar</span>
-                          </a>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
+                        <div className="inline-flex items-center gap-2">
+                          {doc.tipo === 'Cartão de Risco' && fileUrl && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  setParsingRiskCard(true)
+                                  setRiskCardModalOpen(true)
+                                  const resp = await fetch(fileUrl)
+                                  const blob = await resp.blob()
+                                  const file = new File(
+                                    [blob],
+                                    doc.versao || 'Cartao_de_Risco.xlsx',
+                                    {
+                                      type: blob.type,
+                                    },
+                                  )
+                                  await handleSelectRiskCardFile(file)
+                                } catch (e) {
+                                  alert('Erro ao carregar Cartão de Risco: ' + (e as Error).message)
+                                  setParsingRiskCard(false)
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 font-semibold bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded border border-blue-200 transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              <span>Reprocessar</span>
+                            </button>
+                          )}
+                          {fileUrl ? (
+                            <a
+                              href={fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[#16578B] hover:underline font-medium"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Baixar</span>
+                            </a>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

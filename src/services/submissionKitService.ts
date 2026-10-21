@@ -213,26 +213,193 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     }
   }
 
-  // Proteções
+  // Carrega e normaliza proteções e qualificadores (de campos do banco ou de protecoes_raw_json)
+  const rawJson = (emp.protecoes_raw_json || {}) as {
+    incendio?: Record<string, boolean | string>
+    roubo?: Record<string, boolean | string>
+  }
+  const incRaw = rawJson.incendio || {}
+  const roubRaw = rawJson.roubo || {}
+
+  // Helper para verificar texto e detalhe em rawJson
+  const findRaw = (dict: Record<string, boolean | string>, ...terms: string[]) => {
+    const keys = Object.keys(dict)
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+    for (const term of terms) {
+      const normTerm = norm(term)
+      const k = keys.find((key) => norm(key).includes(normTerm))
+      if (k)
+        return { key: k, checked: Boolean(dict[k]), detalhe: String(dict[`${k}_detalhe`] || '') }
+    }
+    return null
+  }
+
+  const rawExt = findRaw(incRaw, 'extintor')
+  const rawHid = findRaw(incRaw, 'hidrante')
+  const rawSpk = findRaw(incRaw, 'sprinkler')
+  const rawDet = findRaw(incRaw, 'detector de fumaca', 'detector')
+  const rawAlmInc = findRaw(incRaw, 'alame contra', 'alarme contra incendio', 'alarme')
+  const rawBrig = findRaw(incRaw, 'brigada de incendio', 'brigada')
+  const rawFuncTr = findRaw(incRaw, 'funcionarios treinados')
+  const rawParaR = findRaw(incRaw, 'para-raios', 'para raios', 'spda')
+  const rawAgua = findRaw(incRaw, 'agua exclusivo', 'agua para combate')
+  const rawCo2 = findRaw(incRaw, 'co2 fm200', 'co2')
+  const rawExp24 = findRaw(incRaw, 'expediente 24')
+  const rawInstEl = findRaw(incRaw, 'instalacoes eletricas protegidas', 'instalacoes eletricas')
+  const rawLumProt = findRaw(incRaw, 'luminarias protegidas')
+  const rawOutrosInc = findRaw(incRaw, 'outros')
+
+  const rawVig = findRaw(roubRaw, 'vigilancia')
+  const rawAlmRoub = findRaw(roubRaw, 'alarme')
+  const rawCam = findRaw(roubRaw, 'cameras de seguranca', 'cameras')
+  const rawCftv = findRaw(roubRaw, 'cftv')
+  const rawCtrlEnt = findRaw(roubRaw, 'controle de entrada', 'controle de acesso')
+  const rawGrade = findRaw(roubRaw, 'grade de protecao')
+  const rawCerca = findRaw(roubRaw, 'cerca eletrica')
+  const rawCofres = findRaw(roubRaw, 'cofre')
+  const rawOutrosRoub = findRaw(roubRaw, 'outros')
+
+  // Checagens booleanas consolidadas (banco ou rawJson)
+  const hasExt = Boolean(emp.prot_extintores || rawExt?.checked)
+  const hasHid = Boolean(emp.prot_hidrantes || rawHid?.checked)
+  const hasSpk = Boolean(emp.prot_sprinklers || rawSpk?.checked)
+  const hasDetFum = Boolean(emp.prot_detector_fumaca || rawDet?.checked)
+  const hasAlmInc = Boolean(emp.prot_alarme_incendio || rawAlmInc?.checked)
+  const hasBrig = Boolean(emp.prot_brigada_incendio || rawBrig?.checked || rawFuncTr?.checked)
+  const hasParaR = Boolean(emp.prot_pararraios || rawParaR?.checked)
+  const hasAgua = Boolean(emp.prot_agua_exclusiva_incendio || rawAgua?.checked)
+  const hasCo2 = Boolean(emp.prot_co2_fm200 || rawCo2?.checked)
+  const hasExp24 = Boolean(emp.prot_expediente_24h || rawExp24?.checked)
+  const hasInstElet = Boolean(emp.prot_instalacoes_eletricas_protegidas || rawInstEl?.checked)
+  const hasLumProt = Boolean(emp.prot_luminarias_protegidas || rawLumProt?.checked)
+  const hasOutrosInc = Boolean(emp.prot_outros_incendio || rawOutrosInc?.checked)
+
+  const hasVig = Boolean(emp.prot_vigilancia || rawVig?.checked)
+  const hasAlmRoub = Boolean(emp.prot_alarme_roubo || rawAlmRoub?.checked)
+  const hasCam = Boolean(emp.prot_cameras_seguranca || rawCam?.checked)
+  const hasCftv = Boolean(emp.prot_cftv || rawCftv?.checked)
+  const hasCtrlEnt = Boolean(emp.prot_controle_entrada || rawCtrlEnt?.checked)
+  const hasGrade = Boolean(emp.prot_grade_protecao || rawGrade?.checked)
+  const hasCerca = Boolean(emp.prot_cerca_eletrica || rawCerca?.checked)
+  const hasCofres = Boolean(emp.prot_cofres || rawCofres?.checked)
+  const hasOutrosRoub = Boolean(emp.prot_outros_roubo || rawOutrosRoub?.checked)
+
+  // Qualificadores formatados
+  const almIncDetalheRaw = String(emp.prot_alarme_incendio_detalhe || rawAlmInc?.detalhe || '')
+  let almIncQualificador = ''
+  if (/\(\s*[xX✓✔ ]\s*\)\s*não monitorada/i.test(almIncDetalheRaw)) {
+    almIncQualificador = ' (Não Monitorada)'
+  } else if (
+    /\(\s*[xX✓✔ ]\s*\)\s*monitorada/i.test(almIncDetalheRaw) ||
+    (/monitorada/i.test(almIncDetalheRaw) && !/não monitorada/i.test(almIncDetalheRaw))
+  ) {
+    almIncQualificador = ' (Monitorada)'
+  } else if (/manual/i.test(almIncDetalheRaw)) {
+    almIncQualificador = ' (Manual)'
+  }
+
+  const vigDetalheRaw = String(emp.prot_vigilancia_detalhe || rawVig?.detalhe || '')
+  const vigQuals: string[] = []
+  if (/\(\s*[xX✓✔ ]\s*\)\s*não monitorada/i.test(vigDetalheRaw)) {
+    vigQuals.push('Não Monitorada')
+  } else if (
+    /\(\s*[xX✓✔ ]\s*\)\s*monitorada/i.test(vigDetalheRaw) ||
+    (/monitorada/i.test(vigDetalheRaw) && !/não monitorada/i.test(vigDetalheRaw))
+  ) {
+    vigQuals.push('Monitorada')
+  }
+
+  if (
+    /\(\s*[xX✓✔ ]\s*\)\s*desarmada/i.test(vigDetalheRaw) ||
+    (/desarmada/i.test(vigDetalheRaw) && !/não desarmada/i.test(vigDetalheRaw))
+  ) {
+    vigQuals.push('Desarmada')
+  } else if (
+    /\(\s*[xX✓✔ ]\s*\)\s*armada/i.test(vigDetalheRaw) &&
+    !/desarmada/i.test(vigDetalheRaw)
+  ) {
+    vigQuals.push('Armada')
+  }
+
+  if (
+    /\(\s*[xX✓✔ ]\s*\)\s*24\s*hrs?/i.test(vigDetalheRaw) ||
+    emp.vigilancia_24h ||
+    (/24\s*hrs?/i.test(vigDetalheRaw) && !/diurno|noturno/i.test(vigDetalheRaw))
+  ) {
+    vigQuals.push('24hrs')
+  } else if (/\(\s*[xX✓✔ ]\s*\)\s*diurno/i.test(vigDetalheRaw)) {
+    vigQuals.push('Diurno')
+  } else if (/\(\s*[xX✓✔ ]\s*\)\s*noturno/i.test(vigDetalheRaw)) {
+    vigQuals.push('Noturno')
+  }
+  const vigQualificador = vigQuals.length > 0 ? ` (${vigQuals.join(', ')})` : ''
+
+  const almRoubDetalheRaw = String(emp.prot_alarme_roubo_detalhe || rawAlmRoub?.detalhe || '')
+  let almRoubQualificador = ''
+  if (/\(\s*[xX✓✔ ]\s*\)\s*não monitorado/i.test(almRoubDetalheRaw)) {
+    almRoubQualificador = ' (Não Monitorado)'
+  } else if (
+    /\(\s*[xX✓✔ ]\s*\)\s*monitorado/i.test(almRoubDetalheRaw) ||
+    (/monitorado/i.test(almRoubDetalheRaw) && !/não monitorado/i.test(almRoubDetalheRaw))
+  ) {
+    almRoubQualificador = ' (Monitorado)'
+  }
+
+  const camDetalheRaw = String(emp.prot_cameras_seguranca_detalhe || rawCam?.detalhe || '')
+  let camQualificador = ''
+  if (/\(\s*[xX✓✔ ]\s*\)\s*não monitorado/i.test(camDetalheRaw)) {
+    camQualificador = ' (Não Monitorado)'
+  } else if (
+    /\(\s*[xX✓✔ ]\s*\)\s*monitorado/i.test(camDetalheRaw) ||
+    (/monitorado/i.test(camDetalheRaw) && !/não monitorado/i.test(camDetalheRaw))
+  ) {
+    camQualificador = ' (Monitorado)'
+  }
+
+  const ctrlEntDetalheRaw = String(emp.prot_controle_entrada_detalhe || rawCtrlEnt?.detalhe || '')
+  let ctrlEntQualificador = ''
+  if (ctrlEntDetalheRaw) {
+    const obsClean = ctrlEntDetalheRaw.replace(/^obs\s*[:\s-]*/i, '').trim()
+    if (obsClean) ctrlEntQualificador = ` (Obs: ${obsClean})`
+  }
+
+  const outrosIncTexto = String(emp.prot_outros_incendio_texto || rawOutrosInc?.detalhe || '')
+  const outrosRoubTexto = String(emp.prot_outros_roubo_texto || rawOutrosRoub?.detalhe || '')
+
+  // Dicionário canônico de proteções (somente proteções reais de incêndio e roubo — sem piscina nem elevadores)
   const protecoes: Record<string, boolean> = {
-    Extintores: Boolean(emp.prot_extintores),
-    Hidrantes: Boolean(emp.prot_hidrantes),
-    Sprinklers: Boolean(emp.prot_sprinklers),
-    'Detectores de Fumaça': Boolean(emp.prot_detector_fumaca),
-    'Alarme de Incêndio': Boolean(emp.prot_alarme_incendio),
-    'Brigada de Incêndio': Boolean(emp.prot_brigada_incendio),
-    'Pára-raios (SPDA)': Boolean(emp.prot_pararraios),
-    'Vigilância Patrimonial': Boolean(emp.prot_vigilancia),
-    'Vigilância Armada': Boolean(emp.prot_vigilancia_armada),
-    'Vigilância 24h': Boolean(emp.vigilancia_24h),
-    'Alarme de Roubo': Boolean(emp.prot_alarme_roubo),
-    'CFTV (Câmeras)': Boolean(emp.prot_cftv),
-    'Controle de Acesso / Entrada': Boolean(emp.prot_controle_entrada),
-    Cofres: Boolean(emp.prot_cofres),
-    'Cerca Elétrica': Boolean(emp.prot_cerca_eletrica),
-    'Grade de Proteção': Boolean(emp.prot_grade_protecao),
-    Piscina: Boolean(emp.possui_piscina),
-    Elevadores: Boolean(emp.possui_elevador),
+    Extintores: hasExt,
+    Hidrantes: hasHid,
+    Sprinklers: hasSpk,
+    'Detector de Fumaça': hasDetFum,
+    [`Alarme contra Incêndio${almIncQualificador}`]: hasAlmInc,
+    'Brigada de Incêndio ou Funcionários Treinados': hasBrig,
+    'Pára-raios': hasParaR,
+    'Água exclusiva para combate ao incêndio': hasAgua,
+    'CO2 FM200': hasCo2,
+    'Expediente 24 hrs': hasExp24,
+    'Instalações Elétricas Protegidas': hasInstElet,
+    'Luminárias Protegidas': hasLumProt,
+    ...(hasOutrosInc
+      ? { [`Outros (Incêndio)${outrosIncTexto ? `: ${outrosIncTexto}` : ''}`]: true }
+      : {}),
+
+    [`Vigilância${vigQualificador}`]: hasVig,
+    [`Alarme de Roubo${almRoubQualificador}`]: hasAlmRoub,
+    [`Câmeras de Segurança${camQualificador}`]: hasCam,
+    CFTV: hasCftv,
+    [`Controle de entrada${ctrlEntQualificador}`]: hasCtrlEnt,
+    'Grade de Proteção': hasGrade,
+    'Cerca Elétrica': hasCerca,
+    Cofres: hasCofres,
+    ...(hasOutrosRoub
+      ? { [`Outros (Roubo)${outrosRoubTexto ? `: ${outrosRoubTexto}` : ''}`]: true }
+      : {}),
   }
 
   // VRD
@@ -320,7 +487,7 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     )
   }
 
-  // Construção e Riscos
+  // Construção e Riscos (dados construtivos e operacionais)
   addField('Tipo de Construção', emp.tipo_construcao as string, 'Construção e Riscos', true)
   addField('Ano de Construção', emp.ano_construcao as number, 'Construção e Riscos')
   addField(
@@ -335,23 +502,42 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
   )
   addField('Número de Andares / Pavimentos', emp.num_andares as number, 'Construção e Riscos')
   addField('Número de Unidades / UH / Quartos', emp.num_unidades as number, 'Construção e Riscos')
-  addField('Número de Elevadores', emp.num_elevadores as number, 'Construção e Riscos')
+  addField('Piscina', emp.possui_piscina ? 'Sim / Instalado' : 'Não', 'Construção e Riscos')
+  addField(
+    'Elevadores',
+    emp.possui_elevador
+      ? emp.num_elevadores
+        ? `Sim (${emp.num_elevadores} elevadores)`
+        : 'Sim / Instalado'
+      : 'Não',
+    'Construção e Riscos',
+  )
+  if (typeof emp.num_elevadores === 'number' && emp.num_elevadores > 0) {
+    addField('Número de Elevadores', emp.num_elevadores, 'Construção e Riscos')
+  }
   addField('Vagas de Estacionamento', emp.vagas_estacionamento as number, 'Construção e Riscos')
-  addField(
-    'Distância Corpo de Bombeiros (km)',
-    emp.dist_bombeiros_km ? `${emp.dist_bombeiros_km} km` : null,
-    'Construção e Riscos',
-  )
-  addField(
-    'Reserva Técnica de Incêndio (m³)',
-    emp.reserva_agua_incendio_m3 ? `${emp.reserva_agua_incendio_m3} m³` : null,
-    'Construção e Riscos',
-  )
 
-  // Proteções ativas
+  // Detalhes que os portais pedem e que constam no Cartão em aberto (quando preenchidos)
+  const distBombeirosVal =
+    emp.dist_bombeiros_texto || (emp.dist_bombeiros_km ? `${emp.dist_bombeiros_km} km` : null)
+  if (distBombeirosVal) {
+    addField('Distância Corpo de Bombeiros', String(distBombeirosVal), 'Proteções')
+    addField('Distância Corpo de Bombeiros', String(distBombeirosVal), 'Construção e Riscos')
+  }
+
+  const volAguaVal =
+    emp.volume_agua_exclusivo_texto ||
+    (emp.reserva_agua_incendio_m3 ? `${emp.reserva_agua_incendio_m3} m³` : null)
+  if (volAguaVal) {
+    addField('Volume de Água Exclusivo para Combate', String(volAguaVal), 'Proteções')
+    addField('Reserva Técnica de Incêndio (m³)', String(volAguaVal), 'Construção e Riscos')
+  }
+
+  // Proteções ativas (apenas as que têm valor true/presentes)
   const ativas = Object.entries(protecoes)
-    .filter(([, v]) => v)
+    .filter(([, v]) => Boolean(v))
     .map(([k]) => k)
+
   if (ativas.length > 0) {
     addField('Proteções e Prevenções Presentes', ativas.join('; '), 'Proteções', true)
     for (const [protNome, ativa] of Object.entries(protecoes)) {
@@ -526,30 +712,26 @@ export function generateSubmissionKitXlsx(data: SubmissionKitData): void {
 
   // ABA 2: DADOS TÉCNICOS E CONSTRUÇÃO
   const dadosTecnicosRows: (string | number)[][] = [
-    ['PARÂMETRO CONSTRUTIVO / PROTEÇÃO', 'VALOR / SITUAÇÃO'],
+    ['PARÂMETRO CONSTRUTIVO / CARACTERÍSTICA', 'VALOR / SITUAÇÃO'],
     ['Tipo de Construção', data.tipoConstrucao || '—'],
     ['Ano de Construção', data.anoConstrucao || '—'],
     ['Área Construída (m²)', data.areaConstruidaM2 || '—'],
     ['Área do Terreno (m²)', data.areaTerrenoM2 || '—'],
     ['Número de Andares / Pavimentos', data.numAndares || '—'],
     ['Número de Unidades / UH / Quartos', data.numUnidades || '—'],
-    ['Vagas de Estacionamento', data.numUnidades || '—'],
+    ['Distância do Corpo de Bombeiros', data.distBombeirosKm ? `${data.distBombeirosKm} km` : '—'],
     [
-      'Distância do Corpo de Bombeiros (km)',
-      data.distBombeirosKm ? `${data.distBombeirosKm} km` : '—',
-    ],
-    [
-      'Reserva Técnica de Água para Incêndio (m³)',
+      'Reserva Técnica de Água para Incêndio',
       data.reservaAguaIncendioM3 ? `${data.reservaAguaIncendioM3} m³` : '—',
     ],
     [],
-    ['PROTEÇÕES E SISTEMAS DE SEGURANÇA', 'INSTALADO / ATIVO'],
+    ['PROTEÇÕES E SISTEMAS DE SEGURANÇA (INCÊNDIO E ROUBO)', 'INSTALADO / ATIVO'],
   ]
   for (const [prot, ativa] of Object.entries(data.protecoes)) {
     dadosTecnicosRows.push([prot, ativa ? 'SIM' : 'NÃO'])
   }
   const wsTecnico = XLSX.utils.aoa_to_sheet(dadosTecnicosRows)
-  wsTecnico['!cols'] = [{ wch: 45 }, { wch: 25 }]
+  wsTecnico['!cols'] = [{ wch: 55 }, { wch: 25 }]
   XLSX.utils.book_append_sheet(wb, wsTecnico, 'Construção e Proteções')
 
   // ABA 3: TABELA DE COBERTURAS E LMI (QAR PADRONIZADO)
@@ -944,8 +1126,8 @@ export function printSubmissionKitPdf(data: SubmissionKitData): void {
     </div>
   </div>
 
-  <div style="margin-top: 6px;">
-    <span class="label" style="display: block; margin-bottom: 4px;">Sistemas de Prevenção e Proteção Existentes:</span>
+  <div style="margin-top: 10px;">
+    <span class="label" style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 11px;">Sistemas de Prevenção e Proteção Existentes (${ativas.length} ativas):</span>
     <div>
       ${ativas.length > 0 ? ativas.map((p) => `<span class="badge-tag">✔ ${p}</span>`).join('') : '<span style="color: #718096;">Nenhuma proteção específica cadastrada.</span>'}
     </div>
