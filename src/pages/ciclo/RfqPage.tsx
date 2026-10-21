@@ -50,6 +50,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SubmissionKitModal } from '@/components/SubmissionKitModal'
+import { PainelControlePropostas } from '@/components/PainelControlePropostas'
 
 interface RfqRecord {
   id: string
@@ -111,6 +112,12 @@ export default function RfqPage() {
   const [kitModalOpen, setKitModalOpen] = useState(false)
   const [kitData, setKitData] = useState<SubmissionKitData | null>(null)
   const [loadingKit, setLoadingKit] = useState(false)
+
+  // Edit RFQ Modal (para convidar cias em RFQ existente)
+  const [editRfqModalOpen, setEditRfqModalOpen] = useState(false)
+  const [editingRfq, setEditingRfq] = useState<RfqRecord | null>(null)
+  const [editSegs, setEditSegs] = useState<string[]>([])
+  const [savingEditRfq, setSavingEditRfq] = useState(false)
 
   const fetchData = async () => {
     try {
@@ -199,6 +206,41 @@ export default function RfqPage() {
     setSelectedSegs((prev) =>
       prev.includes(segId) ? prev.filter((id) => id !== segId) : [...prev, segId],
     )
+  }
+
+  const toggleEditSeguradora = (segId: string) => {
+    setEditSegs((prev) =>
+      prev.includes(segId) ? prev.filter((id) => id !== segId) : [...prev, segId],
+    )
+  }
+
+  const handleOpenEditRfq = (rfq: RfqRecord) => {
+    setEditingRfq(rfq)
+    setEditSegs(rfq.seguradoras_solicitadas || [])
+    setEditRfqModalOpen(true)
+  }
+
+  const handleSaveEditRfq = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingRfq) return
+    try {
+      setSavingEditRfq(true)
+      await pb.collection('rfq').update(editingRfq.id, {
+        seguradoras_solicitadas: editSegs,
+      })
+      setEditRfqModalOpen(false)
+      const updated = { ...editingRfq, seguradoras_solicitadas: editSegs }
+      setRfqs((prev) => prev.map((r) => (r.id === editingRfq.id ? updated : r)))
+      if (selectedRfq && selectedRfq.id === editingRfq.id) {
+        setSelectedRfq(updated)
+      }
+      setFeedbackMessage('Lista de seguradoras convidadas atualizada com sucesso.')
+      setTimeout(() => setFeedbackMessage(null), 4000)
+    } catch (err) {
+      alert('Erro ao atualizar seguradoras: ' + (err as Error).message)
+    } finally {
+      setSavingEditRfq(false)
+    }
   }
 
   const handleOpenSubmissionKit = async (rfq: RfqRecord) => {
@@ -545,28 +587,48 @@ export default function RfqPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: DETALHE DO RFQ & RESPOSTA */}
+      {/* MODAL: DETALHE DO RFQ & GERENCIAMENTO COMPLETO (COM PAINEL DE CONTROLE DE PROPOSTAS) */}
       {selectedRfq && (
         <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
-          <DialogContent className="max-w-xl animate-scale-in">
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto animate-scale-in p-6">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold text-gray-900">
-                Gerenciar RFQ #{selectedRfq.id.slice(0, 6).toUpperCase()}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-gray-500">
-                {selectedRfq.expand?.conta_empreendimento?.nome_empreendimento} · Prazo SLA:{' '}
-                {formatDate(selectedRfq.prazo_limite)}
-              </DialogDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-6">
+                <div>
+                  <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <Send className="w-5 h-5 text-[#16578B]" />
+                    <span>Gerenciar RFQ #{selectedRfq.id.slice(0, 6).toUpperCase()}</span>
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-gray-500 mt-0.5">
+                    {selectedRfq.expand?.conta_empreendimento?.nome_empreendimento ||
+                      'Empreendimento'}{' '}
+                    · Enviado em {formatDate(selectedRfq.data_envio)} · Prazo SLA:{' '}
+                    <strong className="text-gray-800">
+                      {formatDate(selectedRfq.prazo_limite)}
+                    </strong>
+                  </DialogDescription>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleOpenEditRfq(selectedRfq)}
+                    className="text-xs h-8 border-gray-300"
+                  >
+                    <span>Editar Convidadas</span>
+                  </Button>
+                </div>
+              </div>
             </DialogHeader>
 
-            <div className="py-3 space-y-4 text-xs">
+            <div className="py-2 space-y-5 text-xs">
               {selectedRfq.observacoes && (
                 <div className="p-3 bg-gray-50 rounded-lg border text-gray-700">
-                  <strong>Observações:</strong> {selectedRfq.observacoes}
+                  <strong>Observações Técnicas:</strong> {selectedRfq.observacoes}
                 </div>
               )}
 
-              {/* Painel do Kit de Submissão dentro do Gerenciar */}
+              {/* Kit de Submissão dentro do Gerenciar (Mantém Deletar Kit funcional) */}
               <div className="border rounded-lg p-3.5 space-y-3 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border-blue-200">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
@@ -611,7 +673,7 @@ export default function RfqPage() {
                   </Button>
                 </div>
 
-                {/* Zona destrutiva: Deletar Kit mantendo RFQ intacto */}
+                {/* Zona de exclusão: Deletar Kit mantendo RFQ intacto */}
                 <div className="pt-2 border-t border-blue-200/60 flex items-center justify-between">
                   <div className="text-[11px] text-gray-500">
                     {selectedRfq.kit_gerado ? (
@@ -641,52 +703,99 @@ export default function RfqPage() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="font-bold text-gray-800 mb-2">Seguradoras Consultadas:</h4>
-                <div className="divide-y border rounded-lg overflow-hidden bg-white">
-                  {selectedRfq.seguradoras_solicitadas?.length === 0 ? (
-                    <div className="p-3 text-gray-400">Nenhuma seguradora associada</div>
-                  ) : (
-                    selectedRfq.seguradoras_solicitadas.map((segId) => {
-                      const segName =
-                        seguradoras.find((s) => s.id === segId)?.nome ||
-                        `Seguradora ${segId.slice(0, 5)}`
-                      return (
-                        <div
-                          key={segId}
-                          className="p-3 flex items-center justify-between hover:bg-gray-50"
-                        >
-                          <div>
-                            <div className="font-semibold text-gray-900">{segName}</div>
-                            <div className="text-[11px] text-gray-500">
-                              Enviado em {formatDate(selectedRfq.data_envio)}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => handleRegisterResponse(selectedRfq, segId)}
-                            className="bg-[#16578B] hover:bg-[#0E4268] text-white text-[11px] h-7"
-                          >
-                            Registrar Resposta / Proposta
-                          </Button>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
+              {/* NOVO: PAINEL DE CONTROLE DE PROPOSTAS DAS SEGURADORAS */}
+              <PainelControlePropostas
+                rfqId={selectedRfq.id}
+                rfqNumero={`RFQ-${selectedRfq.id.slice(0, 6).toUpperCase()}`}
+                empreendimentoNome={selectedRfq.expand?.conta_empreendimento?.nome_empreendimento}
+                seguradorasSolicitadas={selectedRfq.seguradoras_solicitadas || []}
+                dataEnvio={selectedRfq.data_envio}
+                prazoLimite={selectedRfq.prazo_limite}
+                rfqStatus={selectedRfq.status}
+                onDataChange={() => fetchData()}
+                onEditarRfq={() => handleOpenEditRfq(selectedRfq)}
+              />
 
-              <div className="pt-2 text-right">
+              <div className="pt-3 border-t flex justify-end">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setDetailModalOpen(false)}
-                  className="text-xs h-8"
+                  className="text-xs h-8 px-4"
                 >
                   Fechar
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* MODAL: EDITAR SEGURADORAS CONVIDADAS DO RFQ */}
+      {editingRfq && (
+        <Dialog open={editRfqModalOpen} onOpenChange={setEditRfqModalOpen}>
+          <DialogContent className="max-w-md animate-scale-in">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Building className="w-5 h-5 text-[#16578B]" />
+                <span>Convidar Seguradoras — RFQ #{editingRfq.id.slice(0, 6).toUpperCase()}</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-gray-500">
+                Selecione as seguradoras parceiras a serem consultadas neste bid.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEditRfq} className="space-y-4 pt-2 text-xs">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Companhias a Solicitar Cotação (mínimo recomendado: 5–6 cias):
+                </Label>
+                {seguradoras.length === 0 ? (
+                  <div className="p-3 bg-gray-50 border rounded text-[11px] text-gray-500">
+                    Nenhuma seguradora cadastrada no Mapa de Mercado.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto p-2 border rounded-lg bg-gray-50/50">
+                    {seguradoras.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-2 p-1.5 rounded hover:bg-white cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editSegs.includes(s.id)}
+                          onChange={() => toggleEditSeguradora(s.id)}
+                          className="rounded border-gray-300 text-[#16578B] focus:ring-[#16578B]"
+                        />
+                        <span className="text-xs text-gray-800 font-medium">{s.nome}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="text-[11px] text-gray-500">
+                  Selecionadas: <strong>{editSegs.length}</strong> seguradora(s)
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditRfqModalOpen(false)}
+                  className="text-xs h-8"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingEditRfq}
+                  className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 font-semibold"
+                >
+                  {savingEditRfq ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+                  Atualizar Convidadas
+                </Button>
+              </div>
+            </form>
           </DialogContent>
         </Dialog>
       )}

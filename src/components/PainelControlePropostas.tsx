@@ -1,0 +1,901 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  Shield,
+  Building2,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  XCircle,
+  FileText,
+  DollarSign,
+  TrendingUp,
+  PackageCheck,
+  Send,
+  Plus,
+  Loader2,
+  Check,
+  RotateCcw,
+  Sparkles,
+  Info,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { formatCurrency, formatDate } from '@/lib/formatters'
+import {
+  RfqSeguradoraRecord,
+  RfqSeguradoraStatus,
+  RfqPropostaSummary,
+  syncAndLoadRfqSeguradoras,
+  computeRfqSummary,
+  toggleKitEntregue,
+  marcarDeclinio,
+  registrarPropostaManual,
+} from '@/services/rfqPropostasService'
+
+interface PainelControlePropostasProps {
+  rfqId: string
+  rfqNumero?: string
+  empreendimentoNome?: string
+  seguradorasSolicitadas: string[]
+  dataEnvio?: string
+  prazoLimite?: string
+  rfqStatus?: string
+  /**
+   * Callback quando houver alteração de status/propostas (para que o componente pai recarregue dados se necessário)
+   */
+  onDataChange?: () => void
+  /**
+   * Modo de visualização compacto ou com cabeçalho completo
+   */
+  variant?: 'embedded' | 'standalone'
+  /**
+   * Ação para abrir o editor de RFQ (adicionar seguradoras) quando vazio
+   */
+  onEditarRfq?: () => void
+}
+
+export function PainelControlePropostas({
+  rfqId,
+  rfqNumero,
+  empreendimentoNome,
+  seguradorasSolicitadas,
+  dataEnvio,
+  prazoLimite,
+  rfqStatus,
+  onDataChange,
+  variant = 'standalone',
+  onEditarRfq,
+}: PainelControlePropostasProps) {
+  const [records, setRecords] = useState<RfqSeguradoraRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  // Modal Registrar Proposta
+  const [propModalOpen, setPropModalOpen] = useState(false)
+  const [selectedSeg, setSelectedSeg] = useState<{ id: string; nome: string } | null>(null)
+  const [dataProposta, setDataProposta] = useState(new Date().toISOString().slice(0, 10))
+  const [lmiLmg, setLmiLmg] = useState<number | ''>('')
+  const [premioLiquido, setPremioLiquido] = useState<number | ''>('')
+  const [premioBruto, setPremioBruto] = useState<number | ''>('')
+  const [posFranquias, setPosFranquias] = useState('')
+  const [clausulas, setClausulas] = useState('')
+  const [exclusoes, setExclusoes] = useState('')
+  const [savingProp, setSavingProp] = useState(false)
+
+  // Modal Marcar Declínio
+  const [declinioModalOpen, setDeclinioModalOpen] = useState(false)
+  const [declinioSeg, setDeclinioSeg] = useState<{ id: string; nome: string } | null>(null)
+  const [motivoDeclinio, setMotivoDeclinio] = useState('Sem apetite para o segmento')
+  const [motivoCustom, setMotivoCustom] = useState('')
+  const [savingDeclinio, setSavingDeclinio] = useState(false)
+
+  const loadData = useCallback(async () => {
+    if (!rfqId) return
+    try {
+      setLoading(true)
+      const list = await syncAndLoadRfqSeguradoras(rfqId, seguradorasSolicitadas)
+      setRecords(list)
+    } catch (err) {
+      console.error('Erro ao carregar dados do painel:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [rfqId, seguradorasSolicitadas])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  const summary: RfqPropostaSummary = useMemo(() => {
+    return computeRfqSummary(records)
+  }, [records])
+
+  // Ações de Toggle Kit Entregue
+  const handleToggleKit = async (rec: RfqSeguradoraRecord) => {
+    try {
+      setUpdatingId(rec.id)
+      const novoEstado = !rec.kit_entregue
+      const updated = await toggleKitEntregue(rec.id, novoEstado)
+      setRecords((prev) => prev.map((r) => (r.id === rec.id ? updated : r)))
+      setFeedback(
+        novoEstado
+          ? `Kit de Submissão marcado como entregue para ${updated.expand?.seguradora?.nome || 'a seguradora'}.`
+          : `Entrega do Kit desfeita para ${updated.expand?.seguradora?.nome || 'a seguradora'}.`,
+      )
+      setTimeout(() => setFeedback(null), 4000)
+      onDataChange?.()
+    } catch (err) {
+      console.error(err)
+      alert('Falha ao atualizar kit entregue: ' + (err as Error).message)
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  // Abertura do Modal de Proposta
+  const handleOpenRegistrarProposta = (rec: RfqSeguradoraRecord) => {
+    setSelectedSeg({
+      id: rec.seguradora,
+      nome: rec.expand?.seguradora?.nome || 'Seguradora',
+    })
+    setDataProposta(
+      rec.proposta
+        ? rec.data_resposta || new Date().toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
+    )
+    setLmiLmg(rec.expand?.proposta?.lmi_lmg || '')
+    setPremioLiquido(rec.expand?.proposta?.premio_liquido || '')
+    setPremioBruto(rec.expand?.proposta?.premio_bruto || '')
+    setPosFranquias(rec.expand?.proposta?.pos_franquias || '')
+    setClausulas('')
+    setExclusoes('')
+    setPropModalOpen(true)
+  }
+
+  const handleSalvarProposta = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedSeg) return
+    try {
+      setSavingProp(true)
+      await registrarPropostaManual({
+        rfqId,
+        seguradoraId: selectedSeg.id,
+        dataProposta,
+        lmiLmg: lmiLmg === '' ? undefined : Number(lmiLmg),
+        premioLiquido: premioLiquido === '' ? undefined : Number(premioLiquido),
+        premioBruto: premioBruto === '' ? undefined : Number(premioBruto),
+        posFranquias,
+        clausulas,
+        exclusoes,
+      })
+      setPropModalOpen(false)
+      setFeedback(
+        `Proposta da ${selectedSeg.nome} registrada com sucesso! Linha atualizada para "Proposta recebida".`,
+      )
+      setTimeout(() => setFeedback(null), 4500)
+      await loadData()
+      onDataChange?.()
+    } catch (err) {
+      console.error(err)
+      alert('Erro ao registrar proposta: ' + (err as Error).message)
+    } finally {
+      setSavingProp(false)
+    }
+  }
+
+  // Abertura do Modal de Declínio
+  const handleOpenMarcarDeclinio = (rec: RfqSeguradoraRecord) => {
+    setDeclinioSeg({
+      id: rec.seguradora,
+      nome: rec.expand?.seguradora?.nome || 'Seguradora',
+    })
+    setMotivoDeclinio(rec.declinou_motivo || 'Sem apetite para o segmento')
+    setMotivoCustom('')
+    setDeclinioModalOpen(true)
+  }
+
+  const handleSalvarDeclinio = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!declinioSeg) return
+    try {
+      setSavingDeclinio(true)
+      const motivoFinal =
+        motivoDeclinio === 'Outro'
+          ? motivoCustom.trim() || 'Outro motivo informado'
+          : motivoDeclinio
+
+      await marcarDeclinio({
+        rfqId,
+        seguradoraId: declinioSeg.id,
+        motivo: motivoFinal,
+      })
+      setDeclinioModalOpen(false)
+      setFeedback(
+        `Declínio registrado para ${declinioSeg.nome}. Histórico registrado no Mapa de Mercado.`,
+      )
+      setTimeout(() => setFeedback(null), 4500)
+      await loadData()
+      onDataChange?.()
+    } catch (err) {
+      console.error(err)
+      alert('Erro ao marcar declínio: ' + (err as Error).message)
+    } finally {
+      setSavingDeclinio(false)
+    }
+  }
+
+  // Cores e labels dos badges de status
+  const getBadgeStyle = (status: RfqSeguradoraStatus) => {
+    switch (status) {
+      case 'Proposta recebida':
+        return {
+          bg: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+          dot: 'bg-emerald-500',
+          icon: CheckCircle2,
+          label: 'Proposta recebida',
+        }
+      case 'Kit entregue':
+        return {
+          bg: 'bg-blue-50 text-[#16578B] border-blue-300',
+          dot: 'bg-blue-600',
+          icon: PackageCheck,
+          label: 'Kit entregue',
+        }
+      case 'Declinou':
+        return {
+          bg: 'bg-rose-50 text-rose-800 border-rose-300',
+          dot: 'bg-rose-500',
+          icon: XCircle,
+          label: 'Declinou',
+        }
+      case 'Convidada':
+      default:
+        return {
+          bg: 'bg-gray-100 text-gray-700 border-gray-300',
+          dot: 'bg-gray-400',
+          icon: Clock,
+          label: 'Convidada',
+        }
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toast inline de feedback */}
+      {feedback && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-lg text-xs flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{feedback}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-emerald-700 hover:text-emerald-950 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+        </div>
+      )}
+
+      {/* 2. RESUMO NO TOPO DO PAINEL */}
+      <div className="bg-white rounded-xl border border-[#E4E9F0] p-4 sm:p-5 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#0F2B46] text-white flex items-center justify-center font-bold text-xs">
+              <TrendingUp className="w-4 h-4 text-blue-300" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-gray-900">
+                  Painel de Controle de Propostas das Seguradoras
+                </h3>
+                {rfqNumero && (
+                  <span className="font-mono text-[11px] font-bold text-[#16578B] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {rfqNumero}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Acompanhamento em tempo real da submissão do edital aos portais e retorno das
+                companhias
+              </p>
+            </div>
+          </div>
+
+          {prazoLimite && (
+            <div className="text-right text-[11px] text-gray-500">
+              Prazo limite (SLA):{' '}
+              <strong className="text-gray-900 font-semibold">{formatDate(prazoLimite)}</strong>
+            </div>
+          )}
+        </div>
+
+        {/* 4 Cards de Métricas do Resumo */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          {/* Total Convidadas */}
+          <div className="p-3 rounded-lg bg-gray-50 border border-gray-200/80">
+            <div className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+              Total Convidadas
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-extrabold text-gray-900 tabular-nums">
+                {summary.totalConvidadas}
+              </span>
+              <span className="text-[11px] text-gray-500">cias</span>
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Ideal: 5 a 6 cias (até 10)</div>
+          </div>
+
+          {/* Propostas Recebidas */}
+          <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200/80">
+            <div className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">
+              Propostas Recebidas
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-extrabold text-emerald-800 tabular-nums">
+                {summary.propostasRecebidas}
+              </span>
+              <span className="text-[11px] text-emerald-600">ofertas</span>
+            </div>
+            <div className="text-[10px] text-emerald-700 mt-0.5">Alimentam a C3 Tabulação</div>
+          </div>
+
+          {/* Pendentes */}
+          <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200/80">
+            <div className="text-[10px] uppercase font-bold text-[#16578B] tracking-wider">
+              Pendentes / Em Análise
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-extrabold text-[#16578B] tabular-nums">
+                {summary.pendentes}
+              </span>
+              <span className="text-[11px] text-blue-600">aguardando</span>
+            </div>
+            <div className="text-[10px] text-blue-700 mt-0.5">
+              {summary.kitEntregue} com kit entregue
+            </div>
+          </div>
+
+          {/* Taxa de Resposta (%) */}
+          <div className="p-3 rounded-lg bg-indigo-50/70 border border-indigo-200/80">
+            <div className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider">
+              Taxa de Resposta
+            </div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-extrabold text-indigo-950 tabular-nums">
+                {summary.taxaResposta}%
+              </span>
+              <span className="text-[11px] text-indigo-700">conversão</span>
+            </div>
+            <div className="text-[10px] text-indigo-600 mt-0.5">
+              {summary.declinadas > 0 ? `${summary.declinadas} declínio(s)` : 'Sem declínios'}
+            </div>
+          </div>
+        </div>
+
+        {/* ALERTA: Menos de 5 respostas para negociação */}
+        {summary.alertaMinimoRespostas && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4 text-amber-800" />
+              </div>
+              <div>
+                <span className="font-bold">Atenção ao poder de negociação do bid:</span>{' '}
+                <span>
+                  O processo conta com apenas{' '}
+                  <strong>{summary.propostasRecebidas} resposta(s)</strong> de seguradoras (mínimo
+                  recomendado: <strong>5 respostas</strong> para garantir concorrência técnica e
+                  tarifária efetiva na carteira de Hotéis & Resorts).
+                </span>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 shrink-0 border border-amber-300">
+              Bid em Formação ({summary.propostasRecebidas}/5)
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* 1. GRADE DE ACOMPANHAMENTO POR RFQ */}
+      <div className="bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden">
+        <div className="p-3.5 sm:p-4 border-b border-[#E4E9F0] flex items-center justify-between bg-gray-50/50">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-[#16578B]" />
+            <span className="text-xs font-bold text-gray-900">
+              Seguradoras Convidadas ({records.length})
+            </span>
+          </div>
+          <span className="text-[11px] text-gray-500">
+            Atualizações refletem automaticamente na Tabulação C3 e no Mapa de Mercado
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="py-12 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-[#16578B]" />
+            <span>Carregando situação das seguradoras...</span>
+          </div>
+        ) : records.length === 0 ? (
+          /* Estado Vazio Claro com Orientação */
+          <div className="py-12 px-4 text-center">
+            <Building2 className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <h4 className="text-sm font-semibold text-gray-800">Nenhuma seguradora convidada</h4>
+            <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+              Edite o pedido de cotação para convidar companhias (mínimo recomendado de 5 a 6
+              seguradoras para obter taxa de resposta sólida).
+            </p>
+            {onEditarRfq && (
+              <Button
+                onClick={onEditarRfq}
+                className="mt-3 bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 px-3 font-semibold"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Convidar seguradoras para este RFQ
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-gray-50/80 text-gray-600 font-semibold border-b border-[#E4E9F0]">
+                <tr>
+                  <th className="py-3 px-4 min-w-[200px]">Seguradora</th>
+                  <th className="py-3 px-3">Situação</th>
+                  <th className="py-3 px-3">Kit Submissão</th>
+                  <th className="py-3 px-3">Dados da Oferta / Motivo</th>
+                  <th className="py-3 px-3">Data Resposta</th>
+                  <th className="py-3 px-4 text-right min-w-[240px]">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {records.map((rec) => {
+                  const segNome =
+                    rec.expand?.seguradora?.nome || `Seguradora ${rec.seguradora.slice(0, 5)}`
+                  const segPos = rec.expand?.seguradora?.posicionamento || ''
+                  const badge = getBadgeStyle(rec.status)
+                  const Icon = badge.icon
+                  const isUpdating = updatingId === rec.id
+
+                  const temProposta = rec.status === 'Proposta recebida' && rec.expand?.proposta
+                  const propostaData = rec.expand?.proposta
+
+                  return (
+                    <tr
+                      key={rec.id}
+                      className={`hover:bg-blue-50/30 transition-colors ${
+                        rec.status === 'Proposta recebida'
+                          ? 'bg-emerald-50/15'
+                          : rec.status === 'Declinou'
+                            ? 'bg-rose-50/15 opacity-80'
+                            : ''
+                      }`}
+                    >
+                      {/* Nome da Seguradora */}
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-gray-900 text-xs flex items-center gap-2">
+                          <span>{segNome}</span>
+                        </div>
+                        {segPos && (
+                          <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
+                            {segPos}
+                          </div>
+                        )}
+                        {rec.expand?.seguradora?.faixa_lmi && (
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            Capacidade: {rec.expand?.seguradora?.faixa_lmi}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Situação (Badge com cor por estado) */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.bg}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          <span>{badge.label}</span>
+                        </span>
+                      </td>
+
+                      {/* Kit Submissão (Toggle Entregue / Desfazer) */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={() => handleToggleKit(rec)}
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                              rec.kit_entregue
+                                ? 'bg-blue-100 text-[#16578B] border-blue-300 hover:bg-blue-200'
+                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                            }`}
+                            title={
+                              rec.kit_entregue
+                                ? 'Kit marcado como entregue no portal da cia. Clique para desfazer.'
+                                : 'Clique para marcar que o Kit foi entregue no portal da cia.'
+                            }
+                          >
+                            {isUpdating ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : rec.kit_entregue ? (
+                              <Check className="w-3 h-3 text-[#16578B]" />
+                            ) : (
+                              <RotateCcw className="w-3 h-3 text-gray-400" />
+                            )}
+                            <span>{rec.kit_entregue ? 'Entregue' : 'Marcar entrega'}</span>
+                          </button>
+
+                          {rec.kit_entregue_em && (
+                            <span className="text-[10px] text-gray-400" title={rec.kit_entregue_em}>
+                              {formatDate(rec.kit_entregue_em)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Dados da Oferta / Motivo do Declínio */}
+                      <td className="py-3 px-3">
+                        {rec.status === 'Proposta recebida' ? (
+                          <div className="space-y-0.5">
+                            <div className="font-semibold text-gray-900 text-xs">
+                              Prêmio:{' '}
+                              <strong className="text-emerald-800">
+                                {propostaData?.premio_bruto
+                                  ? formatCurrency(propostaData.premio_bruto)
+                                  : propostaData?.premio_liquido
+                                    ? formatCurrency(propostaData.premio_liquido)
+                                    : 'A definir'}
+                              </strong>
+                            </div>
+                            {propostaData?.lmi_lmg ? (
+                              <div className="text-[11px] text-gray-600">
+                                LMI: {formatCurrency(propostaData.lmi_lmg)}
+                              </div>
+                            ) : null}
+                            {propostaData?.pos_franquias && (
+                              <div
+                                className="text-[10px] text-gray-500 truncate max-w-[200px]"
+                                title={propostaData.pos_franquias}
+                              >
+                                Franquias: {propostaData.pos_franquias}
+                              </div>
+                            )}
+                          </div>
+                        ) : rec.status === 'Declinou' ? (
+                          <div className="text-xs">
+                            <span className="text-rose-700 font-medium">Motivo:</span>{' '}
+                            <span className="text-gray-700">
+                              {rec.declinou_motivo || 'Sem apetite no momento'}
+                            </span>
+                          </div>
+                        ) : rec.kit_entregue ? (
+                          <span className="text-[11px] text-blue-700">
+                            Aguardando resposta no portal da cia
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">
+                            Kit ainda não inserido no portal
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Data Resposta */}
+                      <td className="py-3 px-3 whitespace-nowrap text-gray-600 text-xs">
+                        {rec.data_resposta ? (
+                          <span>{formatDate(rec.data_resposta)}</span>
+                        ) : rec.status === 'Declinou' && rec.declinou_em ? (
+                          <span>{formatDate(rec.declinou_em)}</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+
+                      {/* Ações por Linha */}
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Registrar / Editar Proposta */}
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpenRegistrarProposta(rec)}
+                            className={`h-7 px-2.5 text-[11px] font-semibold flex items-center gap-1 shadow-sm ${
+                              rec.status === 'Proposta recebida'
+                                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                                : 'bg-[#16578B] hover:bg-[#0E4268] text-white'
+                            }`}
+                            title={
+                              rec.status === 'Proposta recebida'
+                                ? 'Editar proposta manual cadastrada'
+                                : 'Registrar oferta manual recebida da seguradora'
+                            }
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>
+                              {rec.status === 'Proposta recebida'
+                                ? 'Editar proposta'
+                                : 'Registrar proposta'}
+                            </span>
+                          </Button>
+
+                          {/* Marcar Declínio */}
+                          {rec.status !== 'Declinou' ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenMarcarDeclinio(rec)}
+                              className="h-7 px-2 text-[11px] text-rose-700 border-rose-200 hover:bg-rose-50 hover:border-rose-300 font-semibold"
+                              title="Marcar que a seguradora declinou a cotação"
+                            >
+                              <XCircle className="w-3.5 h-3.5 mr-0.5 text-rose-600" />
+                              <span>Declinou</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOpenMarcarDeclinio(rec)}
+                              className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-800"
+                              title="Alterar motivo do declínio"
+                            >
+                              <span>Editar motivo</span>
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL: REGISTRAR PROPOSTA */}
+      <Dialog open={propModalOpen} onOpenChange={setPropModalOpen}>
+        <DialogContent className="max-w-lg animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#16578B]" />
+              <span>Registrar Proposta — {selectedSeg?.nome}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Preenchimento manual dos parâmetros comerciais recebidos da seguradora para alimentar
+              a C3 Tabulação e o comparativo lado a lado.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSalvarProposta} className="space-y-3.5 pt-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">Data de Recebimento</Label>
+                <Input
+                  type="date"
+                  value={dataProposta}
+                  onChange={(e) => setDataProposta(e.target.value)}
+                  className="h-8 text-xs"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">LMI / LMG Máximo (R$)</Label>
+                <Input
+                  type="number"
+                  placeholder="Ex: 80000000"
+                  value={lmiLmg}
+                  onChange={(e) => setLmiLmg(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">Prêmio Líquido (R$)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 45000.00"
+                  value={premioLiquido}
+                  onChange={(e) =>
+                    setPremioLiquido(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Prêmio Total / Bruto (R$)
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 48321.00"
+                  value={premioBruto}
+                  onChange={(e) =>
+                    setPremioBruto(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                  className="h-8 text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-gray-700">POS / Franquias Gerais</Label>
+              <Input
+                type="text"
+                placeholder="Ex: 10% dos prejuízos com mínimo de R$ 10.000,00 para Vendaval e Danos por Água"
+                value={posFranquias}
+                onChange={(e) => setPosFranquias(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-gray-700">
+                Cláusulas e Condições Comerciais
+              </Label>
+              <textarea
+                placeholder="Cláusula de rateio mitigada em 80%, prazo de pagamento em 4x sem juros..."
+                value={clausulas}
+                onChange={(e) => setClausulas(e.target.value)}
+                className="w-full h-14 p-2 rounded-md border border-gray-300 text-xs focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-gray-700">
+                Exclusões / Ressalvas da Cia
+              </Label>
+              <Input
+                type="text"
+                placeholder="Ex: Exclusão de alagamento por transbordamento de lago artificial..."
+                value={exclusoes}
+                onChange={(e) => setExclusoes(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="p-2.5 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>
+                Ao confirmar, a linha no painel mudará para <strong>"Proposta recebida"</strong> com
+                a data correspondente e a proposta ficará disponível para detalhamento de coberturas
+                na Tabulação C3.
+              </span>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPropModalOpen(false)}
+                className="text-xs h-8"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingProp}
+                className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 font-semibold"
+              >
+                {savingProp ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <span>Salvar Proposta</span>
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: MARCAR DECLÍNIO */}
+      <Dialog open={declinioModalOpen} onOpenChange={setDeclinioModalOpen}>
+        <DialogContent className="max-w-md animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2 text-rose-700">
+              <XCircle className="w-5 h-5 text-rose-600" />
+              <span>Marcar Declínio — {declinioSeg?.nome}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Registre a recusa da seguradora em cotar o edital. O motivo fica gravado no RFQ e
+              alimenta o Mapa de Mercado para histórico de subscrição e apetite.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSalvarDeclinio} className="space-y-3.5 pt-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-gray-700">Motivo do Declínio</Label>
+              <select
+                value={motivoDeclinio}
+                onChange={(e) => setMotivoDeclinio(e.target.value)}
+                className="w-full h-8 rounded-md border border-gray-300 bg-white px-2.5 text-xs"
+              >
+                <option value="Sem apetite para o segmento">
+                  Sem apetite para o segmento (Hotéis / Resorts)
+                </option>
+                <option value="Capacidade / LMI insuficiente">
+                  Capacidade / LMI insuficiente para o risco
+                </option>
+                <option value="Histórico de sinistralidade desfavorável">
+                  Histórico de sinistralidade desfavorável
+                </option>
+                <option value="Falta de proteções exigidas">
+                  Falta de proteções exigidas (sprinklers / hidrantes)
+                </option>
+                <option value="Localização em zona de risco agravado">
+                  Localização em zona de risco agravado (alagamento / vendaval)
+                </option>
+                <option value="Prazo de SLA exaurido sem resposta">
+                  Prazo de SLA exaurido sem resposta da mesa de subscrição
+                </option>
+                <option value="Outro">Outro motivo...</option>
+              </select>
+            </div>
+
+            {motivoDeclinio === 'Outro' && (
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">Descreva o motivo</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Exigência de vistoria prévia não viável no prazo do cliente"
+                  value={motivoCustom}
+                  onChange={(e) => setMotivoCustom(e.target.value)}
+                  className="h-8 text-xs"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+              <strong>Impacto no Mapa de Mercado:</strong> O declínio será persistido com timestamp
+              e motivo no histórico de relacionamento da seguradora, permitindo refinar futuras
+              rodadas de cotação da corretora BYCOR.
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeclinioModalOpen(false)}
+                className="text-xs h-8"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingDeclinio}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+              >
+                {savingDeclinio ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                    <span>Registrando...</span>
+                  </>
+                ) : (
+                  <span>Confirmar Declínio</span>
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

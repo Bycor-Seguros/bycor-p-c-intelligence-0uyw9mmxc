@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T18:37:26.710Z",
+  "generatedAt": "2026-10-21T21:32:25.878Z",
   "collections": [
     {
       "name": "users",
@@ -1915,6 +1915,96 @@
         }
       ],
       "indexes": []
+    },
+    {
+      "name": "rfq_seguradoras",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "rfq",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "rfq"
+        },
+        {
+          "name": "seguradora",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "seguradoras"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Convidada", "Kit entregue", "Proposta recebida", "Declinou"]
+        },
+        {
+          "name": "kit_entregue",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kit_entregue_em",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "declinou_motivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "declinou_em",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "proposta",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "propostas"
+        },
+        {
+          "name": "data_resposta",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_rfq_seg_rfq ON rfq_seguradoras (rfq)",
+        "CREATE INDEX idx_rfq_seg_seg ON rfq_seguradoras (seguradora)",
+        "CREATE INDEX idx_rfq_seg_status ON rfq_seguradoras (status)"
+      ]
     }
   ]
 }

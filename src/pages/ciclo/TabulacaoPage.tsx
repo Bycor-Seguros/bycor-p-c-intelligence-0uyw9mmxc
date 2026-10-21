@@ -26,6 +26,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
+import { PainelControlePropostas } from '@/components/PainelControlePropostas'
 
 interface PropostaCoverageItem {
   nome: string
@@ -62,6 +63,10 @@ interface PropostaRecord {
 
 interface RfqOption {
   id: string
+  seguradoras_solicitadas?: string[]
+  data_envio?: string
+  prazo_limite?: string
+  status?: string
   expand?: {
     conta_empreendimento?: { nome_empreendimento: string }
   }
@@ -93,10 +98,14 @@ export default function TabulacaoPage() {
         }),
         pb.collection('rfq').getFullList<RfqOption>({
           expand: 'conta_empreendimento',
+          sort: '-created',
         }),
       ])
       setPropostas(props)
       setRfqs(rfqList)
+      if (selectedRfqId === 'todos' && rfqList.length > 0) {
+        // Mantém 'todos' por padrão para a visão geral
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -291,6 +300,27 @@ export default function TabulacaoPage() {
           Exibindo <strong>{comparedProposals.length}</strong> proposta(s) em análise
         </span>
       </div>
+
+      {/* PAINEL DE CONTROLE DE PROPOSTAS POR RFQ (SE RFQ ESPECÍFICO SELECIONADO) */}
+      {selectedRfqId !== 'todos' &&
+        (() => {
+          const activeRfq = rfqs.find((r) => r.id === selectedRfqId)
+          if (!activeRfq) return null
+          return (
+            <div className="space-y-2">
+              <PainelControlePropostas
+                rfqId={activeRfq.id}
+                rfqNumero={`RFQ-${activeRfq.id.slice(0, 6).toUpperCase()}`}
+                empreendimentoNome={activeRfq.expand?.conta_empreendimento?.nome_empreendimento}
+                seguradorasSolicitadas={activeRfq.seguradoras_solicitadas || []}
+                dataEnvio={activeRfq.data_envio}
+                prazoLimite={activeRfq.prazo_limite}
+                rfqStatus={activeRfq.status}
+                onDataChange={() => fetchPropostas()}
+              />
+            </div>
+          )
+        })()}
 
       {/* SIDE-BY-SIDE MATRIX COMPARISON */}
       {loading ? (
