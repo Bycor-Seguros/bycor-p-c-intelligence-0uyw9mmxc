@@ -206,6 +206,56 @@ export function normalizeHeader(val: unknown): string {
 }
 
 /**
+ * Constrói a chave canônica de deduplicação de sinistros.
+ * Combina os campos que efetivamente identificam um sinistro:
+ * empreendimento + cobertura normalizada + descrição normalizada + valor normalizado,
+ * e quando existirem, número do sinistro e data.
+ *
+ * Garante que sinistros sem número de apólice e sem número de sinistro (típicos de cartões de risco)
+ * sejam perfeitamente reconhecidos entre reimportações do mesmo arquivo.
+ */
+export function buildSinistroDedupeKey(params: {
+  idEmpreendimento: string
+  numeroSinistro?: unknown
+  dataSinistro?: unknown
+  coberturaAcionada?: unknown
+  descricao?: unknown
+  valorIndenizadoRs?: unknown
+}): string {
+  const emp = String(params.idEmpreendimento || '').trim()
+  const num = String(params.numeroSinistro || '')
+    .trim()
+    .toLowerCase()
+  const dtNorm = String(params.dataSinistro || '')
+    .trim()
+    .slice(0, 10)
+  const cobNorm = normalizeMatchText(params.coberturaAcionada)
+  const descNorm = normalizeMatchText(params.descricao)
+
+  // Normalização do valor para string padronizada com 2 casas decimais (ex: '11000.00' ou '0.00')
+  let valNorm = '0.00'
+  if (
+    params.valorIndenizadoRs !== null &&
+    params.valorIndenizadoRs !== undefined &&
+    params.valorIndenizadoRs !== ''
+  ) {
+    const rawVal =
+      typeof params.valorIndenizadoRs === 'number'
+        ? params.valorIndenizadoRs
+        : parseFloat(String(params.valorIndenizadoRs).replace(/\./g, '').replace(',', '.'))
+    if (!isNaN(rawVal)) {
+      valNorm = rawVal.toFixed(2)
+    }
+  }
+
+  // Se houver número de sinistro e empreendimento, podemos usar como parte primária,
+  // mas incluímos a descrição/cobertura para máxima estabilidade e precisão.
+  // Se não houver número de sinistro, a chave canônica combina:
+  // emp :: num :: dt :: cob :: desc :: val
+  return `${emp}::num:${num}::dt:${dtNorm}::cob:${cobNorm}::desc:${descNorm}::val:${valNorm}`
+}
+
+/**
  * Normaliza um texto para fins de casamento flexível (tokens textuais):
  * Converte para minúsculas, remove acentos, substitui pontuação por espaço e condensa espaços múltiplos.
  */
@@ -1230,7 +1280,7 @@ export async function processGuardiaWorkbook(
     let rowIdx = 0
 
     // Deduplication map for sinistros
-    // Key: id_empreendimento_record + (numero_sinistro || data_sinistro + cobertura) -> PB record
+    // Key: canônica buildSinistroDedupeKey -> PB record
     const existingSinMap = new Map<string, Record<string, unknown>>()
     try {
       const existingSins = await executeWithRetry(
@@ -1241,13 +1291,14 @@ export async function processGuardiaWorkbook(
         { throttleMs: 50, maxAttempts: 6 },
       )
       for (const es of existingSins) {
-        const num = String(es.numero_sinistro || '')
-          .trim()
-          .toLowerCase()
-        const dtNorm = String(es.data_sinistro || '').slice(0, 10)
-        const k = num
-          ? `${es.id_empreendimento}::num::${num}`
-          : `${es.id_empreendimento}::dt::${dtNorm}::${normalizeHeader(es.cobertura_acionada)}`
+        const k = buildSinistroDedupeKey({
+          idEmpreendimento: String(es.id_empreendimento || ''),
+          numeroSinistro: es.numero_sinistro,
+          dataSinistro: es.data_sinistro,
+          coberturaAcionada: es.cobertura_acionada,
+          descricao: es.descricao,
+          valorIndenizadoRs: es.valor_indenizado_rs,
+        })
         existingSinMap.set(k, es as unknown as Record<string, unknown>)
       }
     } catch (err: unknown) {
@@ -1278,6 +1329,8 @@ export async function processGuardiaWorkbook(
       const numeroSinistro = String(s['numero_sinistro'] || '').trim()
       const dataSinistro = parseExcelDate(s['data_sinistro'])
       const cobAcionada = String(s['cobertura_acionada'] || '').trim()
+      const descricaoVal = String(s['descricao'] || '').trim()
+      const valorIndenizado = parseNumber(s['valor_indenizado_rs'])
 
       const payload = {
         id_empreendimento: empRecordId,
@@ -1286,16 +1339,20 @@ export async function processGuardiaWorkbook(
         data_sinistro: dataSinistro,
         numero_sinistro: numeroSinistro,
         cobertura_acionada: cobAcionada,
-        descricao: String(s['descricao'] || '').trim(),
-        valor_indenizado_rs: parseNumber(s['valor_indenizado_rs']),
+        descricao: descricaoVal,
+        valor_indenizado_rs: valorIndenizado,
         status: String(s['status'] || 'Em andamento').trim(),
         fonte: String(s['fonte'] || '').trim(),
       }
 
-      const dtNorm = String(dataSinistro || '').slice(0, 10)
-      const sinDedupeKey = numeroSinistro
-        ? `${empRecordId}::num::${numeroSinistro.toLowerCase()}`
-        : `${empRecordId}::dt::${dtNorm}::${normalizeHeader(cobAcionada)}`
+      const sinDedupeKey = buildSinistroDedupeKey({
+        idEmpreendimento: empRecordId,
+        numeroSinistro,
+        dataSinistro,
+        coberturaAcionada: cobAcionada,
+        descricao: descricaoVal,
+        valorIndenizadoRs: valorIndenizado,
+      })
       const existingRecord = existingSinMap.get(sinDedupeKey)
 
       try {
