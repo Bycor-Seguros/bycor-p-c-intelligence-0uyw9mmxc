@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T17:55:55.270Z",
+  "generatedAt": "2026-10-21T18:37:26.710Z",
   "collections": [
     {
       "name": "users",
@@ -1288,6 +1288,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "kit_gerado",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kit_gerado_em",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_rfq_status ON rfq (status)"]

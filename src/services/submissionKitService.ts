@@ -45,6 +45,8 @@ export interface SubmissionKitData {
   statusRfq: string
   observacoesRfq: string
   seguradorasConsultadas: Array<{ id: string; nome: string }>
+  kitGerado?: boolean
+  kitGeradoEm?: string
 
   // Empreendimento
   empreendimentoId: string
@@ -604,6 +606,16 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     })
   }
 
+  // Registra que o Kit de Submissão foi gerado no RFQ (sem alterar dados de negócio)
+  try {
+    await pb.collection('rfq').update(rfqRecord.id, {
+      kit_gerado: true,
+      kit_gerado_em: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.warn('Aviso: Não foi possível marcar kit_gerado no RFQ:', err)
+  }
+
   return {
     rfqId: rfqRecord.id,
     rfqCode: `RFQ-${rfqRecord.id.slice(0, 6).toUpperCase()}`,
@@ -612,6 +624,8 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     statusRfq: rfqRecord.status || 'Aberto',
     observacoesRfq: rfqRecord.observacoes || '',
     seguradorasConsultadas: seguradorasList,
+    kitGerado: true,
+    kitGeradoEm: new Date().toISOString(),
 
     empreendimentoId: empId,
     nomeEmpreendimento: (emp.nome_empreendimento as string) || 'Empreendimento não informado',
@@ -1230,4 +1244,32 @@ export function printSubmissionKitPdf(data: SubmissionKitData): void {
   printWindow.document.open()
   printWindow.document.write(htmlContent)
   printWindow.document.close()
+}
+
+/**
+ * Remove o registro do Kit de Submissão gerado para um RFQ e documentos anexos do kit,
+ * mantendo o RFQ, empreendimento, apólices e propostas completamente intactos.
+ */
+export async function deleteSubmissionKit(rfqId: string): Promise<void> {
+  // 1. Atualiza o RFQ limpando o status e timestamp de geração do Kit
+  await pb.collection('rfq').update(rfqId, {
+    kit_gerado: false,
+    kit_gerado_em: '',
+  })
+
+  // 2. Se houver documentos avulsos do tipo QAR / Questionário vinculados a este RFQ, exclui de forma segura
+  try {
+    const docs = await pb.collection('documentos').getFullList({
+      filter: `rfq = "${rfqId}"`,
+    })
+    for (const doc of docs) {
+      try {
+        await pb.collection('documentos').delete(doc.id)
+      } catch (err) {
+        console.warn(`Aviso: falha ao remover documento ${doc.id} vinculado ao RFQ:`, err)
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso ao consultar documentos vinculados ao RFQ:', err)
+  }
 }

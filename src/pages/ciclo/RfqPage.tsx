@@ -7,6 +7,7 @@ import {
   Building,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   FileText,
   Calendar,
   Layers,
@@ -18,6 +19,7 @@ import {
   FileSpreadsheet,
   Printer,
   Copy,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,7 +37,18 @@ import {
   loadSubmissionKitData,
   generateSubmissionKitXlsx,
   printSubmissionKitPdf,
+  deleteSubmissionKit,
 } from '@/services/submissionKitService'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { SubmissionKitModal } from '@/components/SubmissionKitModal'
 
 interface RfqRecord {
@@ -46,6 +59,8 @@ interface RfqRecord {
   prazo_limite: string
   status: 'Aberto' | 'Enviado' | 'Respondido' | 'Fechado'
   observacoes: string
+  kit_gerado?: boolean
+  kit_gerado_em?: string
   created: string
   expand?: {
     conta_empreendimento?: {
@@ -88,6 +103,9 @@ export default function RfqPage() {
   // Detail Modal
   const [selectedRfq, setSelectedRfq] = useState<RfqRecord | null>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deletingKit, setDeletingKit] = useState(false)
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
 
   // Submission Kit Modal state
   const [kitModalOpen, setKitModalOpen] = useState(false)
@@ -190,6 +208,17 @@ export default function RfqPage() {
       setLoadingKit(true)
       const kit = await loadSubmissionKitData(rfq.id)
       setKitData(kit)
+      // Atualiza o estado local do RFQ para marcar kit como gerado
+      setRfqs((prev) =>
+        prev.map((r) =>
+          r.id === rfq.id ? { ...r, kit_gerado: true, kit_gerado_em: new Date().toISOString() } : r,
+        ),
+      )
+      setSelectedRfq((prev) =>
+        prev && prev.id === rfq.id
+          ? { ...prev, kit_gerado: true, kit_gerado_em: new Date().toISOString() }
+          : prev,
+      )
     } catch (err) {
       console.error('Erro ao abrir Kit de Submissão:', err)
       alert('Falha ao compilar dados do Kit de Submissão: ' + (err as Error).message)
@@ -198,8 +227,53 @@ export default function RfqPage() {
     }
   }
 
+  const handleDeleteKit = async () => {
+    if (!selectedRfq) return
+    try {
+      setDeletingKit(true)
+      await deleteSubmissionKit(selectedRfq.id)
+
+      // Atualiza o estado do RFQ selecionado e da lista
+      const updatedRfq: RfqRecord = {
+        ...selectedRfq,
+        kit_gerado: false,
+        kit_gerado_em: '',
+      }
+      setSelectedRfq(updatedRfq)
+      setRfqs((prev) => prev.map((r) => (r.id === selectedRfq.id ? updatedRfq : r)))
+      setKitData(null)
+      setDeleteConfirmOpen(false)
+
+      setFeedbackMessage(
+        'Kit de Submissão excluído com sucesso. Os dados do RFQ permanecem intactos.',
+      )
+      setTimeout(() => setFeedbackMessage(null), 4500)
+    } catch (err) {
+      console.error('Erro ao excluir Kit de Submissão:', err)
+      alert('Falha ao excluir o Kit de Submissão: ' + (err as Error).message)
+    } finally {
+      setDeletingKit(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Feedback banner */}
+      {feedbackMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{feedbackMessage}</span>
+          </div>
+          <button
+            onClick={() => setFeedbackMessage(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white rounded-xl border border-[#E4E9F0] p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -492,31 +566,79 @@ export default function RfqPage() {
                 </div>
               )}
 
-              {/* Botão de Acesso Direto ao Kit de Submissão dentro do Modal */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3.5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#0F2B46] text-white flex items-center justify-center shrink-0">
-                    <PackageCheck className="w-4 h-4 text-blue-300" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-gray-900 text-xs">
-                      Kit de Submissão para Portais de Seguradoras
+              {/* Painel do Kit de Submissão dentro do Gerenciar */}
+              <div className="border rounded-lg p-3.5 space-y-3 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border-blue-200">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#0F2B46] text-white flex items-center justify-center shrink-0">
+                      <PackageCheck className="w-4 h-4 text-blue-300" />
                     </div>
-                    <div className="text-[11px] text-gray-600">
-                      Exportar XLSX estruturado, painel com botões de cópia rápida e impressão PDF
-                      do edital.
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900 text-xs">
+                          Kit de Submissão para Portais de Seguradoras
+                        </span>
+                        {selectedRfq.kit_gerado ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Kit Ativo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                            Não gerado
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-600 mt-0.5">
+                        Exportar XLSX estruturado, painel com botões de cópia rápida e impressão PDF
+                        do edital.
+                        {selectedRfq.kit_gerado_em && (
+                          <span className="text-[10px] text-gray-500 block">
+                            Gerado em: {formatDate(selectedRfq.kit_gerado_em)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      handleOpenSubmissionKit(selectedRfq)
+                    }}
+                    className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 px-3 font-semibold shrink-0"
+                  >
+                    {selectedRfq.kit_gerado ? 'Abrir Kit' : 'Gerar Kit'}
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    handleOpenSubmissionKit(selectedRfq)
-                  }}
-                  className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 px-3 font-semibold shrink-0"
-                >
-                  Abrir Kit Completo
-                </Button>
+
+                {/* Zona destrutiva: Deletar Kit mantendo RFQ intacto */}
+                <div className="pt-2 border-t border-blue-200/60 flex items-center justify-between">
+                  <div className="text-[11px] text-gray-500">
+                    {selectedRfq.kit_gerado ? (
+                      <span>
+                        Kit compilado para este RFQ. Você pode excluí-lo e regenerá-lo a qualquer
+                        momento.
+                      </span>
+                    ) : (
+                      <span>Nenhum kit registrado para este RFQ no momento.</span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={!selectedRfq.kit_gerado || deletingKit}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="text-xs h-7 px-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold disabled:bg-gray-100 disabled:text-gray-400 disabled:border disabled:border-gray-200 flex items-center gap-1.5 shrink-0"
+                    title={
+                      selectedRfq.kit_gerado
+                        ? 'Excluir o registro do Kit de Submissão deste RFQ mantendo o RFQ intacto'
+                        : 'Não há Kit de Submissão gerado para excluir'
+                    }
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Deletar Kit</span>
+                  </Button>
+                </div>
               </div>
 
               <div>
@@ -568,6 +690,59 @@ export default function RfqPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE DELEÇÃO DO KIT */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent className="max-w-md animate-scale-in">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+              <span>Confirmar Exclusão do Kit de Submissão</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 space-y-2 pt-1">
+              <p>
+                Tem certeza que deseja deletar o Kit de Submissão do RFQ{' '}
+                <strong className="text-gray-900 font-mono">
+                  RFQ-{selectedRfq?.id.slice(0, 6).toUpperCase()}
+                </strong>{' '}
+                (
+                {selectedRfq?.expand?.conta_empreendimento?.nome_empreendimento || 'Empreendimento'}
+                )?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-[11px] text-amber-800">
+                <strong>Atenção:</strong> Apenas o registro do Kit será removido. O RFQ, as
+                seguradoras convidadas, prazos e eventuais propostas vinculadas permanecerão
+                totalmente intactos, e um novo Kit poderá ser gerado a qualquer momento.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 pt-2">
+            <AlertDialogCancel disabled={deletingKit} className="text-xs h-9 px-3">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteKit()
+              }}
+              disabled={deletingKit}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs h-9 px-4 flex items-center gap-1.5"
+            >
+              {deletingKit ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Excluindo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Sim, Deletar Kit</span>
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* MODAL / DRAWER: KIT DE SUBMISSÃO (3 FORMATOS) */}
       <Dialog open={kitModalOpen} onOpenChange={setKitModalOpen}>
