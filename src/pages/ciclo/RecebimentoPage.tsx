@@ -4,6 +4,15 @@ import { useAuth } from '@/contexts/AuthContext'
 import { processGuardiaWorkbook, ImportSummary } from '@/services/guardiaImporter'
 import { clearGuardiaImportedData, ClearDatabaseResult } from '@/services/guardiaCleaner'
 import {
+  isRiskCardWorkbook,
+  parseRiskCardWorkbook,
+  matchRiskCardAgainstDatabase,
+  saveRiskCardToDatabase,
+  RiskCardData,
+  RiskCardMatchResult,
+  RiskCardImportSummary,
+} from '@/services/riskCardReader'
+import {
   FileSpreadsheet,
   UploadCloud,
   FileCheck2,
@@ -20,7 +29,13 @@ import {
   ShieldAlert,
   ChevronDown,
   ChevronUp,
+  FileText,
+  ShieldCheck,
+  Building2,
+  Layers,
+  Sparkles,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,13 +68,25 @@ export default function RecebimentoPage() {
   const [loading, setLoading] = useState(true)
   const [filterTipo, setFilterTipo] = useState<string>('todos')
 
-  // Importer state
+  // Importer state (Base Hotéis e Resorts)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState('')
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+
+  // Risk Card Reader state (Cartão de Risco XLSX)
+  const [riskCardModalOpen, setRiskCardModalOpen] = useState(false)
+  const [riskCardDragOver, setRiskCardDragOver] = useState(false)
+  const [parsingRiskCard, setParsingRiskCard] = useState(false)
+  const [riskCardFile, setRiskCardFile] = useState<File | null>(null)
+  const [parsedRiskCard, setParsedRiskCard] = useState<RiskCardData | null>(null)
+  const [riskCardMatch, setRiskCardMatch] = useState<RiskCardMatchResult | null>(null)
+  const [savingRiskCard, setSavingRiskCard] = useState(false)
+  const [riskCardSaveProgress, setRiskCardSaveProgress] = useState('')
+  const [riskCardSummary, setRiskCardSummary] = useState<RiskCardImportSummary | null>(null)
+  const [showRiskCardDetails, setShowRiskCardDetails] = useState(false)
 
   // Clear database state (Admin only)
   const [clearModalOpen, setClearModalOpen] = useState(false)
@@ -98,6 +125,75 @@ export default function RecebimentoPage() {
   useEffect(() => {
     fetchDocuments()
   }, [])
+
+  // Risk Card Processing Handlers
+  const handleRiskCardFileDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setRiskCardDragOver(false)
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleSelectRiskCardFile(e.dataTransfer.files[0])
+    }
+  }
+
+  const handleSelectRiskCardFile = async (file: File) => {
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      alert('Por favor, selecione um arquivo Excel (.xlsx) do Cartão de Risco.')
+      return
+    }
+
+    try {
+      setParsingRiskCard(true)
+      setRiskCardFile(file)
+      setParsedRiskCard(null)
+      setRiskCardMatch(null)
+      setRiskCardSummary(null)
+
+      const buffer = await file.arrayBuffer()
+      const wb = XLSX.read(buffer, { type: 'array' })
+
+      if (!isRiskCardWorkbook(wb)) {
+        alert(
+          'O arquivo selecionado não foi reconhecido como um Cartão de Risco padrão (estrutura de grade rótulo→valor com seções DADOS, VRD, Coberturas). Verifique o layout ou utilize a importação da Base Hotéis e Resorts.',
+        )
+        setParsingRiskCard(false)
+        setRiskCardFile(null)
+        return
+      }
+
+      const card = parseRiskCardWorkbook(wb, file.name)
+      setParsedRiskCard(card)
+
+      const matchRes = await matchRiskCardAgainstDatabase(card)
+      setRiskCardMatch(matchRes)
+    } catch (err: unknown) {
+      alert('Erro ao analisar Cartão de Risco: ' + (err as Error).message)
+      setRiskCardFile(null)
+    } finally {
+      setParsingRiskCard(false)
+    }
+  }
+
+  const handleConfirmSaveRiskCard = async () => {
+    if (!parsedRiskCard || !riskCardMatch || !riskCardFile) return
+
+    try {
+      setSavingRiskCard(true)
+      setRiskCardSaveProgress('Iniciando gravação...')
+      const res = await saveRiskCardToDatabase(
+        parsedRiskCard,
+        riskCardMatch,
+        riskCardFile,
+        user?.email || 'admin@bycor.com.br',
+        (msg) => setRiskCardSaveProgress(msg),
+      )
+      setRiskCardSummary(res)
+      fetchDocuments()
+    } catch (err: unknown) {
+      alert('Erro ao gravar Cartão de Risco: ' + (err as Error).message)
+    } finally {
+      setSavingRiskCard(false)
+    }
+  }
 
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -211,15 +307,31 @@ export default function RecebimentoPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* BOTÃO LEITOR DE CARTÃO DE RISCO */}
+          <Button
+            onClick={() => {
+              setRiskCardFile(null)
+              setParsedRiskCard(null)
+              setRiskCardMatch(null)
+              setRiskCardSummary(null)
+              setRiskCardModalOpen(true)
+            }}
+            className="bg-[#16578B] hover:bg-[#12456e] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+          >
+            <ShieldCheck className="w-4 h-4 text-blue-200" />
+            <span>Enviar Cartão de Risco (XLSX)</span>
+          </Button>
+
           <Button
             onClick={() => {
               setImportSummary(null)
               setShowDiagnostics(false)
               setImportModalOpen(true)
             }}
-            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+            variant="outline"
+            className="border-[#0F2B46] text-[#0F2B46] hover:bg-blue-50/50 text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span>Importar Base Hotéis e Resorts (XLSX)</span>
           </Button>
 
@@ -250,14 +362,24 @@ export default function RecebimentoPage() {
       </div>
 
       {/* Information Callout */}
-      <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-3">
-        <Info className="w-5 h-5 text-[#16578B] shrink-0 mt-0.5" />
-        <div className="text-xs text-gray-700 leading-relaxed">
-          <strong className="text-[#0F2B46]">Importação In-App Segura:</strong> Ao arrastar a
-          planilha da Base Hotéis e Resorts, o sistema parseia automaticamente as abas{' '}
-          <em>Empreendimentos, Apólices, Coberturas, Sinistros, Matriz e Notas</em> no seu
-          navegador, calculando o LMI da cobertura básica de incêndio e a razão LMI / Valor em Risco
-          DM. Registros existentes são atualizados de forma idempotente.
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-[#16578B] shrink-0 mt-0.5" />
+          <div className="text-xs text-gray-700 leading-relaxed">
+            <strong className="text-[#0F2B46]">Novo Leitor de Cartão de Risco:</strong> Envie o XLSX
+            preenchido do Cartão de Risco para captura automática de dados cadastrais, construção,
+            proteções, VRD com correção INCC, histórico de sinistros dos últimos 5 anos e coberturas
+            solicitadas. Desempate inteligente de renovação vs. novo produto por ramo.
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70 flex items-start gap-3">
+          <FileSpreadsheet className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+          <div className="text-xs text-gray-700 leading-relaxed">
+            <strong className="text-slate-900">Base Hotéis e Resorts:</strong> Importação
+            consolidada de carteira com reconciliação multi-abas (Empreendimentos, Apólices,
+            Coberturas, Sinistros, Matriz). Dados vigentes prevalecem para o mesmo produto.
+          </div>
         </div>
       </div>
 
@@ -380,6 +502,504 @@ export default function RecebimentoPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL: LEITOR DE CARTÃO DE RISCO (XLSX) */}
+      <Dialog open={riskCardModalOpen} onOpenChange={setRiskCardModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg text-gray-900">
+              <ShieldCheck className="w-5 h-5 text-[#16578B]" />
+              <span>Leitor de Cartão de Risco (XLSX)</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Captura e estrutura dados do Cartão de Risco operacional, distinguindo renovações de
+              novos produtos para clientes já cadastrados.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 1. SELEÇÃO / DROPZONE DO ARQUIVO */}
+          {!parsedRiskCard && (
+            <div className="py-3 space-y-4">
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setRiskCardDragOver(true)
+                }}
+                onDragLeave={() => setRiskCardDragOver(false)}
+                onDrop={handleRiskCardFileDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
+                  riskCardDragOver
+                    ? 'border-[#16578B] bg-blue-50/50'
+                    : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
+                }`}
+              >
+                {parsingRiskCard ? (
+                  <div className="flex flex-col items-center justify-center py-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#16578B] mb-3" />
+                    <p className="text-sm font-semibold text-gray-800">Lendo Cartão de Risco...</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Mapeando seções DADOS, VRD, Construção, Sinistros e Coberturas...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-[#16578B] flex items-center justify-center mb-3">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      Arraste o arquivo do Cartão de Risco (.xlsx)
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1 mb-4">
+                      Layout oficial de rótulos e valores em grade do programa P&C
+                    </p>
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleSelectRiskCardFile(e.target.files[0])
+                          }
+                        }}
+                      />
+                      <span className="px-4 py-2 rounded-lg bg-[#16578B] text-white text-xs font-semibold hover:bg-[#12456e] transition-colors shadow-sm">
+                        Selecionar Cartão de Risco
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-[11px] text-gray-600 bg-blue-50/60 p-3 rounded-lg border border-blue-200/60 space-y-1">
+                <div className="font-semibold text-[#0F2B46] flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-[#16578B]" />
+                  <span>Critérios inteligentes de recepção:</span>
+                </div>
+                <p>
+                  • <strong>Deduplicação por Ramo:</strong> Clientes já existentes com produtos
+                  distintos são tratados como <em>Novo Produto</em> sem gerar duplicatas no
+                  cadastro.
+                </p>
+                <p>
+                  • <strong>Preservação de Apólice Vigente:</strong> Para o mesmo produto em
+                  renovação, dados de apólice não são sobrescritos — divergências são apontadas lado
+                  a lado.
+                </p>
+                <p>
+                  • <strong>Sinistros & Coberturas:</strong> Deduplicação canônica por chave natural
+                  idempotente.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 2. PAINEL DE CONFIRMAÇÃO / PRÉ-VISUALIZAÇÃO (3 DESFECHOS) */}
+          {parsedRiskCard && riskCardMatch && !riskCardSummary && (
+            <div className="py-2 space-y-4">
+              {/* Badge visual do desfecho */}
+              <div
+                className={`p-4 rounded-xl border flex items-start gap-3 ${
+                  riskCardMatch.outcome === 'RENOVACAO'
+                    ? 'bg-blue-50 border-blue-300 text-blue-900'
+                    : riskCardMatch.outcome === 'NOVO_PRODUTO'
+                      ? 'bg-amber-50 border-amber-300 text-amber-900'
+                      : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                }`}
+              >
+                {riskCardMatch.outcome === 'RENOVACAO' ? (
+                  <Building2 className="w-6 h-6 text-[#16578B] shrink-0 mt-0.5" />
+                ) : riskCardMatch.outcome === 'NOVO_PRODUTO' ? (
+                  <Layers className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                ) : (
+                  <Sparkles className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white/80 shadow-xs">
+                      {riskCardMatch.outcome === 'RENOVACAO'
+                        ? 'Cenário: Renovação Técnica'
+                        : riskCardMatch.outcome === 'NOVO_PRODUTO'
+                          ? 'Cenário: Novo Produto para Cliente Existente'
+                          : 'Cenário: Cliente Novo'}
+                    </span>
+                    <span className="text-[11px] font-medium opacity-80">
+                      Ramo: {riskCardMatch.ramoCanonicaCartao}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed mt-1 font-medium">{riskCardMatch.motivo}</p>
+                </div>
+              </div>
+
+              {/* Resumo dos dados extraídos do Cartão */}
+              <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-200 text-xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                  <span className="font-bold text-gray-800">
+                    Dados Identificados no Cartão de Risco
+                  </span>
+                  <span className="text-[11px] text-gray-500 font-mono">
+                    {parsedRiskCard.fileName}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                  <div>
+                    <span className="text-gray-500">Segurado:</span>{' '}
+                    <strong className="text-gray-900">{parsedRiskCard.segurado || '—'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">CNPJ:</span>{' '}
+                    <strong className="text-gray-900">
+                      {parsedRiskCard.cnpj || 'Não informado'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Local de Risco:</span>{' '}
+                    <span className="text-gray-800 truncate inline-block max-w-[200px]">
+                      {parsedRiskCard.localRisco || parsedRiskCard.endereco || '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Vigência Desejada:</span>{' '}
+                    <span className="text-gray-800">
+                      {parsedRiskCard.vigenciaInicio || '—'}{' '}
+                      {parsedRiskCard.vigenciaFim ? `a ${parsedRiskCard.vigenciaFim}` : ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Tipo de Cobertura:</span>{' '}
+                    <strong className="text-[#16578B]">{parsedRiskCard.tipoCobertura}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Tipo de Operação:</span>{' '}
+                    <span className="text-gray-800">
+                      {parsedRiskCard.seguroRenovacao ? 'Renovação' : 'Novo'}
+                      {parsedRiskCard.seguradoraAnterior
+                        ? ` (Anterior: ${parsedRiskCard.seguradoraAnterior})`
+                        : ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">VRD Declarado Total:</span>{' '}
+                    <strong className="text-gray-900">
+                      {parsedRiskCard.vrd.totalAtualizado || parsedRiskCard.vrd.totalAtual
+                        ? `R$ ${(parsedRiskCard.vrd.totalAtualizado || parsedRiskCard.vrd.totalAtual)?.toLocaleString('pt-BR')}`
+                        : '—'}
+                    </strong>
+                    {parsedRiskCard.vrd.percentualIncc && (
+                      <span className="ml-1 text-[10px] text-emerald-700 font-semibold">
+                        (+{parsedRiskCard.vrd.percentualIncc}% INCC)
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Sinistros Declarados:</span>{' '}
+                    <strong className="text-gray-900">
+                      {parsedRiskCard.sinistros.length > 0
+                        ? `${parsedRiskCard.sinistros.length} evento(s)`
+                        : 'Nenhum'}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Cossegurados se houver */}
+                {parsedRiskCard.cossegurados.length > 0 && (
+                  <div className="pt-1.5 border-t border-gray-200">
+                    <span className="text-[11px] text-gray-500">
+                      Cossegurados ({parsedRiskCard.cossegurados.length}):{' '}
+                    </span>
+                    <span className="text-[11px] text-gray-800 font-medium">
+                      {parsedRiskCard.cossegurados
+                        .map((c) => `${c.razaoSocial} (${c.cnpj})`)
+                        .join(', ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* DIVERGÊNCIAS LADO A LADO (QUANDO HOUVER) */}
+              {riskCardMatch.divergencias.length > 0 && (
+                <div className="border border-amber-300 bg-amber-50/70 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <span>Divergências Identificadas com a Apólice Vigente:</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    Atenção: Os dados vigentes da apólice no sistema <strong>NÃO</strong> serão
+                    sobrescritos. As diferenças serão mantidas no processo de cotação e registradas
+                    no painel de divergências.
+                  </p>
+                  <div className="space-y-1.5 pt-1">
+                    {riskCardMatch.divergencias.map((div, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white/90 p-2 rounded-lg border border-amber-200 text-[11px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1"
+                      >
+                        <div>
+                          <strong className="text-gray-900">{div.campo}:</strong>{' '}
+                          <span className="text-gray-600">{div.descricao}</span>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2 font-mono text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                            Apólice: R$ {Number(div.valorApoliceVigente).toLocaleString('pt-BR')}
+                          </span>
+                          <span className="text-gray-400">vs</span>
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-[#16578B] font-bold">
+                            Cartão: R$ {Number(div.valorCartaoRisco).toLocaleString('pt-BR')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ações / Botão Ver detalhes expansíveis */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowRiskCardDetails(!showRiskCardDetails)}
+                  className="w-full bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-700 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                >
+                  <span>
+                    Detalhamento Completo das Coberturas e Sinistros (
+                    {parsedRiskCard.coberturas.length} coberturas mapeadas)
+                  </span>
+                  {showRiskCardDetails ? (
+                    <ChevronUp className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+
+                {showRiskCardDetails && (
+                  <div className="p-3 bg-white space-y-3 max-h-64 overflow-y-auto text-xs">
+                    {parsedRiskCard.sinistros.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="font-semibold text-gray-800">Sinistros Declarados:</div>
+                        {parsedRiskCard.sinistros.map((s, idx) => (
+                          <div
+                            key={idx}
+                            className="p-1.5 bg-gray-50 rounded border text-[11px] text-gray-700 flex justify-between"
+                          >
+                            <span>
+                              <strong>{s.ano}:</strong> {s.descricao}
+                            </span>
+                            {s.valorIndenizado && (
+                              <span className="font-semibold text-red-700">
+                                R$ {s.valorIndenizado.toLocaleString('pt-BR')}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gray-800">
+                        Coberturas e Valores Solicitados:
+                      </div>
+                      <div className="divide-y divide-gray-100 border rounded">
+                        {parsedRiskCard.coberturas
+                          .filter((c) => c.isAtual || c.isAtualizada || c.isEscolhida)
+                          .map((c, idx) => (
+                            <div
+                              key={idx}
+                              className="p-1.5 text-[11px] flex items-center justify-between gap-2 hover:bg-gray-50"
+                            >
+                              <div>
+                                <span className="font-medium text-gray-800">{c.nomeOriginal}</span>
+                                {c.categoriaNormalizada !== c.nomeOriginal && (
+                                  <span className="text-[10px] text-gray-400 ml-1">
+                                    → {c.categoriaNormalizada}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-mono text-[11px] text-right shrink-0">
+                                {c.isEscolhida ? (
+                                  <span className="text-[#16578B] font-bold">
+                                    R$ {c.isEscolhida.toLocaleString('pt-BR')}
+                                  </span>
+                                ) : c.isAtualizada ? (
+                                  <span className="text-gray-900 font-semibold">
+                                    R$ {c.isAtualizada.toLocaleString('pt-BR')}
+                                  </span>
+                                ) : c.isAtual ? (
+                                  <span className="text-gray-600">
+                                    R$ {c.isAtual.toLocaleString('pt-BR')}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="pt-2 flex items-center justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setParsedRiskCard(null)
+                    setRiskCardMatch(null)
+                    setRiskCardFile(null)
+                  }}
+                  disabled={savingRiskCard}
+                  className="text-xs h-9"
+                >
+                  Trocar Arquivo
+                </Button>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRiskCardModalOpen(false)}
+                    disabled={savingRiskCard}
+                    className="text-xs h-9"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleConfirmSaveRiskCard}
+                    disabled={savingRiskCard}
+                    className="bg-[#16578B] hover:bg-[#12456e] text-white text-xs font-semibold h-9 px-4 shadow-sm"
+                  >
+                    {savingRiskCard ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                        <span>{riskCardSaveProgress || 'Gravando dados...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                        <span>Confirmar e Iniciar Processo</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. PAINEL DE DIAGNÓSTICO FINAL PÓS-GRAVAÇÃO */}
+          {riskCardSummary && (
+            <div className="py-3 space-y-4">
+              <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-green-800 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold">Cartão de Risco Processado com Sucesso!</h4>
+                  <p className="text-xs mt-1 text-green-700 leading-relaxed">
+                    O documento de origem foi arquivado no módulo C1 e o processo de cotação foi
+                    estruturado de forma idempotente e segura.
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges de Mutações */}
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200">
+                  <div className="text-lg font-bold text-emerald-700">
+                    {riskCardSummary.createdCount}
+                  </div>
+                  <div className="text-[10px] text-emerald-800 font-semibold uppercase tracking-wider">
+                    Criados Novos
+                  </div>
+                  <div className="text-[9px] text-emerald-600">Inserções no banco</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200">
+                  <div className="text-lg font-bold text-[#16578B]">
+                    {riskCardSummary.updatedCount}
+                  </div>
+                  <div className="text-[10px] text-[#0F2B46] font-semibold uppercase tracking-wider">
+                    Atualizados
+                  </div>
+                  <div className="text-[9px] text-blue-600">Modificações gravadas</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="text-lg font-bold text-gray-700">
+                    {riskCardSummary.unchangedCount}
+                  </div>
+                  <div className="text-[10px] text-gray-700 font-semibold uppercase tracking-wider">
+                    Inalterados
+                  </div>
+                  <div className="text-[9px] text-gray-500">Escritas evitadas</div>
+                </div>
+              </div>
+
+              {/* Detalhes por entidade */}
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1.5">
+                <div className="font-semibold text-gray-800 mb-1">Resumo Técnico da Operação:</div>
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-700">
+                  <div>
+                    • Desfecho de Negócio:{' '}
+                    <strong className="text-[#16578B]">
+                      {riskCardSummary.outcome === 'RENOVACAO'
+                        ? 'Renovação'
+                        : riskCardSummary.outcome === 'NOVO_PRODUTO'
+                          ? 'Novo Produto'
+                          : 'Cliente Novo'}
+                    </strong>
+                  </div>
+                  <div>
+                    • Coberturas Gravadas:{' '}
+                    <strong>
+                      {riskCardSummary.coberturasCreated} novas /{' '}
+                      {riskCardSummary.coberturasUpdated} atualiz.
+                    </strong>
+                  </div>
+                  <div>
+                    • Sinistros Gravados:{' '}
+                    <strong>
+                      {riskCardSummary.sinistrosCreated} novos /{' '}
+                      {riskCardSummary.sinistrosUnchanged} inalterados
+                    </strong>
+                  </div>
+                  <div>
+                    • Divergências Registradas:{' '}
+                    <strong>{riskCardSummary.divergenciasRecorded}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Erros residuais se houver */}
+              {riskCardSummary.errors.length > 0 && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1">
+                  <div className="font-semibold text-red-800 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                    <span>Observações residuais:</span>
+                  </div>
+                  {riskCardSummary.errors.map((e, idx) => (
+                    <div key={idx}>• {e}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end">
+                <Button
+                  onClick={() => {
+                    setRiskCardModalOpen(false)
+                    setParsedRiskCard(null)
+                    setRiskCardMatch(null)
+                    setRiskCardFile(null)
+                    setRiskCardSummary(null)
+                  }}
+                  className="bg-[#0F2B46] text-xs h-9 px-4"
+                >
+                  Concluir e Fechar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL: Importador da Base Hotéis e Resorts */}
       <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
