@@ -388,13 +388,30 @@ export default function PropostaUploadModal({
                           </span>
                         </div>
 
-                        <div className="text-[11px] text-gray-500">
-                          <span>Cotação nº: </span>
-                          <strong className="text-gray-800">{seg.numeroCotacao}</strong>
-                          <span className="mx-1.5">•</span>
+                        <div className="text-[11px] text-gray-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span>
+                            Cotação: <strong className="text-gray-800">{seg.numeroCotacao}</strong>
+                          </span>
+                          {seg.versao && seg.versao !== '1' && (
+                            <span className="font-semibold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200 text-[10px]">
+                              {seg.versao.startsWith('V') || seg.versao.startsWith('v')
+                                ? seg.versao
+                                : `Versão ${seg.versao}`}
+                            </span>
+                          )}
+                          <span className="text-gray-300">•</span>
                           <span>
                             Páginas {seg.paginaInicio} a {seg.paginaFim}
                           </span>
+                          {seg.vigenciaInicio && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span>
+                                Vigência: {seg.vigenciaInicio}
+                                {seg.vigenciaFim ? ` a ${seg.vigenciaFim}` : ''}
+                              </span>
+                            </>
+                          )}
                         </div>
 
                         <div className="text-[11px] text-gray-600 flex items-center gap-3 pt-0.5">

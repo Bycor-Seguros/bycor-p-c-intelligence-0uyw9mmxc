@@ -110,12 +110,13 @@ export async function extractTextFromPdf(
         hasEOL?: boolean
       }>
 
-      // Agrupar itens com Y similar na mesma linha
-      const lineMap = new Map<number, string[]>()
+      // Agrupar itens com Y similar na mesma linha, preservando coordenada X para ordenação correta
+      const lineMap = new Map<number, Array<{ str: string; x: number }>>()
       items.forEach((item) => {
         if (!item.str) return
         const y = item.transform ? Math.round(item.transform[5]) : 0
-        // Achar chave mais próxima (tolerância de 3 pontos)
+        const x = item.transform ? Math.round(item.transform[4]) : 0
+        // Achar chave Y mais próxima (tolerância de 4 pontos)
         let foundY = y
         for (const existingY of lineMap.keys()) {
           if (Math.abs(existingY - y) <= 4) {
@@ -126,12 +127,22 @@ export async function extractTextFromPdf(
         if (!lineMap.has(foundY)) {
           lineMap.set(foundY, [])
         }
-        lineMap.get(foundY)!.push(item.str)
+        lineMap.get(foundY)!.push({ str: item.str, x })
       })
 
       // Ordena por Y decrescente (topo para base da folha)
+      // e ordena cada linha por X crescente (esquerda para direita) para evitar palavras invertidas
       const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a)
-      const lines = sortedYs.map((y) => (lineMap.get(y) || []).join(' ').trim()).filter(Boolean)
+      const lines = sortedYs
+        .map((y) => {
+          const lineItems = lineMap.get(y) || []
+          lineItems.sort((a, b) => a.x - b.x)
+          return lineItems
+            .map((it) => it.str)
+            .join(' ')
+            .trim()
+        })
+        .filter(Boolean)
       const text = lines.join('\n')
 
       pages.push({

@@ -214,37 +214,78 @@ export function detectDocumentBoundaries(pages: PdfPageText[]): Array<{
 
   const splitPoints: number[] = [1] // Página 1 é sempre início do 1º doc
 
+  // Padrões de início de documento / cotação independente por seguradora ou cabeçalho formal
   for (let i = 1; i < pages.length; i++) {
     const p = pages[i]
     const text = p.text
-    const firstLines = p.lines.slice(0, 10).join(' ').toLowerCase()
+    const firstLines = p.lines.slice(0, 14).join(' ').toLowerCase()
+    const first500 = text.slice(0, 700).toLowerCase()
 
-    // Indicadores fortes de nova proposta independente
+    // 1. AXA: Novo cabeçalho formal "Cotação de Seguros AXA Empresa Flex" ou
+    // "Cotação de Seguros" + "AXA Seguros" ou nova cotação "Cotação: XXXXX - VX" no topo
     const isNewAxa =
       firstLines.includes('cotação de seguros axa') ||
-      (firstLines.includes('cotação de seguros') && text.includes('AXA Empresa Flex'))
+      (firstLines.includes('cotação de seguros') &&
+        (firstLines.includes('axa empresa flex') || first500.includes('axa empresa flex'))) ||
+      ((firstLines.includes('axa seguros') || first500.includes('axa seguros')) &&
+        (firstLines.includes('cotação de seguros') ||
+          firstLines.includes('dados do segurado') ||
+          /cota[çc][ãa]o[:\s]*\d{5,}/i.test(firstLines)))
+
+    // 2. Chubb: "Proposta Property Online", "Chubb Seguros Brasil" com "Número da Cotação" no topo,
+    // ou "Cotação Chubb" ou "Proposta nº" com Chubb
     const isNewChubb =
       firstLines.includes('proposta property online') ||
-      (text.includes('Proposta Property Online') && text.includes('Chubb Seguros Brasil'))
+      (firstLines.includes('chubb') &&
+        (firstLines.includes('proposta property online') ||
+          firstLines.includes('número da cotação') ||
+          firstLines.includes('numero da cotacao') ||
+          firstLines.includes('quadro de coberturas') ||
+          firstLines.includes('especificação do seguro'))) ||
+      ((first500.includes('chubb seguros') || first500.includes('property online')) &&
+        (firstLines.includes('número da cotação') ||
+          firstLines.includes('numero da cotacao') ||
+          firstLines.includes('proposta property online')))
+
+    // 3. Tokio Marine: "Proposta de Seguro Tokio Marine", "Dados da Proposta" + Tokio Marine + "Proposta nº.",
+    // ou "Tokio Marine Seguradora" no cabeçalho com início de dados cadastrais
     const isNewTokio =
       firstLines.includes('proposta de seguro tokio marine') ||
+      (firstLines.includes('tokio marine seguradora') && firstLines.includes('proposta')) ||
       (firstLines.includes('dados da proposta') &&
-        text.includes('Tokio Marine') &&
-        text.includes('Proposta nº.'))
+        (first500.includes('tokio marine') || firstLines.includes('tokio marine')) &&
+        /proposta\s*n[º°.]/i.test(firstLines)) ||
+      (firstLines.includes('proposta de seguro') &&
+        (firstLines.includes('tokio') || first500.includes('tokio marine')))
+
+    // 4. Zurich: "Cotação de Seguros" com Zurich, "Cotação no." com Zurich,
+    // "Sobre a Zurich" (página de abertura institucional de cotação), ou
+    // cabeçalho de cotação Zurich Minas Brasil
     const isNewZurich =
-      (firstLines.includes('cotação de seguros') && text.includes('Zurich')) ||
-      (firstLines.includes('cotação no.') && text.includes('Zurich')) ||
-      firstLines.includes('sobre a zurich')
+      ((firstLines.includes('cotação de seguros') || firstLines.includes('cotacao de seguros')) &&
+        (firstLines.includes('zurich') || first500.includes('zurich'))) ||
+      (/cota[çc][ãa]o\s*no\.?/i.test(firstLines) &&
+        (firstLines.includes('zurich') || first500.includes('zurich'))) ||
+      firstLines.includes('sobre a zurich') ||
+      (firstLines.includes('zurich minas brasil') &&
+        (firstLines.includes('cotação') ||
+          firstLines.includes('proposta') ||
+          firstLines.includes('apólice')))
 
-    // Outros marcadores de cabeçalho formal
-    const isHeaderMarker =
-      (firstLines.includes('cotação de seguros') && i > 5) ||
-      (firstLines.includes('proposta de seguro') && i > 5)
+    // 5. Marcador genérico forte de capa / abertura de cotação
+    const isGenericNewDoc =
+      /^(?:cota[çc][ãa]o\s+de\s+seguros|proposta\s+de\s+seguro|especifica[çc][ãa]o\s+da\s+proposta)/i.test(
+        firstLines.trim(),
+      ) &&
+      (firstLines.includes('dados do segurado') ||
+        firstLines.includes('dados da proposta') ||
+        firstLines.includes('vigência') ||
+        firstLines.includes('vigencia'))
 
-    if (isNewAxa || isNewChubb || isNewTokio || isNewZurich || isHeaderMarker) {
-      // Evita duplicar se já adicionou perto
+    if (isNewAxa || isNewChubb || isNewTokio || isNewZurich || isGenericNewDoc) {
+      // Distância mínima reduzida para 2 páginas (uma cotação resumida pode ter 2 a 3 páginas)
       const lastPoint = splitPoints[splitPoints.length - 1]
-      if (p.pageNumber - lastPoint >= 3) {
+      if (p.pageNumber - lastPoint >= 2) {
         splitPoints.push(p.pageNumber)
       }
     }
@@ -273,13 +314,20 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
   const fullText = pages.map((p) => p.text).join('\n')
   const lines = pages.flatMap((p) => p.lines)
 
-  // Cotação: 3840019 - V2
+  // Cotação e Versão reais do segmento
   let cotacao = ''
   let versao = ''
-  const cotMatch = fullText.match(/Cota[çc][ãa]o[:\s]*([0-9]+(?:\s*-\s*V\d+)?)/i)
+
+  // Formato: "Cotação: 3840019 - V2" ou "Cotação nº 3840019" ou "Cotação: 3840019"
+  const cotMatch = fullText.match(/Cota[çc][ãa]o\s*(?:n[º°.]?)?[:\s]*([0-9]+(?:\s*-\s*V\d+)?)/i)
   if (cotMatch) {
     cotacao = cotMatch[1].replace(/\s+/g, ' ').trim()
+    const innerV = cotacao.match(/-?\s*V(\d+)/i)
+    if (innerV) {
+      versao = `V${innerV[1]}`
+    }
   }
+
   const verMatch = fullText.match(/Vers[ãa]o[:\s]*([A-Za-z0-9/]+)/i)
   if (verMatch) {
     versao = verMatch[1].trim()
@@ -303,11 +351,13 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
   const vigFimMatch = fullText.match(/Fim de vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (vigFimMatch) vigenciaFim = parsePtBrDate(vigFimMatch[1])
 
-  // Valores de Forma de Pagamento (Página 2 AXA: "A vista - boleto R$ 10.362,77 R$ 0,00 R$ 0,00 R$ 712,21")
+  // Valores de Forma de Pagamento e Prêmio
   let premioTotal: number | null = null
+  let premioLiquido: number | null = null
   let iof: number | null = null
   let formaPagamento = ''
 
+  // Ex: "A vista - boleto R$ 10.362,77 R$ 0,00 R$ 0,00 R$ 712,21"
   const aVistaMatch = fullText.match(
     /A vista\s*-\s*boleto\s*R\$\s*([\d.,]+)\s*R\$\s*[\d.,]+\s*R\$\s*[\d.,]+\s*R\$\s*([\d.,]+)/i,
   )
@@ -316,16 +366,32 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
     iof = parsePtBrNumber(aVistaMatch[2])
     formaPagamento = 'À vista - boleto'
   } else {
-    // Busca genérica de prêmio total
-    const prMatch = fullText.match(/Pr[êe]mio\s+(?:Total|L[íi]quido)[:\s]*R?\$?\s*([\d.,]+)/i)
-    if (prMatch) {
-      premioTotal = parsePtBrNumber(prMatch[1])
+    // Linha genérica de forma de pagamento com parcelas
+    const parceladoMatch = fullText.match(
+      /(\d+x\s*(?:sem juros|com juros)?\s*-\s*boleto)\s*R\$\s*([\d.,]+)/i,
+    )
+    if (parceladoMatch) {
+      formaPagamento = parceladoMatch[1].trim()
+      premioTotal = parsePtBrNumber(parceladoMatch[2])
     }
+  }
+
+  // Busca de prêmio total se ainda nulo
+  if (!premioTotal) {
+    const prTotalMatch = fullText.match(/Pr[êe]mio\s+(?:Total|Bruto)[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (prTotalMatch) {
+      premioTotal = parsePtBrNumber(prTotalMatch[1])
+    }
+  }
+
+  // Busca de prêmio líquido
+  const prLiqMatch = fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d.,]+)/i)
+  if (prLiqMatch) {
+    premioLiquido = parsePtBrNumber(prLiqMatch[1])
   }
 
   // Tabela ADICIONAIS E/OU SUBLIMITES
   // Cobertura Local Limite Máximo de Indenização Prêmio Líquido Franquia
-  // Alagamento e inundação 1 R$ 70.000,00 R$ 653,35 20% Dos Prejuízos...
   const coberturas: ExtractedCoberturaItem[] = []
   let insideTable = false
   let premioLiquidoSum = 0
@@ -340,7 +406,8 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
       insideTable &&
       (line.includes('PROTECIONAIS DO RISCO') ||
         line.includes('Serviço De Assistência') ||
-        line.includes('OBSERVAÇÕES IMPORTANTES'))
+        line.includes('OBSERVAÇÕES IMPORTANTES') ||
+        line.includes('CLÁUSULAS APLICÁVEIS'))
     ) {
       insideTable = false
       break
@@ -358,7 +425,7 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
         const premVal = parsePtBrNumber(cobMatch[3])
         const franq = cobMatch[4].trim()
 
-        if (nomeCob && nomeCob !== 'Cobertura' && lmiVal !== null) {
+        if (nomeCob && !nomeCob.toLowerCase().startsWith('cobertura') && lmiVal !== null) {
           coberturas.push({
             cobertura: nomeCob,
             categoriaNormalizada: matchCanonicalCategory(nomeCob),
@@ -373,15 +440,27 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
     }
   }
 
+  // Se não extraiu do texto, busca LMI da Básica
+  if (lmiSum === 0) {
+    const basicaMatch = fullText.match(
+      /(?:B[áa]sica|Inc[êe]ndio)[^R\n]*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    if (basicaMatch) {
+      lmiSum = parsePtBrNumber(basicaMatch[1]) || 0
+    }
+  }
+
+  const finalPremioLiq = premioLiquido || (premioLiquidoSum > 0 ? premioLiquidoSum : null)
+
   return {
-    numeroCotacao: cotacao || '3840019 - V2',
-    versao: versao || 'Outubro/2025',
+    numeroCotacao: cotacao || '',
+    versao: versao || '1',
     dataCotacao,
     validadeCotacao,
     vigenciaInicio,
     vigenciaFim,
     premioTotal,
-    premioLiquido: premioLiquidoSum > 0 ? premioLiquidoSum : null,
+    premioLiquido: finalPremioLiq,
     iof,
     lmiTotal: lmiSum > 0 ? lmiSum : null,
     formaPagamento: formaPagamento || 'Boleto bancário',
@@ -394,45 +473,63 @@ function extractChubbDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
   const lines = pages.flatMap((p) => p.lines)
 
   // Cotação / Proposta Chubb:
-  // "Número da Cotação 4.220.159 Versão 1" ou "Proposta Property Online ... SUSEP 06513"
+  // "Número da Cotação 4.220.159 Versão 1" ou "Proposta Property Online ... Proposta nº 4.220.159"
   let cotacao = ''
   let versao = ''
   const cotMatch = fullText.match(/N[úu]mero da Cota[çc][ãa]o\s*([0-9.]+)/i)
   if (cotMatch) {
     cotacao = cotMatch[1].trim()
   } else {
-    const propMatch = fullText.match(/Proposta\s*(?:nº|n°|n\.)?\s*([0-9.]+)/i)
+    const propMatch = fullText.match(/Proposta\s*(?:n[º°.]|número)?\s*([0-9.]+)/i)
     if (propMatch) cotacao = propMatch[1].trim()
   }
 
-  const verMatch = fullText.match(/Vers[ãa]o\s*(\d+)/i)
-  if (verMatch) versao = verMatch[1]
+  const verMatch = fullText.match(/Vers[ãa]o\s*([0-9A-Za-z]+)/i)
+  if (verMatch) versao = verMatch[1].trim()
 
-  // Prêmio total 28.207,15 (Página 141)
+  // Prêmio total Chubb
   let premioTotal: number | null = null
-  const premMatch = fullText.match(/Pr[êe]mio\s+total\s*([\d.,]+)/i)
+  let premioLiquido: number | null = null
+  let iof: number | null = null
+
+  const premMatch = fullText.match(/Pr[êe]mio\s+(?:total|bruto)\s*[:\s]*R?\$?\s*([\d.,]+)/i)
   if (premMatch) {
     premioTotal = parsePtBrNumber(premMatch[1])
   }
 
+  const premLiqMatch = fullText.match(/Pr[êe]mio\s+l[íi]quido\s*[:\s]*R?\$?\s*([\d.,]+)/i)
+  if (premLiqMatch) {
+    premioLiquido = parsePtBrNumber(premLiqMatch[1])
+  }
+
+  const iofMatch = fullText.match(/I\.?O\.?F\.?\s*[:\s]*R?\$?\s*([\d.,]+)/i)
+  if (iofMatch) {
+    iof = parsePtBrNumber(iofMatch[1])
+  }
+
   // Datas
   let dataCotacao = ''
-  const dtMatch = fullText.match(/Data\s*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  let vigenciaInicio = ''
+  let vigenciaFim = ''
+
+  const dtMatch = fullText.match(/Data\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (dtMatch) dataCotacao = parsePtBrDate(dtMatch[1])
 
-  // Coberturas Chubb (Página 30 e seguintes: "Cobertura LMI Cobertura Básica 448.644.00...")
-  // e páginas 137-138
+  const vigMatch = fullText.match(
+    /Vig[êe]ncia[:\s]*(?:das\s+24\s+horas\s+do\s+dia\s+)?(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:[àa]|at[ée])\s*(?:[àa]s\s+24\s+horas\s+do\s+dia\s+)?(\d{1,2}\/\d{1,2}\/\d{4})/i,
+  )
+  if (vigMatch) {
+    vigenciaInicio = parsePtBrDate(vigMatch[1])
+    vigenciaFim = parsePtBrDate(vigMatch[2])
+  }
+
+  // Coberturas Chubb
   const coberturas: ExtractedCoberturaItem[] = []
   let lmiSum = 0
 
   for (const line of lines) {
-    // Linha com padrão: Cobertura ... LMI (valor grande) ... Prêmio
-    // Ex: "Perda e Pagamento de Aluguel a Terceiros 1.070.000,00 154,35 5 dias"
-    // Ex: "Quebra de Máquinas 120.000,00 4.124,15 Não há."
-    // Ex: "Quebra de Vidros 20.000,00 287,..."
-    // Ex: "Cobertura Básica 448.644.000,00"
     const cobMatch = line.match(
-      /^([A-Za-zÀ-ÿ0-9\s/\-_()]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d.,]+)?\s*(.*)$/i,
+      /^([A-Za-zÀ-ÿ0-9\s/\-_()]{4,45})\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d.,]+)?\s*(.*)$/i,
     )
     if (cobMatch) {
       const nomeCob = cobMatch[1].trim()
@@ -440,12 +537,14 @@ function extractChubbDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
       const premVal = cobMatch[3] ? parsePtBrNumber(cobMatch[3]) : null
       const franquia = cobMatch[4]?.trim() || ''
 
-      // Filtra ruídos de texto
+      const lower = nomeCob.toLowerCase()
       if (
         nomeCob.length > 3 &&
-        !nomeCob.toLowerCase().includes('condições especiais') &&
-        !nomeCob.toLowerCase().includes('av. nações') &&
-        !nomeCob.toLowerCase().includes('chubb seguros') &&
+        !lower.includes('condições especiais') &&
+        !lower.includes('av. nações') &&
+        !lower.includes('chubb seguros') &&
+        !lower.includes('endereço') &&
+        !lower.includes('vigência') &&
         lmiVal !== null &&
         lmiVal > 100
       ) {
@@ -461,12 +560,24 @@ function extractChubbDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
     }
   }
 
+  // Tenta capturar LMI Básica da Chubb se a soma ficou zero
+  if (lmiSum === 0) {
+    const basicaChubb = fullText.match(/Cobertura\s+B[áa]sica\s*[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (basicaChubb) {
+      lmiSum = parsePtBrNumber(basicaChubb[1]) || 0
+    }
+  }
+
   return {
-    numeroCotacao: cotacao || '4.220.159',
+    numeroCotacao: cotacao || '',
     versao: versao || '1',
     dataCotacao,
-    premioTotal: premioTotal || 28207.15,
-    lmiTotal: lmiSum > 0 ? lmiSum : 448644000,
+    vigenciaInicio,
+    vigenciaFim,
+    premioTotal,
+    premioLiquido,
+    iof,
+    lmiTotal: lmiSum > 0 ? lmiSum : null,
     coberturas,
   }
 }
@@ -478,25 +589,39 @@ function extractTokioDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
   // Proposta nº. 13115243 Versão nº. 4 / Data: 05/12/2025
   let cotacao = ''
   let versao = ''
-  const propMatch = fullText.match(/Proposta\s*nº\.\s*([0-9]+)/i)
+  const propMatch = fullText.match(/Proposta\s*(?:nº|n°|n\.|número)?\s*[:\s]*([0-9]+)/i)
   if (propMatch) cotacao = propMatch[1]
 
-  const verMatch = fullText.match(/Vers[ãa]o\s*nº\.\s*([0-9]+)/i)
+  const verMatch = fullText.match(/Vers[ãa]o\s*(?:nº|n°|n\.|número)?\s*[:\s]*([0-9A-Za-z]+)/i)
   if (verMatch) versao = verMatch[1]
 
   let dataCotacao = ''
   const dtMatch = fullText.match(/Data[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (dtMatch) dataCotacao = parsePtBrDate(dtMatch[1])
 
+  let vigenciaInicio = ''
+  let vigenciaFim = ''
+  const vigTokio = fullText.match(
+    /Vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:[àa]|at[ée])\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+  )
+  if (vigTokio) {
+    vigenciaInicio = parsePtBrDate(vigTokio[1])
+    vigenciaFim = parsePtBrDate(vigTokio[2])
+  }
+
   // Prêmio Total / Líquido Tokio Marine
   let premioTotal: number | null = null
   let premioLiquido: number | null = null
+  let iof: number | null = null
 
   const premTotalMatch = fullText.match(/Pr[êe]mio\s+Total[:\s]*R?\$?\s*([\d.,]+)/i)
   if (premTotalMatch) premioTotal = parsePtBrNumber(premTotalMatch[1])
 
   const premLiqMatch = fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d.,]+)/i)
   if (premLiqMatch) premioLiquido = parsePtBrNumber(premLiqMatch[1])
+
+  const iofTokio = fullText.match(/I\.?O\.?F\.?[:\s]*R?\$?\s*([\d.,]+)/i)
+  if (iofTokio) iof = parsePtBrNumber(iofTokio[1])
 
   // Coberturas Tokio Marine
   const coberturas: ExtractedCoberturaItem[] = []
@@ -513,10 +638,12 @@ function extractTokioDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
       const valPrem = m[3] ? parsePtBrNumber(m[3]) : null
       const rest = m[4]?.trim() || ''
 
+      const lower = nome.toLowerCase()
       if (
         nome.length > 3 &&
-        !nome.toLowerCase().includes('proposta de seguro') &&
-        !nome.toLowerCase().includes('tokio marine') &&
+        !lower.includes('proposta de seguro') &&
+        !lower.includes('tokio marine') &&
+        !lower.includes('informações gerais') &&
         valLmi &&
         valLmi > 500
       ) {
@@ -533,11 +660,14 @@ function extractTokioDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtr
   }
 
   return {
-    numeroCotacao: cotacao || '13115243',
-    versao: versao || '4',
+    numeroCotacao: cotacao || '',
+    versao: versao || '1',
     dataCotacao,
+    vigenciaInicio,
+    vigenciaFim,
     premioTotal,
     premioLiquido,
+    iof,
     lmiTotal: lmiSum > 0 ? lmiSum : null,
     coberturas,
   }
@@ -549,12 +679,35 @@ function extractZurichDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExt
 
   // Cotação No.
   let cotacao = ''
-  const cotMatch = fullText.match(/Cota[çc][ãa]o\s*No\.?\s*([0-9A-Za-z./-]+)/i)
-  if (cotMatch) cotacao = cotMatch[1]
+  let versao = ''
+  const cotMatch = fullText.match(
+    /Cota[çc][ãa]o\s*(?:No\.?|n[º°.]|número)?\s*[:\s]*([0-9A-Za-z./-]+)/i,
+  )
+  if (cotMatch) cotacao = cotMatch[1].trim()
+
+  const verMatch = fullText.match(/Vers[ãa]o\s*[:\s]*([0-9A-Za-z]+)/i)
+  if (verMatch) versao = verMatch[1].trim()
+
+  // Datas
+  let dataCotacao = ''
+  let vigenciaInicio = ''
+  let vigenciaFim = ''
+
+  const dtMatch = fullText.match(/Data\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  if (dtMatch) dataCotacao = parsePtBrDate(dtMatch[1])
+
+  const vigMatch = fullText.match(
+    /Vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:[àa]|at[ée])\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+  )
+  if (vigMatch) {
+    vigenciaInicio = parsePtBrDate(vigMatch[1])
+    vigenciaFim = parsePtBrDate(vigMatch[2])
+  }
 
   // R$ 149.150,97 (Total para parcelamento em 4 vezes = R$ 160.158,31)
   let premioLiquido: number | null = null
   let premioTotal: number | null = null
+  let formaPagamento = ''
 
   const premZurichMatch = fullText.match(
     /R\$\s*([\d.,]+)\s*\(Total para parcelamento[^=]*=\s*R\$\s*([\d.,]+)\)/i,
@@ -562,19 +715,20 @@ function extractZurichDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExt
   if (premZurichMatch) {
     premioLiquido = parsePtBrNumber(premZurichMatch[1])
     premioTotal = parsePtBrNumber(premZurichMatch[2])
+    formaPagamento = 'Parcelamento em 4x'
   } else {
-    const premAvulso = fullText.match(/R\$\s*([\d.,]+)\s*\(Total/i)
-    if (premAvulso) premioLiquido = parsePtBrNumber(premAvulso[1])
+    const premLiqAvulso = fullText.match(/Pr[êe]mio\s+L[íi]quido\s*[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (premLiqAvulso) premioLiquido = parsePtBrNumber(premLiqAvulso[1])
+
+    const premTotAvulso = fullText.match(/Pr[êe]mio\s+Total\s*[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (premTotAvulso) premioTotal = parsePtBrNumber(premTotAvulso[1])
   }
 
-  // Coberturas contratadas, Limites e Franquias (Páginas 328-332)
+  // Coberturas contratadas, Limites e Franquias
   const coberturas: ExtractedCoberturaItem[] = []
   let lmiSum = 0
 
   for (const line of lines) {
-    // Ex: "5.000.000,00 200.000,00 2.500.000,00 1.000.000,00 20% dos prejuízos..."
-    // Ex: "Riscos de Engenharia – Quebra de Máquinas 500.000,00 15% dos prejuízos..."
-    // Ex: "- R$ 270.768.500,00 para Cobertura Básica – Incêndio, Queda de Raio..."
     const directMatch = line.match(/[-]?\s*R?\$?\s*([\d.,]+)\s+para\s+([A-Za-zÀ-ÿ0-9\s–/\-_()]+)/i)
     if (directMatch) {
       const val = parsePtBrNumber(directMatch[1])
@@ -600,10 +754,12 @@ function extractZurichDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExt
       const val = parsePtBrNumber(tableMatch[2])
       const rest = tableMatch[3]?.trim() || ''
 
+      const lower = nome.toLowerCase()
       if (
         val &&
-        !nome.toLowerCase().includes('cotação') &&
-        !nome.toLowerCase().includes('zurich')
+        !lower.includes('cotação') &&
+        !lower.includes('zurich') &&
+        !lower.includes('endereço')
       ) {
         coberturas.push({
           cobertura: nome,
@@ -617,13 +773,26 @@ function extractZurichDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExt
     }
   }
 
+  // Se lmiSum zerado, busca LMI da Básica / Incêndio
+  if (lmiSum === 0) {
+    const basicaMatch = fullText.match(
+      /(?:Cobertura\s+B[áa]sica|Inc[êe]ndio)[^R\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    if (basicaMatch) {
+      lmiSum = parsePtBrNumber(basicaMatch[1]) || 0
+    }
+  }
+
   return {
-    numeroCotacao: cotacao || 'Zurich-P&C',
-    versao: '1',
-    premioLiquido: premioLiquido || 149150.97,
-    premioTotal: premioTotal || 160158.31,
-    lmiTotal: lmiSum > 0 ? lmiSum : 270768500,
-    formaPagamento: 'Parcelamento em 4x',
+    numeroCotacao: cotacao || '',
+    versao: versao || '1',
+    dataCotacao,
+    vigenciaInicio,
+    vigenciaFim,
+    premioLiquido,
+    premioTotal,
+    lmiTotal: lmiSum > 0 ? lmiSum : null,
+    formaPagamento: formaPagamento || 'Conforme cotação',
     coberturas,
   }
 }
@@ -715,8 +884,9 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
       }
 
       // Constrói resumo legível do documento
-      const docId = `doc-${idx + 1}-${seguradora.nomeCanonica.slice(0, 4).toLowerCase()}`
-      const numCot = extracted.numeroCotacao || `Cot-${b.paginaInicio}`
+      const docId = `doc-${idx + 1}-${seguradora.nomeCanonica.slice(0, 4).toLowerCase()}-${b.paginaInicio}`
+      const numCot = extracted.numeroCotacao || `Proposta #${idx + 1}`
+      const versaoCot = extracted.versao ? ` (Versão ${extracted.versao})` : ''
       const premio = extracted.premioTotal || extracted.premioLiquido || null
 
       let statusExtracao: 'completa' | 'parcial' | 'minima' = 'minima'
@@ -733,7 +903,7 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
 
       documentos.push({
         id: docId,
-        titulo: `${seguradora.nomeCanonica} — Cotação ${numCot} (Págs. ${b.paginaInicio}-${b.paginaFim})`,
+        titulo: `${seguradora.nomeCanonica} — Cotação ${numCot}${versaoCot} [Págs. ${b.paginaInicio} a ${b.paginaFim}]`,
         paginaInicio: b.paginaInicio,
         paginaFim: b.paginaFim,
         seguradora,
