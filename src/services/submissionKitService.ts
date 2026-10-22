@@ -52,15 +52,98 @@ function normalizeSortText(str: string): string {
     .trim()
 }
 
+function hasNonBasicaIndicators(text: string): boolean {
+  if (!text) return false
+  // Responsabilidade Civil / Garagista / Guarda de Veículos
+  if (/\b(rc|resp\.?\s*civil|responsabilidade\s+civil|garagista)\b/i.test(text)) return true
+  if (/guarda\s+de\s+ve[ií]culos?/i.test(text)) return true
+  if (/\bve[ií]culos?\b/i.test(text)) return true
+  // Queimadas e zonas rurais
+  if (/\bqueimadas?\b/i.test(text) || /zonas?\s+rurais?/i.test(text)) return true
+  // Salvamento e Contenção
+  if (/\bsalvamento\b/i.test(text) || /\bconten[cç][aã]o\b/i.test(text)) return true
+  // Bens de condôminos / terceiros / hóspedes
+  if (/bens\s+de\s+(cond[oô]minos?|terceiros?|h[oó]spedes?)/i.test(text)) return true
+  if (/sub[- ]?l[ií]mite/i.test(text)) return true
+  // Lucros cessantes, perda de receita, despesas fixas, aluguel
+  if (/lucros?\s+cessantes?/i.test(text) || /perda\s+de\s+receita/i.test(text)) return true
+  if (/lucro\s+(bruto|l[ií]quido)/i.test(text) || /despesas?\s+fixas?/i.test(text)) return true
+  if (/\baluguel\b/i.test(text) || /despesas?\s+extraordin[aá]rias?/i.test(text)) return true
+  // Outras coberturas específicas (RC ou danos específicos)
+  if (
+    /danos?\s+morais?/i.test(text) ||
+    /\bempregador\b/i.test(text) ||
+    /\bs[ií]ndico\b/i.test(text)
+  )
+    return true
+  if (/danos?\s+el[eé]tricos?/i.test(text)) return true
+  if (/quebra\s+de\s+(m[aá]quinas?|vidros?)/i.test(text)) return true
+  if (/assist[eê]ncia\s+24h?/i.test(text)) return true
+  return false
+}
+
 export function isCoberturaBasica(cob: { nome: string; categoriaNormalizada?: string }): boolean {
   const normNome = normalizeSortText(cob.nome)
   const normCat = normalizeSortText(cob.categoriaNormalizada || '')
-  return (
-    normCat.includes('incendio basica') ||
+
+  // Se o nome ou a categoria contiver qualquer indicador expresso de cobertura não-básica,
+  // desqualifica imediatamente (ex.: RC, Guarda de Veículos, Garagista, Queimadas, Salvamento, Lucros Cessantes)
+  if (hasNonBasicaIndicators(normNome) || hasNonBasicaIndicators(normCat)) {
+    return false
+  }
+
+  // Categoria canônica exata de Cobertura Básica (Incêndio Básica / Danos Materiais)
+  if (
+    normCat === 'incendio basica (danos materiais)' ||
+    normCat === 'incendio basica' ||
+    normCat === 'cobertura basica'
+  ) {
+    return true
+  }
+
+  // Nome começando por "básica" ou "cobertura básica"
+  if (
     normNome.startsWith('basica') ||
+    normNome.startsWith('cobertura basica') ||
+    normNome === 'basica' ||
+    normNome === 'cobertura basica'
+  ) {
+    return true
+  }
+
+  // Nome expressando Danos Materiais (prédio/conteúdo) ou Incêndio Básica
+  if (
     normNome.includes('incendio basica') ||
-    (normNome.includes('incendio') && normNome.includes('raio') && normNome.includes('explosao'))
-  )
+    (normNome.includes('danos materiais') &&
+      (normNome.includes('predio') ||
+        normNome.includes('conteudo') ||
+        normNome.includes('incendio')))
+  ) {
+    return true
+  }
+
+  // Combinação padrão de riscos da Cobertura Básica:
+  // Contém "incendio" e pelo menos um evento essencial da básica (raio, explosao, implosao)
+  if (
+    normNome.includes('incendio') &&
+    (normNome.includes('raio') || normNome.includes('explosao') || normNome.includes('implosao'))
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function hasNonLucrosCessantesIndicators(text: string): boolean {
+  if (!text) return false
+  // Não capturar coberturas de Responsabilidade Civil que mencionem lucros cessantes de terceiros
+  if (/\b(rc|resp\.?\s*civil|responsabilidade\s+civil|garagista)\b/i.test(text)) return true
+  if (/guarda\s+de\s+ve[ií]culos?/i.test(text)) return true
+  if (/\bve[ií]culos?\b/i.test(text)) return true
+  if (/salvamento/i.test(text) || /contencao/i.test(text)) return true
+  if (/honorarios?\s+(de\s+)?peritos?/i.test(text)) return true
+  if (/\baluguel\b/i.test(text)) return true
+  return false
 }
 
 export function isCoberturaLucrosCessantes(cob: {
@@ -68,11 +151,28 @@ export function isCoberturaLucrosCessantes(cob: {
   categoriaNormalizada?: string
 }): boolean {
   if (isCoberturaBasica(cob)) return false
+
   const normNome = normalizeSortText(cob.nome)
   const normCat = normalizeSortText(cob.categoriaNormalizada || '')
+
+  if (hasNonLucrosCessantesIndicators(normNome) || hasNonLucrosCessantesIndicators(normCat)) {
+    return false
+  }
+
+  // Categoria normalizada canônica
+  if (
+    normCat === 'lucros cessantes / perda de receita' ||
+    normCat === 'lucros cessantes' ||
+    normCat.includes('perda de receita')
+  ) {
+    return true
+  }
+
+  // Termos no nome indicativos de Lucros Cessantes do segurado
   return (
-    normCat.includes('lucros cessantes') ||
     normNome.includes('lucros cessantes') ||
+    normNome.includes('lucro cessante') ||
+    normNome.includes('perda de receita') ||
     normNome.includes('lucro bruto') ||
     normNome.includes('lucro liquido') ||
     normNome.includes('despesas fixas')
@@ -83,7 +183,7 @@ export function isCoberturaLucrosCessantes(cob: {
  * Ordena coberturas conforme a regra de negócio do Kit de Submissão:
  * 1º Lugar: Cobertura Básica
  * 2º Lugar: Cobertura de Lucros Cessantes
- * Demais lugares: Ordem alfabética pelo nome da cobertura
+ * Demais lugares: Ordem alfabética pelo nome da cobertura (pt-BR)
  */
 export function sortKitCoberturas(coberturas: SubmissionKitCobertura[]): SubmissionKitCobertura[] {
   return [...coberturas].sort((a, b) => {
@@ -91,13 +191,14 @@ export function sortKitCoberturas(coberturas: SubmissionKitCobertura[]): Submiss
     const isBasicaB = isCoberturaBasica(b)
     if (isBasicaA && !isBasicaB) return -1
     if (!isBasicaA && isBasicaB) return 1
-    if (isBasicaA && isBasicaB) return a.nome.localeCompare(b.nome, 'pt-BR')
+    if (isBasicaA && isBasicaB)
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
 
     const isLcA = isCoberturaLucrosCessantes(a)
     const isLcB = isCoberturaLucrosCessantes(b)
     if (isLcA && !isLcB) return -1
     if (!isLcA && isLcB) return 1
-    if (isLcA && isLcB) return a.nome.localeCompare(b.nome, 'pt-BR')
+    if (isLcA && isLcB) return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
 
     return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
   })
@@ -670,7 +771,7 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
         cob.nome,
         `${formatCurrency(isVal)}${extraFranquia}`,
         'Coberturas',
-        isCoberturaBasica(cob),
+        isCoberturaBasica(cob) || isCoberturaLucrosCessantes(cob),
       )
     }
   }
