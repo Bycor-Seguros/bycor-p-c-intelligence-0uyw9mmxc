@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Sparkles,
   Info,
+  UploadCloud,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,7 @@ import {
   marcarDeclinio,
   registrarPropostaManual,
 } from '@/services/rfqPropostasService'
+import PropostaUploadModal from '@/components/PropostaUploadModal'
 
 interface PainelControlePropostasProps {
   rfqId: string
@@ -98,6 +100,10 @@ export function PainelControlePropostas({
   const [motivoCustom, setMotivoCustom] = useState('')
   const [savingDeclinio, setSavingDeclinio] = useState(false)
 
+  // Modal Upload de Proposta (Extração PDF)
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [uploadTargetSeg, setUploadTargetSeg] = useState<{ id: string; nome: string } | null>(null)
+
   const loadData = useCallback(async () => {
     if (!rfqId) return
     try {
@@ -141,7 +147,28 @@ export function PainelControlePropostas({
     }
   }
 
-  // Abertura do Modal de Proposta
+  // Abertura do Modal de Upload de Proposta
+  const handleOpenUploadProposta = (rec?: RfqSeguradoraRecord) => {
+    if (rec) {
+      setUploadTargetSeg({
+        id: rec.seguradora,
+        nome: rec.expand?.seguradora?.nome || 'Seguradora',
+      })
+    } else {
+      setUploadTargetSeg(null)
+    }
+    setUploadModalOpen(true)
+  }
+
+  // Lista de seguradoras disponíveis para seleção no modal
+  const seguradorasDisponiveis = useMemo(() => {
+    return records.map((r) => ({
+      id: r.seguradora,
+      nome: r.expand?.seguradora?.nome || 'Seguradora',
+    }))
+  }, [records])
+
+  // Abertura do Modal de Proposta Manual (fallback)
   const handleOpenRegistrarProposta = (rec: RfqSeguradoraRecord) => {
     setSelectedSeg({
       id: rec.seguradora,
@@ -408,16 +435,24 @@ export function PainelControlePropostas({
 
       {/* 1. GRADE DE ACOMPANHAMENTO POR RFQ */}
       <div className="bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden">
-        <div className="p-3.5 sm:p-4 border-b border-[#E4E9F0] flex items-center justify-between bg-gray-50/50">
+        <div className="p-3.5 sm:p-4 border-b border-[#E4E9F0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/50">
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4 text-[#16578B]" />
             <span className="text-xs font-bold text-gray-900">
               Seguradoras Convidadas ({records.length})
             </span>
           </div>
-          <span className="text-[11px] text-gray-500">
-            Atualizações refletem automaticamente na Tabulação C3 e no Mapa de Mercado
-          </span>
+
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => handleOpenUploadProposta()}
+              className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-8 px-3 font-semibold shadow-sm flex items-center gap-1.5"
+              title="Fazer upload de proposta/cotação em PDF com extração automática de prêmio, LMI e coberturas"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-blue-300" />
+              <span>Subir proposta (PDF)</span>
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -604,26 +639,38 @@ export function PainelControlePropostas({
                       {/* Ações por Linha */}
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Registrar / Editar Proposta */}
+                          {/* Botão de Upload com Extração (Ação Principal) */}
                           <Button
                             size="sm"
+                            onClick={() => handleOpenUploadProposta(rec)}
+                            className="h-7 px-2.5 text-[11px] font-semibold flex items-center gap-1 shadow-sm bg-[#0F2B46] hover:bg-[#1B3C5D] text-white"
+                            title="Subir PDF da proposta desta seguradora com extração automática"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5 text-blue-300" />
+                            <span>Subir PDF</span>
+                          </Button>
+
+                          {/* Registrar / Editar Proposta Manual (Fallback) */}
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => handleOpenRegistrarProposta(rec)}
-                            className={`h-7 px-2.5 text-[11px] font-semibold flex items-center gap-1 shadow-sm ${
+                            className={`h-7 px-2 text-[11px] font-semibold flex items-center gap-1 border ${
                               rec.status === 'Proposta recebida'
-                                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                : 'bg-[#16578B] hover:bg-[#0E4268] text-white'
+                                ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                             }`}
                             title={
                               rec.status === 'Proposta recebida'
-                                ? 'Editar proposta manual cadastrada'
-                                : 'Registrar oferta manual recebida da seguradora'
+                                ? 'Editar proposta manualmente'
+                                : 'Digitar proposta manualmente sem arquivo PDF'
                             }
                           >
                             <FileText className="w-3.5 h-3.5" />
                             <span>
                               {rec.status === 'Proposta recebida'
-                                ? 'Editar proposta'
-                                : 'Registrar proposta'}
+                                ? 'Editar manual'
+                                : 'Digitar manual'}
                             </span>
                           </Button>
 
@@ -804,6 +851,27 @@ export function PainelControlePropostas({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* MODAL: UPLOAD DE PROPOSTA COM EXTRAÇÃO */}
+      <PropostaUploadModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        rfqId={rfqId}
+        rfqNumero={rfqNumero}
+        seguradorasDisponiveis={seguradorasDisponiveis}
+        initialSeguradoraId={uploadTargetSeg?.id}
+        initialSeguradoraNome={uploadTargetSeg?.nome}
+        onSuccess={({ propostaId, rfqSeguradora, seguradoraNome, autoCadastrada }) => {
+          setFeedback(
+            `Proposta de ${seguradoraNome} registrada com sucesso! ${
+              autoCadastrada ? '✨ Nova seguradora auto-cadastrada no Mapa de Mercado.' : ''
+            }`,
+          )
+          setTimeout(() => setFeedback(null), 5000)
+          loadData()
+          onDataChange?.()
+        }}
+      />
 
       {/* MODAL: MARCAR DECLÍNIO */}
       <Dialog open={declinioModalOpen} onOpenChange={setDeclinioModalOpen}>

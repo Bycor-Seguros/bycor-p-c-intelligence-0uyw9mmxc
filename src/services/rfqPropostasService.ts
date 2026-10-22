@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 
 export type RfqSeguradoraStatus = 'Convidada' | 'Kit entregue' | 'Proposta recebida' | 'Declinou'
 
@@ -56,6 +57,31 @@ export interface RegistrarPropostaParams {
   posFranquias?: string
   clausulas?: string
   exclusoes?: string
+}
+
+export interface RegistrarPropostaUploadParams {
+  rfqId: string
+  seguradoraId?: string // Opcional se for auto-cadastrada a partir dos dados do leitor
+  seguradoraNome?: string
+  seguradoraCnpj?: string
+  seguradoraSusep?: string
+  dataProposta: string
+  numeroCotacao?: string
+  versao?: string
+  validadeCotacao?: string
+  vigenciaInicio?: string
+  vigenciaFim?: string
+  premioLiquido?: number | null
+  premioBruto?: number | null
+  iof?: number | null
+  lmiLmg?: number | null
+  posFranquias?: string
+  formaPagamento?: string
+  clausulas?: string
+  exclusoes?: string
+  coberturas?: any[]
+  arquivo?: File | null
+  arquivoExtracaoJson?: any
 }
 
 export interface MarcarDeclinioParams {
@@ -371,5 +397,311 @@ export async function registrarPropostaManual(
   return {
     propostaId,
     rfqSeguradora: finalRecord,
+  }
+}
+
+/**
+ * Normaliza e consolida ou auto-cadastra a seguradora no Mapa de Mercado.
+ * Se já existir por nome normalizado/canônico, atualiza CNPJ/SUSEP apenas se vazios.
+ * Se não existir, cadastra automaticamente com marcação para completar dados.
+ */
+export async function autoCadastrarOuLocalizarSeguradora(dados: {
+  nome: string
+  cnpj?: string
+  susep?: string
+  razaoSocial?: string
+}): Promise<{ id: string; nome: string; autoCadastrada: boolean }> {
+  const nomeBuscado = dados.nome.trim()
+  const nomeLower = nomeBuscado.toLowerCase()
+
+  // 1. Busca todas as seguradoras cadastradas no Mapa
+  const todas = await pb.collection('seguradoras').getFullList<{
+    id: string
+    nome: string
+    observacoes?: string
+    contatos?: any
+    historico_relacionamento?: any[]
+  }>()
+
+  // Casamento exato ou por tokens canônicos
+  let match = todas.find((s) => s.nome.toLowerCase() === nomeLower)
+
+  if (!match) {
+    // Casamento flexível (AXA, Chubb, Tokio Marine, Zurich, etc.)
+    const canonicaBuscada = canonicalizeInsurerName(nomeBuscado)
+    match = todas.find((s) => {
+      const canonicaExistente = canonicalizeInsurerName(s.nome)
+      return canonicaExistente === canonicaBuscada
+    })
+  }
+
+  if (match) {
+    // Já existe! Se houver CNPJ/SUSEP novo e o cadastro estiver com observações vazias, atualiza suavemente
+    const updates: Record<string, any> = {}
+    let observacaoAtual = match.observacoes || ''
+    let updatedNeeded = false
+
+    if (dados.cnpj && !observacaoAtual.includes(dados.cnpj)) {
+      observacaoAtual += `${observacaoAtual ? ' | ' : ''}CNPJ: ${dados.cnpj}`
+      updatedNeeded = true
+    }
+    if (dados.susep && !observacaoAtual.includes(dados.susep)) {
+      observacaoAtual += `${observacaoAtual ? ' | ' : ''}SUSEP: ${dados.susep}`
+      updatedNeeded = true
+    }
+
+    if (updatedNeeded) {
+      try {
+        await pb.collection('seguradoras').update(match.id, {
+          observacoes: observacaoAtual,
+        })
+      } catch (e) {
+        console.warn('Erro ao atualizar dados complementares da seguradora:', e)
+      }
+    }
+
+    return { id: match.id, nome: match.nome, autoCadastrada: false }
+  }
+
+  // Não existe: cria automaticamente no Mapa de Mercado!
+  const hoje = new Date().toISOString().slice(0, 10)
+  const obs = [
+    'Cadastrada a partir de proposta (extração automática) — completar dados',
+    dados.cnpj ? `CNPJ: ${dados.cnpj}` : '',
+    dados.susep ? `SUSEP: ${dados.susep}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  const payload = {
+    nome: dados.razaoSocial || dados.nome,
+    posicionamento: 'Seguradora de Ramos Elementares e P&C (Auto-cadastrada via Proposta)',
+    apetite_segmentos: { 'Hotéis & Resorts': 'Médio' },
+    faixa_lmi: 'Sob consulta',
+    condicoes_tipicas: 'Cadastro originado de upload de proposta de seguro.',
+    observacoes: obs,
+    contatos: {
+      email: '',
+      telefone: '',
+      responsavel: 'Cadastro via Extração de Proposta',
+    },
+    historico_relacionamento: [
+      {
+        data: hoje,
+        fonte: 'Upload de Proposta',
+        observacao: `Seguradora cadastrada automaticamente a partir do upload de proposta/cotação${
+          dados.cnpj ? ` (CNPJ ${dados.cnpj})` : ''
+        }.`,
+      },
+    ],
+  }
+
+  const nova = await pb.collection('seguradoras').create<{ id: string; nome: string }>(payload)
+
+  return { id: nova.id, nome: nova.nome, autoCadastrada: true }
+}
+
+/**
+ * Registra proposta a partir do fluxo de upload/extração do PDF
+ * - Cria/atualiza em `propostas` com campos de extração e arquivo anexado
+ * - Vincula ou auto-cadastra a seguradora no Mapa de Mercado
+ * - Vincula em `rfq_seguradoras` com status "Proposta recebida"
+ * - Atualiza o RFQ para "Respondido"
+ * - Salva registro em `documentos` (tipo Proposta) para rastreabilidade
+ */
+export async function registrarPropostaComArquivo(params: RegistrarPropostaUploadParams): Promise<{
+  propostaId: string
+  rfqSeguradora: RfqSeguradoraRecord
+  seguradoraId: string
+  seguradoraNome: string
+  autoCadastrada: boolean
+}> {
+  const {
+    rfqId,
+    seguradoraId: passedSegId,
+    seguradoraNome,
+    seguradoraCnpj,
+    seguradoraSusep,
+    dataProposta,
+    numeroCotacao,
+    versao,
+    validadeCotacao,
+    vigenciaInicio,
+    vigenciaFim,
+    premioLiquido,
+    premioBruto,
+    iof,
+    lmiLmg,
+    posFranquias,
+    formaPagamento,
+    clausulas,
+    exclusoes,
+    coberturas = [],
+    arquivo,
+    arquivoExtracaoJson,
+  } = params
+
+  // 1. Resolve seguradora (existente ou auto-cadastro)
+  let targetSegId = passedSegId
+  let targetSegNome = seguradoraNome || ''
+  let autoCadastrada = false
+
+  if (!targetSegId) {
+    if (!seguradoraNome) {
+      throw new Error('Nome da seguradora não fornecido para auto-cadastro')
+    }
+    const resolved = await autoCadastrarOuLocalizarSeguradora({
+      nome: seguradoraNome,
+      cnpj: seguradoraCnpj,
+      susep: seguradoraSusep,
+    })
+    targetSegId = resolved.id
+    targetSegNome = resolved.nome
+    autoCadastrada = resolved.autoCadastrada
+  } else {
+    // Já tinha ID; garante nome
+    try {
+      const segRec = await pb.collection('seguradoras').getOne(targetSegId)
+      targetSegNome = segRec.nome
+    } catch {
+      /* intentionally ignored */
+    }
+  }
+
+  // 2. Cria ou atualiza proposta usando FormData para upload do PDF
+  const existingProps = await pb.collection('propostas').getFullList<{ id: string }>({
+    filter: `rfq = "${rfqId}" && seguradora = "${targetSegId}"`,
+  })
+
+  const formData = new FormData()
+  formData.append('rfq', rfqId)
+  formData.append('seguradora', targetSegId)
+  formData.append('data_proposta', dataProposta || new Date().toISOString().slice(0, 10))
+  formData.append('status', 'Pendente')
+
+  if (lmiLmg !== undefined && lmiLmg !== null) formData.append('lmi_lmg', String(lmiLmg))
+  if (premioLiquido !== undefined && premioLiquido !== null)
+    formData.append('premio_liquido', String(premioLiquido))
+  if (premioBruto !== undefined && premioBruto !== null)
+    formData.append('premio_bruto', String(premioBruto))
+  if (iof !== undefined && iof !== null) formData.append('iof', String(iof))
+
+  if (posFranquias) formData.append('pos_franquias', posFranquias)
+  if (clausulas) formData.append('clausulas', clausulas)
+  if (exclusoes) formData.append('exclusoes', exclusoes)
+  if (numeroCotacao) formData.append('numero_cotacao', numeroCotacao)
+  if (formaPagamento) formData.append('forma_pagamento', formaPagamento)
+  if (validadeCotacao) formData.append('validade_cotacao', validadeCotacao)
+  if (vigenciaInicio) formData.append('vigencia_inicio', vigenciaInicio)
+  if (vigenciaFim) formData.append('vigencia_fim', vigenciaFim)
+
+  // Coberturas extraídas serializadas em JSON
+  formData.append('coberturas', JSON.stringify(coberturas))
+
+  // Metadados de extração
+  if (arquivoExtracaoJson) {
+    formData.append('arquivo_extracao', JSON.stringify(arquivoExtracaoJson))
+  }
+
+  if (arquivo) {
+    formData.append('arquivo', arquivo)
+    formData.append('arquivo_nome', arquivo.name)
+    formData.append('arquivo_tipo', arquivo.type || 'application/pdf')
+  }
+
+  let propostaId: string
+  if (existingProps.length > 0) {
+    propostaId = existingProps[0].id
+    await pb.collection('propostas').update(propostaId, formData)
+  } else {
+    const createdProp = await pb.collection('propostas').create(formData)
+    propostaId = createdProp.id
+  }
+
+  // 3. Atualiza status do RFQ para "Respondido"
+  try {
+    await pb.collection('rfq').update(rfqId, {
+      status: 'Respondido',
+    })
+  } catch (err) {
+    console.warn('Falha ao atualizar RFQ para Respondido:', err)
+  }
+
+  // 4. Cria ou atualiza em rfq_seguradoras
+  const list = await pb.collection('rfq_seguradoras').getFullList<RfqSeguradoraRecord>({
+    filter: `rfq = "${rfqId}" && seguradora = "${targetSegId}"`,
+  })
+
+  let rfqSegId = list[0]?.id
+  const rfqSegPayload = {
+    rfq: rfqId,
+    seguradora: targetSegId,
+    status: 'Proposta recebida' as RfqSeguradoraStatus,
+    proposta: propostaId,
+    data_resposta: dataProposta || new Date().toISOString().slice(0, 10),
+  }
+
+  if (!rfqSegId) {
+    const created = await pb
+      .collection('rfq_seguradoras')
+      .create<RfqSeguradoraRecord>(rfqSegPayload)
+    rfqSegId = created.id
+  } else {
+    await pb.collection('rfq_seguradoras').update(rfqSegId, rfqSegPayload)
+  }
+
+  // 5. Salva documento na coleção `documentos` para rastreabilidade
+  if (arquivo) {
+    try {
+      const docForm = new FormData()
+      docForm.append('tipo', 'Proposta')
+      docForm.append('arquivo', arquivo)
+      docForm.append('rfq', rfqId)
+      docForm.append('versao', versao || numeroCotacao || '1')
+      docForm.append('data', dataProposta || new Date().toISOString().slice(0, 10))
+      docForm.append('extraido_por_ia', 'true')
+
+      // Busca empreendimento do RFQ para vincular
+      const rfqRecord = await pb.collection('rfq').getOne(rfqId)
+      if (rfqRecord.conta_empreendimento) {
+        docForm.append('vinculado_empreendimento', rfqRecord.conta_empreendimento)
+      }
+
+      await pb.collection('documentos').create(docForm)
+    } catch (docErr) {
+      console.warn('Não foi possível gravar o arquivo na coleção documentos:', docErr)
+    }
+  }
+
+  // 6. Registra histórico na seguradora (Mapa de Mercado)
+  try {
+    const segRec = await pb.collection('seguradoras').getOne(targetSegId)
+    const currentHist = (segRec.historico_relacionamento as any[]) || []
+    currentHist.push({
+      data: dataProposta || new Date().toISOString().slice(0, 10),
+      fonte: 'Upload Proposta PDF',
+      observacao: `Proposta enviada para RFQ #${rfqId.slice(0, 6).toUpperCase()}${
+        numeroCotacao ? ` — Cot. ${numeroCotacao}` : ''
+      }${premioBruto ? ` — Prêmio R$ ${premioBruto}` : ''}${
+        lmiLmg ? ` — LMI R$ ${lmiLmg}` : ''
+      }${autoCadastrada ? ' (Seguradora auto-cadastrada)' : ''}`,
+    })
+    await pb.collection('seguradoras').update(targetSegId, {
+      historico_relacionamento: currentHist,
+    })
+  } catch (e) {
+    console.warn('Não foi possível registrar histórico na seguradora:', e)
+  }
+
+  const finalRecord = await pb.collection('rfq_seguradoras').getOne<RfqSeguradoraRecord>(rfqSegId, {
+    expand: 'seguradora,proposta',
+  })
+
+  return {
+    propostaId,
+    rfqSeguradora: finalRecord,
+    seguradoraId: targetSegId,
+    seguradoraNome: targetSegNome,
+    autoCadastrada,
   }
 }

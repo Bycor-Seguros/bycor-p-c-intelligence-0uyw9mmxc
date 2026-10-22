@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T21:32:25.878Z",
+  "generatedAt": "2026-10-22T14:34:11.169Z",
   "collections": [
     {
       "name": "users",
@@ -1403,6 +1403,60 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "arquivo",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "arquivo_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "arquivo_tipo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "arquivo_extracao",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_cotacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vigencia_inicio",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vigencia_fim",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "validade_cotacao",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "forma_pagamento",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_propostas_status ON propostas (status)"]
