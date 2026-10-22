@@ -27,6 +27,82 @@ export interface SubmissionKitCobertura {
   observacao: string
 }
 
+/**
+ * Retorna o valor efetivo de Importância Segurada (IS) de uma cobertura
+ * Prioridade: isEscolhida > isAtualizada > isAtual (apenas valores > 0)
+ */
+export function getEffectiveIS(cob: SubmissionKitCobertura): number | null {
+  if (typeof cob.isEscolhida === 'number' && cob.isEscolhida > 0) {
+    return cob.isEscolhida
+  }
+  if (typeof cob.isAtualizada === 'number' && cob.isAtualizada > 0) {
+    return cob.isAtualizada
+  }
+  if (typeof cob.isAtual === 'number' && cob.isAtual > 0) {
+    return cob.isAtual
+  }
+  return null
+}
+
+function normalizeSortText(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+export function isCoberturaBasica(cob: { nome: string; categoriaNormalizada?: string }): boolean {
+  const normNome = normalizeSortText(cob.nome)
+  const normCat = normalizeSortText(cob.categoriaNormalizada || '')
+  return (
+    normCat.includes('incendio basica') ||
+    normNome.startsWith('basica') ||
+    normNome.includes('incendio basica') ||
+    (normNome.includes('incendio') && normNome.includes('raio') && normNome.includes('explosao'))
+  )
+}
+
+export function isCoberturaLucrosCessantes(cob: {
+  nome: string
+  categoriaNormalizada?: string
+}): boolean {
+  if (isCoberturaBasica(cob)) return false
+  const normNome = normalizeSortText(cob.nome)
+  const normCat = normalizeSortText(cob.categoriaNormalizada || '')
+  return (
+    normCat.includes('lucros cessantes') ||
+    normNome.includes('lucros cessantes') ||
+    normNome.includes('lucro bruto') ||
+    normNome.includes('lucro liquido') ||
+    normNome.includes('despesas fixas')
+  )
+}
+
+/**
+ * Ordena coberturas conforme a regra de negócio do Kit de Submissão:
+ * 1º Lugar: Cobertura Básica
+ * 2º Lugar: Cobertura de Lucros Cessantes
+ * Demais lugares: Ordem alfabética pelo nome da cobertura
+ */
+export function sortKitCoberturas(coberturas: SubmissionKitCobertura[]): SubmissionKitCobertura[] {
+  return [...coberturas].sort((a, b) => {
+    const isBasicaA = isCoberturaBasica(a)
+    const isBasicaB = isCoberturaBasica(b)
+    if (isBasicaA && !isBasicaB) return -1
+    if (!isBasicaA && isBasicaB) return 1
+    if (isBasicaA && isBasicaB) return a.nome.localeCompare(b.nome, 'pt-BR')
+
+    const isLcA = isCoberturaLucrosCessantes(a)
+    const isLcB = isCoberturaLucrosCessantes(b)
+    if (isLcA && !isLcB) return -1
+    if (!isLcA && isLcB) return 1
+    if (isLcA && isLcB) return a.nome.localeCompare(b.nome, 'pt-BR')
+
+    return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
+  })
+}
+
 export interface SubmissionKitSinistro {
   origemPeriodo: string
   dataSinistro: string
@@ -169,13 +245,16 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
         filter: filterExpr,
         sort: 'categoria_normalizada',
       })
-      const seenCob = new Set<string>()
+      // Indexa coberturas por nome único para preservar variações de uma mesma categoria se houverem
+      const seenCobName = new Set<string>()
       for (const c of cobs) {
+        const nomeCob = String(c.nome_cobertura || c.categoria_normalizada || '').trim()
         const catKey = String(c.categoria_normalizada || c.nome_cobertura || '').trim()
-        if (catKey && !seenCob.has(catKey)) {
-          seenCob.add(catKey)
+        const dedupeKey = `${nomeCob.toLowerCase()}::${catKey.toLowerCase()}`
+        if (nomeCob && !seenCobName.has(dedupeKey)) {
+          seenCobName.add(dedupeKey)
           coberturasList.push({
-            nome: String(c.nome_cobertura || catKey),
+            nome: nomeCob,
             categoriaNormalizada: catKey,
             isAtual: typeof c.lmi_rs === 'number' ? c.lmi_rs : null,
             isAtualizada: typeof c.is_atualizada === 'number' ? c.is_atualizada : null,
@@ -575,12 +654,24 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     addField('Seguradora Atual / Anterior', String(apolicePrincipal.seguradora), 'SLA e Processo')
   }
 
-  // Coberturas destacadas
-  for (const cob of coberturasList) {
-    const isVal = cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual
+  // Coberturas a serem contratadas (somente IS > 0, ordenadas: Básica -> Lucros Cessantes -> alfabética)
+  const coberturasContratadas = sortKitCoberturas(
+    coberturasList.filter((cob) => {
+      const val = getEffectiveIS(cob)
+      return typeof val === 'number' && val > 0
+    }),
+  )
+
+  for (const cob of coberturasContratadas) {
+    const isVal = getEffectiveIS(cob)
     if (isVal && isVal > 0) {
       const extraFranquia = cob.franquiaPos ? ` (POS: ${cob.franquiaPos})` : ''
-      addField(cob.nome, `${formatCurrency(isVal)}${extraFranquia}`, 'Coberturas')
+      addField(
+        cob.nome,
+        `${formatCurrency(isVal)}${extraFranquia}`,
+        'Coberturas',
+        isCoberturaBasica(cob),
+      )
     }
   }
 
@@ -667,7 +758,7 @@ export async function loadSubmissionKitData(rfqId: string): Promise<SubmissionKi
     vigenciaInicio: (apolicePrincipal.data_inicio as string) || '',
     vigenciaFim: (apolicePrincipal.data_fim as string) || '',
 
-    coberturas: coberturasList,
+    coberturas: coberturasContratadas,
     sinistros: sinistrosList,
     fields,
   }
@@ -749,31 +840,42 @@ export function generateSubmissionKitXlsx(data: SubmissionKitData): void {
   XLSX.utils.book_append_sheet(wb, wsTecnico, 'Construção e Proteções')
 
   // ABA 3: TABELA DE COBERTURAS E LMI (QAR PADRONIZADO)
+  // Somente coberturas a serem contratadas (IS > 0) na ordem: Básica -> Lucros Cessantes -> alfabética
   const coberturasRows: (string | number)[][] = [
     [
       'Item',
       'Cobertura',
       'Categoria Canônica',
-      'LMI Solicitada / Escolhida (R$)',
+      'Importância Segurada (R$)',
       'LMI Atualizada (R$)',
       'LMI Vigente (R$)',
       'Franquia / POS',
       'Observações',
     ],
   ]
-  data.coberturas.forEach((cob, i) => {
+
+  const coberturasParaExportar = sortKitCoberturas(
+    data.coberturas.filter((cob) => {
+      const isVal = getEffectiveIS(cob)
+      return typeof isVal === 'number' && isVal > 0
+    }),
+  )
+
+  coberturasParaExportar.forEach((cob, i) => {
+    const isEfetiva = getEffectiveIS(cob)
     coberturasRows.push([
       i + 1,
       cob.nome,
       cob.categoriaNormalizada,
-      cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual ?? '',
+      isEfetiva ?? '',
       cob.isAtualizada ?? '',
       cob.isAtual ?? '',
       cob.franquiaPos || 'Conforme condições padrão',
       cob.observacao || '',
     ])
   })
-  if (data.coberturas.length === 0) {
+
+  if (coberturasParaExportar.length === 0) {
     coberturasRows.push([
       1,
       'Incêndio Básica (Danos Materiais)',
@@ -1147,41 +1249,66 @@ export function printSubmissionKitPdf(data: SubmissionKitData): void {
     </div>
   </div>
 
-  <h2>4. Tabela de Coberturas Solicitadas (LMI)</h2>
+  <h2>4. Tabela de Coberturas Solicitadas (Importância Segurada - IS)</h2>
   <table>
     <thead>
       <tr>
         <th style="width: 25px;">#</th>
-        <th>Cobertura Solicitada</th>
-        <th style="width: 130px;" class="text-right">Importância Segurada (LMI)</th>
-        <th style="width: 140px;">Franquia / POS Sugerida</th>
+        <th>Cobertura a Contratar</th>
+        <th style="width: 150px;" class="text-right">Importância Segurada (IS)</th>
+        <th style="width: 150px;">Franquia / POS Sugerida</th>
       </tr>
     </thead>
     <tbody>
-      ${
-        data.coberturas.length > 0
-          ? data.coberturas
-              .map((c, i) => {
-                const val = c.isEscolhida ?? c.isAtualizada ?? c.isAtual
-                return `
+      ${(() => {
+        // Filtra apenas coberturas com Importância Segurada preenchida (> 0) e ordena:
+        // 1º Básica, 2º Lucros Cessantes, 3º Demais em ordem alfabética
+        const cobsContratadas = sortKitCoberturas(
+          data.coberturas.filter((c) => {
+            const val = getEffectiveIS(c)
+            return typeof val === 'number' && val > 0
+          }),
+        )
+
+        if (cobsContratadas.length === 0) {
+          return `
+            <tr>
+              <td>1</td>
+              <td><strong>Incêndio Básica (Danos Materiais)</strong></td>
+              <td class="text-right font-mono"><strong>${data.vrdTotal ? formatCurrency(data.vrdTotal) : 'A definir'}</strong></td>
+              <td>Condições gerais de mercado</td>
+            </tr>
+          `
+        }
+
+        return cobsContratadas
+          .map((c, i) => {
+            const val = getEffectiveIS(c)
+            const isBasica = isCoberturaBasica(c)
+            const isLc = isCoberturaLucrosCessantes(c)
+            const badge = isBasica
+              ? '<span class="badge-tag" style="background: #EBF8FF; color: #2B6CB0; font-weight: 700;">Cobertura Básica</span>'
+              : isLc
+                ? '<span class="badge-tag" style="background: #FEFCBF; color: #744210; font-weight: 700;">Lucros Cessantes</span>'
+                : ''
+
+            return `
           <tr>
             <td>${i + 1}</td>
-            <td><strong>${c.nome}</strong></td>
-            <td class="text-right font-mono"><strong>${val ? formatCurrency(val) : '—'}</strong></td>
+            <td>
+              <strong>${c.nome}</strong>
+              ${badge ? ` ${badge}` : ''}
+              ${c.observacao ? `<div style="font-size: 8.5px; color: #718096; margin-top: 1px;">${c.observacao}</div>` : ''}
+            </td>
+            <td class="text-right font-mono" style="font-size: 11px;">
+              <strong>${formatCurrency(val)}</strong>
+            </td>
             <td>${c.franquiaPos || 'Conforme condições padrão'}</td>
           </tr>
         `
-              })
-              .join('')
-          : `
-        <tr>
-          <td>1</td>
-          <td><strong>Incêndio Básica (Danos Materiais)</strong></td>
-          <td class="text-right"><strong>${formatCurrency(data.vrdTotal)}</strong></td>
-          <td>Condições gerais de mercado</td>
-        </tr>
-      `
-      }
+          })
+          .join('')
+      })()}
     </tbody>
   </table>
 

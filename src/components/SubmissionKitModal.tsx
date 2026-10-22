@@ -223,7 +223,7 @@ export function SubmissionKitModal({ data, loading, onClose }: SubmissionKitModa
               : `${data.sinistros.length} evento(s)`}
           </div>
           <div className="text-[10px] text-teal-800">
-            {data.coberturas.length} coberturas no edital
+            {data.coberturas.length} cobertura(s) a contratar
           </div>
         </div>
       </div>
