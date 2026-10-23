@@ -2156,29 +2156,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       const effectiveBottomY = tableBottomY !== null ? tableBottomY + 5 : 40
       const effectiveTopY = tableTopY - 5 // abaixo dos rótulos de coluna
 
-      // Calibração dos limites X para as 4 colunas da tabela Porto Seguro
-      // PDF A4: largura ~595pt
-      // Col 1: COBERTURA (X < 240pt)
-      // Col 2: L.M.I. (240pt <= X < 315pt)
-      // Col 3: PRÊMIO (315pt <= X < 370pt)
-      // Col 4: P.O.S. (X >= 370pt)
-      let col2Left = 240
-      let col3Left = 315
-      let col4Left = 370
-
-      // Refina com base em cabeçalhos se presentes
-      for (const it of items) {
-        const s = it.str.trim()
-        if (/^L\.?M\.?I\.?$/i.test(s)) {
-          col2Left = Math.min(col2Left, it.x - 5)
-        } else if (/^PR[ÊE]MIO$/i.test(s)) {
-          col3Left = Math.min(col3Left, it.x - 5)
-        } else if (/^P\.?O\.?S\.?$/i.test(s)) {
-          col4Left = Math.min(col4Left, it.x - 5)
-        }
-      }
-
-      // Filtra fragmentos dentro da tabela
+      // Filtra fragmentos dentro da tabela de coberturas
       const tableItems = items.filter((it) => {
         if (it.y > effectiveTopY || it.y < effectiveBottomY) return false
         const t = it.str.trim()
@@ -2188,6 +2166,71 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         if (/^COBERTURA\s+DE\s+LUCROS\s+CESSANTES\s+DECORRENTES\s+DE/i.test(t)) return false
         return true
       })
+
+      // Calibração dinâmica dos limites X para as 4 colunas da tabela Porto Seguro
+      // PDF A4 padrão: largura ~595pt
+      // Defaults de segurança:
+      // Col 1: COBERTURA (X < col2Left)
+      // Col 2: L.M.I. (col2Left <= X < col3Left)
+      // Col 3: PRÊMIO (col3Left <= X < col4Left)
+      // Col 4: P.O.S. (X >= col4Left)
+      let col2Left = 240
+      let col3Left = 315
+      let col4Left = 370
+
+      // 1) Refina com base em cabeçalhos (fragmentos isolados ou mesclados)
+      for (const it of items) {
+        const s = it.str.trim()
+        // Fragmentos isolados
+        if (/^L\.?M\.?I\.?$/i.test(s)) {
+          col2Left = Math.min(col2Left, it.x - 5)
+        } else if (/^PR[ÊE]MIO$/i.test(s)) {
+          col3Left = Math.min(col3Left, it.x - 5)
+        } else if (/^P\.?O\.?S\.?$/i.test(s)) {
+          col4Left = Math.min(col4Left, it.x - 5)
+        }
+      }
+
+      // 2) Calibração e clustering com base nos valores monetários reais (R$ ... ou 000,00)
+      // Na tabela da Porto, Col 2 (LMI) e Col 3 (Prêmio) possuem valores numéricos formatados.
+      const moneyItemsInTable = tableItems.filter((it) => {
+        const s = it.str.trim()
+        return (
+          /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(s) &&
+          !s.toUpperCase().includes('VALOR EM RISCO DECLARADO')
+        )
+      })
+
+      const lmiXs = moneyItemsInTable.filter((it) => it.x >= 200 && it.x < 315).map((it) => it.x)
+      const premioXs = moneyItemsInTable.filter((it) => it.x >= 290 && it.x < 370).map((it) => it.x)
+      const posXs = tableItems
+        .filter((it) => {
+          const s = it.str.trim()
+          return (
+            it.x >= 350 &&
+            (s.includes('%') ||
+              /Não há/i.test(s) ||
+              /Indenizações/i.test(s) ||
+              /paralisação/i.test(s) ||
+              /mínimo/i.test(s) ||
+              /prejuízos/i.test(s))
+          )
+        })
+        .map((it) => it.x)
+
+      if (lmiXs.length > 0) {
+        const minLmiX = Math.min(...lmiXs)
+        // O limite da Col 2 fica ligeiramente antes do primeiro valor de LMI encontrado
+        col2Left = Math.max(180, Math.min(col2Left, minLmiX - 4))
+      }
+      if (premioXs.length > 0) {
+        const minPremioX = Math.min(...premioXs)
+        col3Left = Math.max(col2Left + 35, Math.min(col3Left, minPremioX - 4))
+      }
+      if (posXs.length > 0) {
+        const minPosX = Math.min(...posXs)
+        col4Left = Math.max(col3Left + 35, Math.min(col4Left, minPosX - 4))
+      }
 
       // Agrupa fragmentos por linha de texto visual (delta Y <= 3.5pt)
       // Preserva ordem dos fragmentos por coordenada X
@@ -2230,13 +2273,34 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         const s = it.str.trim()
         if (!s) continue
 
+        // Se o fragmento contiver texto puramente de nome/palavras (não monetário) e sua coordenada X
+        // estiver na faixa inicial de Col2/Col3 porque col2Left/col3Left foi calibrado mais à esquerda,
+        // ou se for palavra de cobertura que transbordou, o fragmento é roteado para col1 se não for monetário
+        // e não for P.O.S.
+        const isMoney = /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(s)
+        const isPosText =
+          it.x >= col4Left ||
+          /%/.test(s) ||
+          /^n[ãa]o\s+h[áa]/i.test(s) ||
+          /indeniza[çc][õo]es/i.test(s) ||
+          /paralisa[çc][ãa]o/i.test(s)
+
         const frag: PortoFragmentItem = { str: s, x: it.x }
         if (it.x < col2Left) {
           r.col1.push(frag)
         } else if (it.x < col3Left) {
-          r.col2.push(frag)
+          if (!isMoney && !isPosText && it.x < col2Left + 45) {
+            // Fragmento de texto de nome que se estendeu levemente para a direita
+            r.col1.push(frag)
+          } else {
+            r.col2.push(frag)
+          }
         } else if (it.x < col4Left) {
-          r.col3.push(frag)
+          if (!isMoney && !isPosText && it.x < col3Left + 35) {
+            r.col1.push(frag)
+          } else {
+            r.col3.push(frag)
+          }
         } else {
           r.col4.push(frag)
         }
@@ -2354,26 +2418,45 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           }
           accRows.push(newAcc)
         } else {
-          // Linha SEM valores (sem LMI nem Prêmio)
-          if (col1Str) {
-            // Linha com nome: é a primeira linha de uma cobertura cujo nome quebrou em 2 linhas!
-            // Ex 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" -> prefixo para Básica
-            // Ex 2: "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE" -> prefixo para Equipamento Eletrônico
-            // Ex 3: "DERRAME E VAZAMENTO DE ÁGUA DE CHUVEIROS" -> prefixo
-            // Ex 4: "CONTAMINAÇÃO E DETERIORAÇÃO DE MERCADORIAS EM" -> prefixo
-            // Ex 5: "VENDAVAL, FURACAO, CICLONE, TORNADO E QUEDA DE" -> prefixo
-            // Ex 6: "RESPONSABILIDADE CIVIL GUARDA DE VEÍCULOS DE" -> prefixo
-            pendingNomePrefixes.push(col1Str)
+          // Linha SEM valores (sem LMI nem Prêmio monetário em col2 ou col3):
+          // Trata texto de nome em QUALQUER coluna (col1, col2, col3) como prefixo da próxima cobertura.
+          // NUNCA descartar texto em silêncio!
+          // Exemplo 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" que transbordou para col2/col3
+          // Exemplo 2: "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE"
+          const anyNomeCandidate = [col1Str, col2Str, col3Str]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
 
-            // Se também tem texto na Coluna 4 (P.O.S.), esse P.O.S. pertence a esta mesma nova cobertura
-            // (ex: na linha "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE", col4 tem "Indenizações decorrentes de Danos Elétricos e Queda de")
-            if (col4Str) {
-              pendingPosPrefixes.push(col4Str)
+          if (anyNomeCandidate) {
+            // Se o texto não for P.O.S. isolado, acumula como prefixo do nome da PRÓXIMA cobertura
+            // Atenção: verificar se anyNomeCandidate é apenas texto de franquia / POS acidental
+            const isPurePosPattern =
+              /^(\d+%\s+das\s+indeniza[çc][õo]es|n[ãa]o\s+h[áa]\.?|m[íi]nimo\s+de\s+R\$|\d+\s+dias\s+de\s+paralisa[çc][ãa]o)/i.test(
+                anyNomeCandidate,
+              )
+
+            if (!isPurePosPattern) {
+              pendingNomePrefixes.push(anyNomeCandidate)
+
+              // Se também tem texto na Coluna 4 (P.O.S.), esse P.O.S. pertence a esta mesma nova cobertura
+              // (ex: na linha "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE", col4 tem "Indenizações decorrentes de Danos Elétricos e Queda de")
+              if (col4Str) {
+                pendingPosPrefixes.push(col4Str)
+              }
+            } else if (col4Str || anyNomeCandidate) {
+              // É apenas P.O.S.
+              const posContent = [anyNomeCandidate, col4Str].filter(Boolean).join(' ')
+              if (accRows.length > 0 && pendingNomePrefixes.length === 0) {
+                accRows[accRows.length - 1].col4Parts.push(posContent)
+              } else {
+                pendingPosPrefixes.push(posContent)
+              }
             }
           } else if (col4Str) {
-            // Linha sem nome (col1 vazia) mas com texto na coluna 4:
+            // Linha sem nome (col1, col2, col3 vazias) mas com texto na coluna 4:
             // É continuação de P.O.S.!
-            // Se houver uma cobertura recém-fechada (accRows), anexa a ela:
             if (accRows.length > 0 && pendingNomePrefixes.length === 0) {
               accRows[accRows.length - 1].col4Parts.push(col4Str)
             } else if (pendingNomePrefixes.length > 0) {
