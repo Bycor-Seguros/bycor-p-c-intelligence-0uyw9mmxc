@@ -236,20 +236,32 @@ export function identifySeguradoraFromText(text: string): SeguradoraDetectada {
       )
 
       let razaoSocial = seg.razaoSocial
+      let susepVal = seg.susep
+      let cnpjVal = seg.cnpj
+
       if (seg.canonica === 'Allianz Seguros S.A.' && /Allianz Seguros S\.?A\.?/i.test(text)) {
         razaoSocial = 'Allianz Seguros S.A.'
-      } else if (
-        seg.canonica === 'Porto Seguro Cia. de Seguros Gerais' &&
-        /Porto Seguro Cia(?: de)? Seguros Gerais/i.test(text)
-      ) {
-        razaoSocial = 'Porto Seguro Cia de Seguros Gerais'
+      } else if (seg.canonica === 'Porto Seguro Cia. de Seguros Gerais') {
+        if (/Porto Seguro Cia(?: de)? Seguros Gerais/i.test(text)) {
+          razaoSocial = 'Porto Seguro Cia de Seguros Gerais'
+        }
+        // Na Porto, buscar registro SUSEP específico no cabeçalho institucional (ex.: 05886)
+        const susepPorto = text.match(/JUNTO\s+[ÀA]\s+SUSEP\s*[:\s]*([0-9A-Za-z./-]+)/i)
+        if (susepPorto) {
+          susepVal = susepPorto[1].trim()
+        }
+        // CNPJ da seguradora Porto Seguro no cabeçalho: 61.198.164/0001-60
+        const cnpjPorto = text.match(/61\.198\.164\/0001-60/)
+        if (cnpjPorto) {
+          cnpjVal = cnpjPorto[0]
+        }
       }
 
       return {
         nomeCanonica: seg.canonica,
         razaoSocial,
-        cnpj: cnpjMatch ? cnpjMatch[0] : seg.cnpj,
-        susep: susepMatch ? susepMatch[1] : seg.susep,
+        cnpj: cnpjVal || (cnpjMatch ? cnpjMatch[0] : undefined),
+        susep: susepVal || (susepMatch ? susepMatch[1] : undefined),
         confianca: 'alta',
       }
     }
@@ -1697,11 +1709,29 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
   const fullText = pages.map((p) => p.text).join('\n')
   const lines = pages.flatMap((p) => p.lines)
 
-  // 1. Número do Orçamento: "NÚMERO DO ORÇAMENTO 118013040"
+  // 1. Número do Orçamento / Cotação da Porto:
+  // Ex: "NÚMERO DO ORÇAMENTO" seguido na mesma linha ou na linha seguinte de "118013040"
   let cotacao = ''
-  const orcMatch = fullText.match(/N[ÚU]MERO\s+DO\s+OR[ÇC]AMENTO\s*([0-9]+)/i)
+  const orcMatch = fullText.match(/N[ÚU]MERO\s+DO\s+OR[ÇC]AMENTO\s*[:\s]*([0-9]+)/i)
   if (orcMatch) {
     cotacao = orcMatch[1].trim()
+  } else {
+    // Procura nas linhas individuais se o rótulo e o número estiverem em linhas contíguas
+    for (let i = 0; i < lines.length; i++) {
+      if (/N[ÚU]MERO\s+DO\s+OR[ÇC]AMENTO/i.test(lines[i])) {
+        const lineVal = lines[i].replace(/N[ÚU]MERO\s+DO\s+OR[ÇC]AMENTO/i, '').replace(/[:\s]/g, '')
+        if (lineVal && /^\d+$/.test(lineVal)) {
+          cotacao = lineVal
+          break
+        } else if (i + 1 < lines.length) {
+          const nextVal = lines[i + 1].trim()
+          if (/^\d{6,12}$/.test(nextVal)) {
+            cotacao = nextVal
+            break
+          }
+        }
+      }
+    }
   }
 
   // 2. Data de Cálculo / Impressão: "DATA DE CÁLCULO 21/10/2026"
@@ -1714,52 +1744,128 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
     if (dtImpMatch) dataCotacao = parsePtBrDate(dtImpMatch[1])
   }
 
-  // 3. Vigência: "VIGÊNCIA DAS 00:01 DO DIA 01/11/2026 ATE AS 23:59 DO DIA 01/11/2027"
+  // 3. Vigência Porto:
+  // "VIGÊNCIA DAS 00:01 DO DIA 01/11/2026 ATE AS 23:59 DO DIA 01/11/2027" ou quebrado em linhas
   let vigenciaInicio = ''
   let vigenciaFim = ''
   const vigMatch = fullText.match(
-    /VIG[ÊE]NCIA\s+DAS\s+00:01\s+DO\s+DIA\s+(\d{1,2}\/\d{1,2}\/\d{4})\s*ATE\s+AS\s+23:59\s+DO\s+DIA\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /VIG[ÊE]NCIA\s+DAS\s+00:01\s+DO\s+DIA\s+(\d{1,2}\/\d{1,2}\/\d{4})\s*AT[ÉE]\s+AS\s+23:59\s+DO\s+DIA\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
   )
   if (vigMatch) {
     vigenciaInicio = parsePtBrDate(vigMatch[1])
     vigenciaFim = parsePtBrDate(vigMatch[2])
   } else {
-    // Fallback vigência Porto
-    const vigGeneric = fullText.match(
-      /(\d{1,2}\/\d{1,2}\/\d{4})\s*ATE\s+AS\s+23:59\s+DO\s+DIA\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    // Padrão multilinhas / flexível da Porto
+    const vigIniM = fullText.match(
+      /VIG[ÊE]NCIA\s+DAS\s+00:01\s+DO\s+DIA\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i,
     )
-    if (vigGeneric) {
-      vigenciaInicio = parsePtBrDate(vigGeneric[1])
-      vigenciaFim = parsePtBrDate(vigGeneric[2])
+    const vigFimM = fullText.match(
+      /AT[ÉE]\s+AS\s+23:59\s+DO\s+DIA\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    )
+    if (vigIniM && vigFimM) {
+      vigenciaInicio = parsePtBrDate(vigIniM[1])
+      vigenciaFim = parsePtBrDate(vigFimM[1])
+    } else {
+      const vigGeneric = fullText.match(
+        /(\d{1,2}\/\d{1,2}\/\d{4})\s*AT[ÉE]\s+AS\s+23:59\s+DO\s+DIA\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+      )
+      if (vigGeneric) {
+        vigenciaInicio = parsePtBrDate(vigGeneric[1])
+        vigenciaFim = parsePtBrDate(vigGeneric[2])
+      }
     }
   }
 
-  // 4. Demonstrativo de Prêmio Geral:
-  // "PRÊMIO LÍQUIDO TOTAL R$ 82.296,90"
-  // "CUSTO DE APÓLICE R$ 0,00"
-  // "I.O.F. R$ 6.073,51"
-  // "PRÊMIO TOTAL R$ 88.370,41"
+  // 4. Demonstrativo de Prêmio Geral (Página 5):
+  // Há dois blocos na Porto:
+  // "DEMONSTRATIVO DE PRÊMIO DO ITEM" e "DEMONSTRATIVO DE PRÊMIO GERAL"
+  // Devemos capturar SEMPRE do DEMONSTRATIVO DE PRÊMIO GERAL:
+  // PRÊMIO LÍQUIDO TOTAL R$ 82.296,90 (usar o TOTAL, não o de coberturas/cláusulas)
+  // CUSTO DE APÓLICE R$ 0,00
+  // I.O.F. R$ 6.073,51
+  // PRÊMIO TOTAL R$ 88.370,41
   let premioLiquido: number | null = null
-  const prLiqMatch = fullText.match(
+  let premioTotal: number | null = null
+  let iof: number | null = null
+  let custoApolice: number | null = null
+
+  // Isola a seção DEMONSTRATIVO DE PRÊMIO GERAL para máxima precisão
+  const demonstrativoGeralIdx = fullText.indexOf('DEMONSTRATIVO DE PRÊMIO GERAL')
+  const demonstrativoText =
+    demonstrativoGeralIdx !== -1
+      ? fullText.slice(demonstrativoGeralIdx, demonstrativoGeralIdx + 1200)
+      : fullText
+
+  // Extração do Prêmio Líquido Total
+  const prLiqTotalMatch = demonstrativoText.match(
     /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
-  if (prLiqMatch) premioLiquido = parsePtBrNumber(prLiqMatch[1])
+  if (prLiqTotalMatch) {
+    premioLiquido = parsePtBrNumber(prLiqTotalMatch[1])
+  } else {
+    // Se o texto não estiver contiguous, busca nas linhas logo após "DEMONSTRATIVO DE PRÊMIO GERAL"
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('DEMONSTRATIVO DE PRÊMIO GERAL')) {
+        for (let j = i; j < Math.min(lines.length, i + 15); j++) {
+          const l = lines[j]
+          const m = l.match(
+            /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+          )
+          if (m) {
+            premioLiquido = parsePtBrNumber(m[1])
+            break
+          }
+        }
+        break
+      }
+    }
+  }
 
-  let premioTotal: number | null = null
-  const prTotMatch = fullText.match(
+  // Extração do Prêmio Total
+  const prTotMatch = demonstrativoText.match(
     /PR[ÊE]MIO\s+TOTAL\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
-  if (prTotMatch) premioTotal = parsePtBrNumber(prTotMatch[1])
+  if (prTotMatch) {
+    premioTotal = parsePtBrNumber(prTotMatch[1])
+  }
 
-  let iof: number | null = null
-  const iofMatch = fullText.match(/I\.?O\.?F\.?\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
-  if (iofMatch) iof = parsePtBrNumber(iofMatch[1])
-
-  let custoApolice: number | null = null
-  const custoMatch = fullText.match(
-    /CUSTO\s+DE\s+AP[ÓO]LICE\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  // Extração do I.O.F.
+  const iofMatch = demonstrativoText.match(
+    /(?:I\.?O\.?F\.?|IOF)\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
-  if (custoMatch) custoApolice = parsePtBrNumber(custoMatch[1])
+  if (iofMatch) {
+    iof = parsePtBrNumber(iofMatch[1])
+  }
+
+  // Extração do Custo da Apólice
+  const custoMatch = demonstrativoText.match(
+    /CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  if (custoMatch) {
+    custoApolice = parsePtBrNumber(custoMatch[1])
+  } else if (/CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE/i.test(demonstrativoText)) {
+    custoApolice = 0
+  }
+
+  // Se ainda nulos, tentar fallback no fullText mas respeitando PRÊMIO LÍQUIDO TOTAL
+  if (premioLiquido === null) {
+    const fallbackLiq = fullText.match(
+      /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    if (fallbackLiq) premioLiquido = parsePtBrNumber(fallbackLiq[1])
+  }
+  if (premioTotal === null) {
+    const fallbackTot = fullText.match(
+      /PR[ÊE]MIO\s+TOTAL\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    if (fallbackTot) premioTotal = parsePtBrNumber(fallbackTot[1])
+  }
+  if (iof === null) {
+    const fallbackIof = fullText.match(
+      /(?:I\.?O\.?F\.?|IOF)\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    if (fallbackIof) iof = parsePtBrNumber(fallbackIof[1])
+  }
 
   // 5. Formas de Pagamento: "6 x ADC" ou "6 x BOLETO BANCARIO" com 1ª parcela
   let formaPagamento = ''
@@ -1769,47 +1875,113 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
     numeroParcelas = parseInt(formaMatch[1], 10)
     formaPagamento = `${numeroParcelas}x ${formaMatch[2].trim()}`
   } else {
-    formaPagamento = 'Boleto Bancário'
+    // Se não constar explicitamente no documento, não inventar
+    formaPagamento = ''
   }
 
   // 6. Dados do Proponente e Questionário
+  // Exemplo no PDF da Porto:
+  // "DADOS DO PROPONENTE"
+  // "RAZÃO SOCIAL"
+  // "CONDOMINIO SAO INTERNATIONAL SQUARE"
+  // "TIPO DE PESSOA JURÍDICA" "CNPJ 24742208/0002-25"
   let seguradoNome = ''
-  const propNomeMatch = fullText.match(
-    /RAZ[ÃA]O\s+SOCIAL\s+([A-Za-z0-9\s.-]+?)(?:TIPO\s+DE\s+PESSOA|$|\n)/i,
-  )
-  if (propNomeMatch) seguradoNome = propNomeMatch[1].trim()
-
   let seguradoCnpj = ''
-  // CNPJ sem máscara: "CNPJ 24742208/0002-25" -> normalizar para 24.742.208/0002-25
-  const cnpjMatch = fullText.match(/CNPJ\s*([0-9./-]+)/i)
-  if (cnpjMatch) {
-    seguradoCnpj = formatCnpjMask(cnpjMatch[1])
+
+  // Isola a seção DADOS DO PROPONENTE até INFORMAÇÕES CADASTRAIS DO CORRETOR
+  const propSectionMatch = fullText.match(
+    /DADOS\s+DO\s+PROPONENTE([\s\S]+?)(?:INFORMA[ÇC][ÕO]ES\s+CADASTRAIS|LOCAL\s+DE\s+RISCO|$)/i,
+  )
+  const propSectionText = propSectionMatch ? propSectionMatch[1] : fullText
+
+  // Busca a Razão Social:
+  // Padrão 1: "RAZÃO SOCIAL" seguido pelo nome em linha própria
+  const propLineMatch = propSectionText.match(
+    /RAZ[ÃA]O\s+SOCIAL\s*\n\s*([A-Za-z0-9\s.,–\-_&']+?)(?=\s*(?:\n|TIPO\s+DE\s+PESSOA|CNPJ|INFORMA[ÇC][ÕO]ES|$))/i,
+  )
+  if (
+    propLineMatch &&
+    !/^(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA|F[ÍI]SICA)/i.test(propLineMatch[1].trim())
+  ) {
+    seguradoNome = propLineMatch[1].trim()
+  } else {
+    // Padrão 2: Em mesma linha
+    const propInlineMatch = propSectionText.match(
+      /RAZ[ÃA]O\s+SOCIAL\s*[:\s]*([A-Za-z0-9\s.,–\-_&']+?)(?:\s+(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA)|$|\n)/i,
+    )
+    if (
+      propInlineMatch &&
+      !/^(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA|F[ÍI]SICA)/i.test(propInlineMatch[1].trim())
+    ) {
+      seguradoNome = propInlineMatch[1].trim()
+    }
   }
 
+  // Se ainda vazio ou se pegou rótulo incorreto, varre as linhas após DADOS DO PROPONENTE
+  if (!seguradoNome || /TIPO\s+DE\s+PESSOA/i.test(seguradoNome)) {
+    seguradoNome = ''
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('DADOS DO PROPONENTE')) {
+        for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
+          const l = lines[j].trim()
+          if (!l || l === 'RAZÃO SOCIAL' || l === 'RAZAO SOCIAL') continue
+          if (
+            l.startsWith('TIPO DE PESSOA') ||
+            l.startsWith('CNPJ') ||
+            l.startsWith('INFORMAÇÕES') ||
+            l.startsWith('SUSEP') ||
+            l.startsWith('LOCAL DE RISCO')
+          ) {
+            break
+          }
+          // Esta linha é a razão social do segurado
+          seguradoNome = l.replace(/\s{2,}/g, ' ').trim()
+          break
+        }
+        break
+      }
+    }
+  }
+
+  // CNPJ da seção do proponente: "CNPJ 24742208/0002-25" -> normalizar para 24.742.208/0002-25
+  const cnpjMatch = propSectionText.match(/CNPJ\s*[:\s]*([0-9./-]+)/i)
+  if (cnpjMatch) {
+    seguradoCnpj = formatCnpjMask(cnpjMatch[1])
+  } else {
+    const fallbackCnpj = fullText.match(/CNPJ\s*([0-9./-]+)/i)
+    if (fallbackCnpj) {
+      seguradoCnpj = formatCnpjMask(fallbackCnpj[1])
+    }
+  }
+
+  // Atividade do local
   let atividade = ''
   const ativMatch = fullText.match(
     /ATIVIDADE\s+DO\s+LOCAL[:\s]*([A-Za-zÀ-ÿ0-9\s/.-]+?)(?:Aten[çc][ãa]o|$|\n)/i,
   )
-  if (ativMatch) atividade = ativMatch[1].trim()
+  if (ativMatch) {
+    atividade = ativMatch[1].trim()
+  }
 
   // Questionário qualitativo Porto
   const respostasQuestionario: Record<string, string> = {}
   if (fullText.includes('HOUVE SINISTRO NO LOCAL NOS ÚLTIMOS 12 MESES ?')) {
-    respostasQuestionario['sinistro_12_meses'] =
-      /HOUVE SINISTRO NO LOCAL NOS ÚLTIMOS 12 MESES \?\s*([A-Z]+)/i.exec(fullText)?.[1] || 'NÃO'
+    const qM = fullText.match(/HOUVE SINISTRO NO LOCAL NOS ÚLTIMOS 12 MESES \?\s*([A-Z]+)/i)
+    if (qM) respostasQuestionario['sinistro_12_meses'] = qM[1].trim()
   }
   if (fullText.includes('TIPO DE CONSTRUÇÃO')) {
-    respostasQuestionario['tipo_construcao'] =
-      /TIPO DE CONSTRUÇÃO\s*([A-Z]+)/i.exec(fullText)?.[1] || 'ALVENARIA'
+    const cM = fullText.match(/TIPO DE CONSTRUÇÃO\s*([A-Za-zÀ-ÿ]+)/i)
+    if (cM) respostasQuestionario['tipo_construcao'] = cM[1].trim()
   }
   if (fullText.includes('DESEJA CONTRATAR INDENIZAÇÃO A VALOR DE NOVO')) {
-    respostasQuestionario['valor_de_novo'] =
-      /DESEJA CONTRATAR INDENIZAÇÃO A VALOR DE NOVO[^\n]*\?\s*([A-Z]+)/i.exec(fullText)?.[1] ||
-      'SIM'
+    const vM = fullText.match(
+      /DESEJA CONTRATAR INDENIZAÇÃO A VALOR DE NOVO[^\n]*\?\s*([A-Za-zÀ-ÿ]+)/i,
+    )
+    if (vM) respostasQuestionario['valor_de_novo'] = vM[1].trim()
   }
   if (fullText.includes('POSSUI ALARME MONITORADO')) {
-    respostasQuestionario['alarme_monitorado'] =
-      /POSSUI ALARME MONITORADO[^\n]*\?\s*([A-Z]+)/i.exec(fullText)?.[1] || 'SIM'
+    const aM = fullText.match(/POSSUI ALARME MONITORADO[^\n]*\?\s*([A-Za-zÀ-ÿ]+)/i)
+    if (aM) respostasQuestionario['alarme_monitorado'] = aM[1].trim()
   }
 
   // Lucros cessantes decorrentes de marcas (página 3):
@@ -1824,106 +1996,415 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
 
   // 7. Extração de Coberturas da Porto Seguro
   // Tabela "COBERTURAS": Colunas COBERTURA | L.M.I. | PRÊMIO | P.O.S.
-  // Linha 1: "VALOR EM RISCO DECLARADO R$ 80.000.000,00"
-  // Linha 2: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE AERONAVE R$ 80.000.000,00 R$ 12.012,60 10% das indenizações."
-  // P.O.S. pode ser texto longo: "10% das indenizações com mínimo de R$ 2.000,00.", "Não há.", "5 dias de paralisação do estabelecimento."
+  // Regras estritas do documento e do usuário:
+  // - "VALOR EM RISCO DECLARADO R$ 80.000.000,00 -" deve ficar FORA do quadro de coberturas (é VRD).
+  // - "COBERTURA DE LUCROS CESSANTES DECORRENTES DE: Incêndio (X)..." é texto informativo / qualitativo, NÃO cobertura.
+  // - Nomes em 2 linhas: a continuação DEVE SER SEMPRE ANEXADA À COBERTURA ANTERIOR, NUNCA À SEGUINTE!
+  //   (Ex.: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE / AERONAVE" -> AERONAVE pertence à 1ª cobertura,
+  //    jamais a "REFORMAS". Idem "CONTAMINAÇÃO E DETERIORAÇÃO DE MERCADORIAS EM / AMBIENTES FRIGORIFICADOS"
+  //    pertence à anterior e nunca contamina "DESMORONAMENTO").
+  // - Usar geometria / coordenadas X do PDF (mesma abordagem já usada na Allianz).
   let valorEmRiscoDeclarado: number | null = null
   const vrdMatch = fullText.match(
-    /VALOR\s+EM\s+RISCO\s+DECLARADO\s*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    /VALOR\s+EM\s+RISCO\s+DECLARADO\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
   if (vrdMatch) {
     valorEmRiscoDeclarado = parsePtBrNumber(vrdMatch[1])
   }
 
-  const coberturas: ExtractedCoberturaItem[] = []
-  let insideCoberturas = false
+  interface PortoCobRaw {
+    nome: string
+    lmi: number | null
+    premio: number | null
+    franquia: string
+    isBasica?: boolean
+  }
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+  const extractedList: PortoCobRaw[] = []
 
-    if (
-      line === 'COBERTURAS' ||
-      line.startsWith('COBERTURAS\n') ||
-      line.includes('COBERTURA L.M.I. PRÊMIO P.O.S.')
-    ) {
-      insideCoberturas = true
-      continue
-    }
+  // Verifica se há fragmentos com coordenadas nos itens das páginas
+  const hasGeometricFragments = pages.some((p) => p.items && p.items.length > 0)
 
-    if (
-      line.startsWith('COBERTURA DE LUCROS CESSANTES DECORRENTES DE:') ||
-      line.startsWith('CLÁUSULA DE SERVIÇOS') ||
-      line.startsWith('DEMONSTRATIVO DE PRÊMIO') ||
-      line.startsWith('CLÁUSULAS PARTICULARES')
-    ) {
-      insideCoberturas = false
-      continue
-    }
+  if (hasGeometricFragments) {
+    for (const page of pages) {
+      if (!page.items || page.items.length === 0) continue
 
-    if (!insideCoberturas) continue
+      const items = page.items
 
-    // Ignora linha de VRD ou cabeçalho de colunas
-    if (
-      line.includes('COBERTURA L.M.I.') ||
-      line.includes('VALOR EM RISCO DECLARADO') ||
-      line.startsWith('9H095J - BYCOR') ||
-      line.startsWith('PÁGINA ')
-    ) {
-      continue
-    }
+      // Acha os limites verticais da tabela de coberturas na página
+      // Topo: "COBERTURA L.M.I. PRÊMIO P.O.S." ou "COBERTURAS"
+      // Base: "COBERTURA DE LUCROS CESSANTES DECORRENTES DE:", "CLÁUSULA DE SERVIÇOS", "DEMONSTRATIVO DE PRÊMIO", "CLÁUSULAS PARTICULARES"
+      let tableTopY: number | null = null
+      let tableBottomY: number | null = null
 
-    // Linha de cobertura Porto Seguro:
-    // Começa com NOME DA COBERTURA, seguido de R$ LMI, opcional R$ Prêmio e P.O.S. livre
-    // Pode quebrar linha se o nome for longo:
-    // Ex: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE"
-    // "AERONAVE R$ 80.000.000,00 R$ 12.012,60 10% das indenizações."
-    let fullLine = line
-    if (!fullLine.includes('R$') && i + 1 < lines.length) {
-      const next = lines[i + 1].trim()
-      if (next.includes('R$')) {
-        fullLine = `${fullLine} ${next}`
-        i++
-      } else {
-        continue
-      }
-    }
+      for (const it of items) {
+        const text = it.str.trim()
+        if (/COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO\s+P\.?O\.?S\.?/i.test(text)) {
+          if (tableTopY === null || it.y < tableTopY) {
+            tableTopY = it.y
+          }
+        } else if (text === 'COBERTURAS' && tableTopY === null) {
+          tableTopY = it.y
+        }
 
-    // Regex para linha de cobertura Porto:
-    // Captura: (Nome) R$ (LMI) [R$ (Prêmio)]? (POS texto livre)
-    const m = fullLine.match(
-      /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()]+?)\s+R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(?:R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}))?\s*(.*)$/,
-    )
-
-    if (m) {
-      const rawNome = m[1].trim()
-      const lmiVal = parsePtBrNumber(m[2])
-      const premVal = m[3] ? parsePtBrNumber(m[3]) : null
-      let posText = m[4]?.trim() || 'Não informada'
-
-      if (rawNome.toUpperCase().includes('VALOR EM RISCO DECLARADO')) {
-        continue
+        if (
+          /COBERTURA\s+DE\s+LUCROS\s+CESSANTES\s+DECORRENTES\s+DE/i.test(text) ||
+          /CL[ÁA]USULA\s+DE\s+SERVI[ÇC]OS/i.test(text) ||
+          /DEMONSTRATIVO\s+DE\s+PR[ÊE]MIO/i.test(text) ||
+          /CL[ÁA]USULAS\s+PARTICULARES/i.test(text)
+        ) {
+          if (tableBottomY === null || it.y > tableBottomY) {
+            tableBottomY = it.y
+          }
+        }
       }
 
-      // Se for a cobertura de Lucros Cessantes e tivermos capturado as causas decorrentes, anexa na observação/POS
-      if (
-        (rawNome.toUpperCase().includes('LUCROS CESSANTES') ||
-          rawNome.toUpperCase().includes('LUCRO BRUTO')) &&
-        lucrosCessantesCausas &&
-        !posText.includes('Decorrentes de:')
-      ) {
-        posText = `${posText} (Decorrente de: ${lucrosCessantesCausas})`
+      // Se a página não contém tabela de coberturas, passa para a próxima
+      if (tableTopY === null) continue
+
+      const effectiveBottomY = tableBottomY !== null ? tableBottomY + 5 : 40
+      const effectiveTopY = tableTopY - 5 // abaixo dos rótulos de coluna
+
+      // Calibração dos limites X para as 4 colunas da tabela Porto Seguro
+      // PDF A4: largura ~595pt
+      // Col 1: COBERTURA (X < 240pt)
+      // Col 2: L.M.I. (240pt <= X < 315pt)
+      // Col 3: PRÊMIO (315pt <= X < 370pt)
+      // Col 4: P.O.S. (X >= 370pt)
+      let col2Left = 240
+      let col3Left = 315
+      let col4Left = 370
+
+      // Refina com base em cabeçalhos se presentes
+      for (const it of items) {
+        const s = it.str.trim()
+        if (/^L\.?M\.?I\.?$/i.test(s)) {
+          col2Left = Math.min(col2Left, it.x - 5)
+        } else if (/^PR[ÊE]MIO$/i.test(s)) {
+          col3Left = Math.min(col3Left, it.x - 5)
+        } else if (/^P\.?O\.?S\.?$/i.test(s)) {
+          col4Left = Math.min(col4Left, it.x - 5)
+        }
       }
 
-      if (rawNome && lmiVal !== null) {
-        coberturas.push({
-          cobertura: rawNome,
-          categoriaNormalizada: matchCanonicalCategory(rawNome),
+      // Filtra fragmentos dentro da tabela
+      const tableItems = items.filter((it) => {
+        if (it.y > effectiveTopY || it.y < effectiveBottomY) return false
+        const t = it.str.trim()
+        if (!t) return false
+        if (/^COBERTURA\s+L\.?M\.?I\.?/i.test(t)) return false
+        if (/^9H095J\s+-/i.test(t) || /^P[ÁA]GINA\s+\d+\s+de/i.test(t)) return false
+        if (/^COBERTURA\s+DE\s+LUCROS\s+CESSANTES\s+DECORRENTES\s+DE/i.test(t)) return false
+        return true
+      })
+
+      // Agrupa fragmentos por linha de texto visual (delta Y <= 3.5pt)
+      interface PortoTextRow {
+        y: number
+        col1: string[]
+        col2: string[]
+        col3: string[]
+        col4: string[]
+      }
+
+      const rowMap = new Map<number, PortoTextRow>()
+      for (const it of tableItems) {
+        const y = it.y
+        let foundY: number | null = null
+        for (const existingY of rowMap.keys()) {
+          if (Math.abs(existingY - y) <= 3.5) {
+            foundY = existingY
+            break
+          }
+        }
+
+        if (foundY === null) {
+          foundY = y
+          rowMap.set(foundY, {
+            y: foundY,
+            col1: [],
+            col2: [],
+            col3: [],
+            col4: [],
+          })
+        }
+
+        const r = rowMap.get(foundY)!
+        const s = it.str.trim()
+        if (!s) continue
+
+        if (it.x < col2Left) {
+          r.col1.push(s)
+        } else if (it.x < col3Left) {
+          r.col2.push(s)
+        } else if (it.x < col4Left) {
+          r.col3.push(s)
+        } else {
+          r.col4.push(s)
+        }
+      }
+
+      // Ordena linhas de cima para baixo (Y decrescente no PDF)
+      const sortedRows = Array.from(rowMap.values()).sort((a, b) => b.y - a.y)
+
+      // Monta as linhas de cobertura.
+      // Regra fundamental:
+      // - Quando uma linha tem LMI na Coluna 2 (ou Prêmio na Col 3): é o início ou corpo principal de uma cobertura.
+      // - Quando uma linha tem APENAS texto na Coluna 1 (sem LMI/Prêmio/POS) ou continuação de POS:
+      //   A continuação pertence SEMPRE À COBERTURA ANTERIOR (se houver uma cobertura aberta logo acima, deltaY <= 25pt).
+      //   NUNCA deve ser atribuída à cobertura seguinte!
+      // - A linha "VALOR EM RISCO DECLARADO" é ignorada (não entra no quadro).
+      interface PortoAccumulatedRow {
+        nomeParts: string[]
+        col2Text: string
+        col3Text: string
+        col4Parts: string[]
+        y: number
+      }
+
+      const accRows: PortoAccumulatedRow[] = []
+
+      for (let rIdx = 0; rIdx < sortedRows.length; rIdx++) {
+        const r = sortedRows[rIdx]
+        const col1Str = r.col1.join(' ').trim()
+        const col2Str = r.col2.join(' ').trim()
+        const col3Str = r.col3.join(' ').trim()
+        const col4Str = r.col4.join(' ').trim()
+
+        // Ignora expressamente o VRD no quadro de coberturas
+        if (
+          col1Str.toUpperCase().includes('VALOR EM RISCO DECLARADO') ||
+          col2Str.toUpperCase().includes('VALOR EM RISCO DECLARADO')
+        ) {
+          continue
+        }
+
+        // Verifica se esta linha contém valores de LMI ou Prêmio
+        const hasValues =
+          /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col2Str) ||
+          /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col3Str)
+
+        if (hasValues) {
+          // Linha com valores: inicia novo registro de cobertura
+          const newAcc: PortoAccumulatedRow = {
+            nomeParts: col1Str ? [col1Str] : [],
+            col2Text: col2Str,
+            col3Text: col3Str,
+            col4Parts: col4Str ? [col4Str] : [],
+            y: r.y,
+          }
+          accRows.push(newAcc)
+        } else {
+          // Linha SEM valores (sem LMI nem Prêmio).
+          // Por exemplo:
+          // Linha 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" [R$ 80.000.000,00] [R$ 12.012,60] [10% das indenizações.]
+          // Linha 2: "AERONAVE" [sem col2/col3/col4]
+          // Ou continuação de P.O.S. multilinha.
+          // REGRA MANDATÓRIA: ANEXA SEMPRE À COBERTURA ANTERIOR!
+          if (accRows.length > 0) {
+            const prev = accRows[accRows.length - 1]
+            if (col1Str) {
+              prev.nomeParts.push(col1Str)
+            }
+            if (col4Str) {
+              prev.col4Parts.push(col4Str)
+            }
+          }
+        }
+      }
+
+      // Converte as bandas acumuladas em itens finais de cobertura
+      for (const acc of accRows) {
+        const nomeCompleto = acc.nomeParts
+          .join(' ')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/^[•*-]\s*/, '')
+          .trim()
+
+        if (!nomeCompleto) continue
+        if (nomeCompleto.toUpperCase().includes('VALOR EM RISCO DECLARADO')) continue
+        if (nomeCompleto.toUpperCase().includes('COBERTURA DE LUCROS CESSANTES DECORRENTES'))
+          continue
+
+        const lmiM = acc.col2Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+        const lmiVal = lmiM ? parsePtBrNumber(lmiM[0]) : null
+
+        let premVal: number | null = null
+        const premM = acc.col3Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+        if (premM) {
+          premVal = parsePtBrNumber(premM[0])
+        }
+
+        let posText = acc.col4Parts
+          .join(' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim()
+
+        if (!posText) {
+          posText = 'Não há.'
+        }
+
+        // Se for a cobertura de Lucros Cessantes e tivermos capturado as causas decorrentes:
+        if (
+          (nomeCompleto.toUpperCase().includes('LUCROS CESSANTES') ||
+            nomeCompleto.toUpperCase().includes('LUCRO BRUTO')) &&
+          lucrosCessantesCausas &&
+          !posText.includes('Decorrente de:')
+        ) {
+          posText = `${posText} (Decorrente de: ${lucrosCessantesCausas})`
+        }
+
+        extractedList.push({
+          nome: nomeCompleto,
           lmi: lmiVal,
-          premioLiquido: premVal,
-          franquia: posText || 'Não há.',
+          premio: premVal,
+          franquia: posText,
         })
       }
     }
+  }
+
+  // Fallback de texto se não houver coordenadas ou se extractedList estiver vazia
+  if (extractedList.length === 0) {
+    let insideCoberturas = false
+    interface TextRawAcc {
+      nomeParts: string[]
+      lmi: number | null
+      premio: number | null
+      pos: string
+    }
+    const textAccList: TextRawAcc[] = []
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+
+      if (
+        line === 'COBERTURAS' ||
+        line.startsWith('COBERTURAS\n') ||
+        line.includes('COBERTURA L.M.I. PRÊMIO P.O.S.')
+      ) {
+        insideCoberturas = true
+        continue
+      }
+
+      if (
+        line.startsWith('COBERTURA DE LUCROS CESSANTES DECORRENTES DE:') ||
+        line.startsWith('CLÁUSULA DE SERVIÇOS') ||
+        line.startsWith('DEMONSTRATIVO DE PRÊMIO') ||
+        line.startsWith('CLÁUSULAS PARTICULARES')
+      ) {
+        insideCoberturas = false
+        break
+      }
+
+      if (!insideCoberturas) continue
+
+      if (
+        line.includes('COBERTURA L.M.I.') ||
+        line.includes('VALOR EM RISCO DECLARADO') ||
+        line.startsWith('9H095J - BYCOR') ||
+        line.startsWith('PÁGINA ')
+      ) {
+        continue
+      }
+
+      // Linha com R$ (LMI/Prêmio)
+      const m = line.match(
+        /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()]+?)\s+R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(?:R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}))?\s*(.*)$/,
+      )
+
+      if (m) {
+        const rawNome = m[1].trim()
+        const lmiVal = parsePtBrNumber(m[2])
+        const premVal = m[3] ? parsePtBrNumber(m[3]) : null
+        let posText = m[4]?.trim() || 'Não informada'
+
+        if (rawNome.toUpperCase().includes('VALOR EM RISCO DECLARADO')) {
+          continue
+        }
+
+        textAccList.push({
+          nomeParts: [rawNome],
+          lmi: lmiVal,
+          premio: premVal,
+          pos: posText,
+        })
+      } else if (textAccList.length > 0) {
+        // Linha sem R$: CONTINUAÇÃO OBRIGATORIAMENTE DA COBERTURA ANTERIOR
+        const prev = textAccList[textAccList.length - 1]
+        // Se a linha anterior tem um sufixo quebrado (ex: "AERONAVE", "AMBIENTES FRIGORIFICADOS")
+        // ou se for continuação de franquia
+        if (
+          !line.includes('COBERTURAS') &&
+          !line.startsWith('PÁGINA') &&
+          !line.startsWith('9H095J')
+        ) {
+          if (line.includes('indenizações') || line.includes('Não há') || line.includes('mínimo')) {
+            prev.pos = `${prev.pos} ${line}`.trim()
+          } else {
+            prev.nomeParts.push(line)
+          }
+        }
+      }
+    }
+
+    for (const t of textAccList) {
+      const nomeCompleto = t.nomeParts
+        .join(' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      if (!nomeCompleto || t.lmi === null) continue
+      extractedList.push({
+        nome: nomeCompleto,
+        lmi: t.lmi,
+        premio: t.premio,
+        franquia: t.pos || 'Não há.',
+      })
+    }
+  }
+
+  // Montagem final do quadro de coberturas
+  // Regra: Classificar exatamente UMA Cobertura Básica (a primeira de incêndio amparada)
+  const coberturas: ExtractedCoberturaItem[] = []
+  let basicaEleita = false
+
+  for (const item of extractedList) {
+    let categoria = matchCanonicalCategory(item.nome)
+
+    const isIncendioBasicaName =
+      /INC[ÊE]NDIO/i.test(item.nome) &&
+      (/EXPLOS[ÃA]O/i.test(item.nome) ||
+        /FUMA[ÇC]A/i.test(item.nome) ||
+        /AERONAVE/i.test(item.nome) ||
+        /RAIO/i.test(item.nome))
+
+    if (isIncendioBasicaName && !basicaEleita) {
+      categoria = 'Incêndio Básica (Danos Materiais)'
+      basicaEleita = true
+    } else if (isIncendioBasicaName && basicaEleita) {
+      categoria = 'Incêndio Complementar'
+    } else if (
+      (categoria === 'Incêndio Básica (Danos Materiais)' ||
+        categoria === 'Incêndio, Raio, Explosão, Implosão e Fumaça') &&
+      basicaEleita
+    ) {
+      categoria = 'Incêndio Complementar'
+    } else if (
+      (categoria === 'Incêndio Básica (Danos Materiais)' ||
+        categoria === 'Incêndio, Raio, Explosão, Implosão e Fumaça') &&
+      !basicaEleita
+    ) {
+      categoria = 'Incêndio Básica (Danos Materiais)'
+      basicaEleita = true
+    }
+
+    coberturas.push({
+      cobertura: item.nome,
+      categoriaNormalizada: categoria,
+      lmi: item.lmi,
+      premioLiquido: item.premio,
+      franquia: item.franquia || 'Não há.',
+    })
   }
 
   return {
@@ -2045,7 +2526,8 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
 
       // Constrói resumo legível do documento
       const docId = `doc-${idx + 1}-${seguradora.nomeCanonica.slice(0, 4).toLowerCase()}-${b.paginaInicio}`
-      const numCot = extracted.numeroCotacao || `Proposta #${idx + 1}`
+      // Se não houver número identificado no documento, deixa vazio conforme regra obrigatória
+      const numCot = extracted.numeroCotacao || ''
       const versaoCot = extracted.versao ? ` (Versão ${extracted.versao})` : ''
       const premio = extracted.premioTotal || extracted.premioLiquido || null
 
@@ -2060,26 +2542,27 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
       }
 
       const previewLines = segmentPages[0]?.lines.slice(0, 8).join('\n') || ''
+      const docDisplayNum = numCot || `Proposta #${idx + 1}`
 
       documentos.push({
         id: docId,
-        titulo: `${seguradora.nomeCanonica} — Cotação ${numCot}${versaoCot} [Págs. ${b.paginaInicio} a ${b.paginaFim}]`,
+        titulo: `${seguradora.nomeCanonica} — Cotação ${docDisplayNum}${versaoCot} [Págs. ${b.paginaInicio} a ${b.paginaFim}]`,
         paginaInicio: b.paginaInicio,
         paginaFim: b.paginaFim,
         seguradora,
         numeroCotacao: numCot,
         versao: extracted.versao || '1',
-        dataCotacao: extracted.dataCotacao || new Date().toISOString().slice(0, 10),
+        dataCotacao: extracted.dataCotacao || '',
         validadeCotacao: extracted.validadeCotacao || '',
         vigenciaInicio: extracted.vigenciaInicio || '',
         vigenciaFim: extracted.vigenciaFim || '',
-        premioLiquido: extracted.premioLiquido || null,
-        premioTotal: extracted.premioTotal || null,
-        iof: extracted.iof || null,
-        custoApolice: extracted.custoApolice || null,
-        lmiTotal: extracted.lmiTotal || null,
-        formaPagamento: extracted.formaPagamento || 'Boleto',
-        numeroParcelas: extracted.numeroParcelas || null,
+        premioLiquido: extracted.premioLiquido ?? null,
+        premioTotal: extracted.premioTotal ?? null,
+        iof: extracted.iof ?? null,
+        custoApolice: extracted.custoApolice ?? null,
+        lmiTotal: extracted.lmiTotal ?? null,
+        formaPagamento: extracted.formaPagamento || '',
+        numeroParcelas: extracted.numeroParcelas ?? null,
         posFranquiasGerais: extracted.posFranquiasGerais || '',
         coberturas: extracted.coberturas || [],
         rawTextPreview: previewLines,
