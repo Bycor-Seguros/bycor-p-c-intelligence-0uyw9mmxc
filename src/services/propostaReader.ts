@@ -2163,6 +2163,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       }
 
       const accRows: PortoAccumulatedRow[] = []
+      let pendingNomePrefixes: string[] = []
 
       for (let rIdx = 0; rIdx < sortedRows.length; rIdx++) {
         const r = sortedRows[rIdx]
@@ -2185,9 +2186,20 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col3Str)
 
         if (hasValues) {
-          // Linha com valores: inicia novo registro de cobertura
+          // Linha com valores: uma cobertura = todas as linhas de nome consecutivas
+          // que a precedem (se houver linhas de nome sem valor imediatamente acima)
+          // mais o nome desta linha com os valores desta banda.
+          const currentNomeParts: string[] = []
+          if (pendingNomePrefixes.length > 0) {
+            currentNomeParts.push(...pendingNomePrefixes)
+            pendingNomePrefixes = []
+          }
+          if (col1Str) {
+            currentNomeParts.push(col1Str)
+          }
+
           const newAcc: PortoAccumulatedRow = {
-            nomeParts: col1Str ? [col1Str] : [],
+            nomeParts: currentNomeParts,
             col2Text: col2Str,
             col3Text: col3Str,
             col4Parts: col4Str ? [col4Str] : [],
@@ -2196,21 +2208,31 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           accRows.push(newAcc)
         } else {
           // Linha SEM valores (sem LMI nem Prêmio).
-          // Por exemplo:
-          // Linha 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" [R$ 80.000.000,00] [R$ 12.012,60] [10% das indenizações.]
-          // Linha 2: "AERONAVE" [sem col2/col3/col4]
-          // Ou continuação de P.O.S. multilinha.
-          // REGRA MANDATÓRIA: ANEXA SEMPRE À COBERTURA ANTERIOR!
-          if (accRows.length > 0) {
-            const prev = accRows[accRows.length - 1]
-            if (col1Str) {
-              prev.nomeParts.push(col1Str)
+          // Na tabela da Porto Seguro, quando o nome da cobertura é longo,
+          // a PRIMEIRA linha carrega o início do nome (sem valores de LMI/Prêmio),
+          // e a linha seguinte traz o restante do nome JUNTO com os valores de LMI, Prêmio e P.O.S.
+          // Se houver texto na coluna 4 (P.O.S.) sem texto de nome na coluna 1, é continuação de P.O.S. da cobertura anterior.
+          if (col4Str && !col1Str) {
+            if (accRows.length > 0) {
+              accRows[accRows.length - 1].col4Parts.push(col4Str)
             }
-            if (col4Str) {
-              prev.col4Parts.push(col4Str)
+          } else if (col1Str) {
+            // Linha com texto na coluna 1 sem valores: guarda como prefixo do nome da cobertura
+            // que receberá os valores da banda seguinte.
+            pendingNomePrefixes.push(col1Str)
+            if (col4Str && accRows.length > 0) {
+              accRows[accRows.length - 1].col4Parts.push(col4Str)
             }
+          } else if (col4Str && accRows.length > 0) {
+            accRows[accRows.length - 1].col4Parts.push(col4Str)
           }
         }
+      }
+
+      // Se sobrou algum prefixo isolado no final e há cobertura aberta, anexa
+      if (pendingNomePrefixes.length > 0 && accRows.length > 0) {
+        accRows[accRows.length - 1].nomeParts.push(...pendingNomePrefixes)
+        pendingNomePrefixes = []
       }
 
       // Converte as bandas acumuladas em itens finais de cobertura
@@ -2274,6 +2296,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       pos: string
     }
     const textAccList: TextRawAcc[] = []
+    let pendingTextPrefixes: string[] = []
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
@@ -2323,26 +2346,36 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           continue
         }
 
+        const assembledNames: string[] = []
+        if (pendingTextPrefixes.length > 0) {
+          assembledNames.push(...pendingTextPrefixes)
+          pendingTextPrefixes = []
+        }
+        if (rawNome) {
+          assembledNames.push(rawNome)
+        }
+
         textAccList.push({
-          nomeParts: [rawNome],
+          nomeParts: assembledNames,
           lmi: lmiVal,
           premio: premVal,
           pos: posText,
         })
-      } else if (textAccList.length > 0) {
-        // Linha sem R$: CONTINUAÇÃO OBRIGATORIAMENTE DA COBERTURA ANTERIOR
-        const prev = textAccList[textAccList.length - 1]
-        // Se a linha anterior tem um sufixo quebrado (ex: "AERONAVE", "AMBIENTES FRIGORIFICADOS")
-        // ou se for continuação de franquia
+      } else {
+        // Linha sem R$: prefixo da cobertura seguinte ou continuação de franquia
         if (
           !line.includes('COBERTURAS') &&
           !line.startsWith('PÁGINA') &&
           !line.startsWith('9H095J')
         ) {
-          if (line.includes('indenizações') || line.includes('Não há') || line.includes('mínimo')) {
+          if (
+            (line.includes('indenizações') || line.includes('Não há') || line.includes('mínimo')) &&
+            textAccList.length > 0
+          ) {
+            const prev = textAccList[textAccList.length - 1]
             prev.pos = `${prev.pos} ${line}`.trim()
           } else {
-            prev.nomeParts.push(line)
+            pendingTextPrefixes.push(line)
           }
         }
       }
