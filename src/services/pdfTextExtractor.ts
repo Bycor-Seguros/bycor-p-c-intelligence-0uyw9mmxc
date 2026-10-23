@@ -68,6 +68,8 @@ export interface PdfTextFragment {
   y: number
   width?: number
   height?: number
+  fontName?: string
+  isBold?: boolean
 }
 
 export interface PdfPageText {
@@ -119,9 +121,20 @@ export async function extractTextFromPdf(
         width?: number
         height?: number
         hasEOL?: boolean
+        fontName?: string
+        fontWeight?: number | string
+        bold?: boolean
       }>
 
       const pageFragments: PdfTextFragment[] = []
+
+      // Helper para detectar se o fragmento foi renderizado em negrito:
+      // - fontName contendo 'bold', 'heavy', 'black', 'f-b' ou similar
+      // - estilos do textContent.styles associados à fontName
+      const styles = (textContent.styles || {}) as Record<
+        string,
+        { fontFamily?: string; fontName?: string; ascent?: number; descent?: number }
+      >
 
       // Agrupar itens com Y similar na mesma linha, preservando coordenada X para ordenação correta
       const lineMap = new Map<number, Array<{ str: string; x: number }>>()
@@ -131,6 +144,21 @@ export async function extractTextFromPdf(
         const x = item.transform ? Math.round(item.transform[4]) : 0
         const width = item.width ? Math.round(item.width) : undefined
         const height = item.height ? Math.round(item.height) : undefined
+        const rawFontName = item.fontName || ''
+
+        // Identifica fontName descritiva nos estilos se disponível
+        const styleObj = rawFontName ? styles[rawFontName] : undefined
+        const resolvedFontFamily = styleObj?.fontFamily || styleObj?.fontName || ''
+        const combinedFontDesc = `${rawFontName} ${resolvedFontFamily}`.toLowerCase()
+
+        const isBold =
+          Boolean(item.bold) ||
+          (typeof item.fontWeight === 'number' && item.fontWeight >= 600) ||
+          (typeof item.fontWeight === 'string' &&
+            /bold|heavy|black|semibold|demibold/i.test(item.fontWeight)) ||
+          /\b(bold|heavy|black|semibold|demibold)\b/i.test(combinedFontDesc) ||
+          /[-+_](?:b|bold|bd|black|heavy)\b/i.test(combinedFontDesc) ||
+          /bold/i.test(combinedFontDesc)
 
         pageFragments.push({
           str: item.str,
@@ -138,6 +166,8 @@ export async function extractTextFromPdf(
           y,
           width,
           height,
+          fontName: rawFontName || resolvedFontFamily || undefined,
+          isBold,
         })
 
         // Achar chave Y mais próxima (tolerância de 4 pontos)

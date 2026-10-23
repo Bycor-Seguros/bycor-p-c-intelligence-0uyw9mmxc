@@ -1113,6 +1113,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
       }
 
       const sectionHeaders: SectionHeader[] = []
+      // endTableY deve ser o MAIS ALTO entre os marcadores de término (maior Y) que está abaixo
+      // dos cabeçalhos da tabela
       let endTableY: number | null = null
 
       for (const it of items) {
@@ -1124,14 +1126,15 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
         } else if (
           /INFORMA[ÇC][ÕO]ES\s+DE\s+PAGAMENTO/i.test(text) ||
           /CL[ÁA]USULAS\s+COMPLEMENTARES/i.test(text) ||
-          /OBSERVA[ÇC][ÕO]ES/i.test(text)
+          /OBSERVA[ÇC][ÕO]ES/i.test(text) ||
+          /^\*\s*Todos\s+os\s+limites/i.test(text)
         ) {
+          // Se há múltiplos marcadores de fim, o fim da tabela é a fronteira superior deles
           if (endTableY === null || it.y > endTableY) {
             endTableY = it.y
           }
         }
       }
-
       if (sectionHeaders.length === 0) continue
 
       // Ordena seções da página de cima para baixo (em PDF, Y decrescente)
@@ -1166,7 +1169,7 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
         const bottomY =
           sIdx < sectionHeaders.length - 1
             ? sectionHeaders[sIdx + 1].y + 5
-            : endTableY !== null
+            : endTableY !== null && endTableY < topY
               ? endTableY + 5
               : 50 // margem inferior segura da folha
 
@@ -1203,6 +1206,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
           col2: string[]
           col3: string[]
           col4: string[]
+          col1Bold: boolean
+          isRowBold: boolean
         }
 
         const textRowMap = new Map<number, TextRow>()
@@ -1225,6 +1230,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
               col2: [],
               col3: [],
               col4: [],
+              col1Bold: false,
+              isRowBold: false,
             })
           }
 
@@ -1232,9 +1239,16 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
           const s = it.str.trim()
           if (!s) continue
 
+          if (it.isBold) {
+            row.isRowBold = true
+          }
+
           // Atribuição rigorosa às 4 colunas baseada na coordenada X
           if (it.x < col2Left) {
             row.col1.push(s)
+            if (it.isBold) {
+              row.col1Bold = true
+            }
           } else if (it.x < col3Left) {
             row.col2.push(s)
           } else if (it.x < col4Left) {
@@ -1262,11 +1276,13 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
           col3Text: string
           col4Text: string
           y: number
+          isBold: boolean
+          secaoTipo: 'basica' | 'adicional'
         }
 
         const bands: VisualBand[] = []
         let currentBand: VisualBand | null = null
-        let pendingPrefix: { text: string; y: number } | null = null
+        let pendingPrefix: { text: string; y: number; isBold: boolean } | null = null
 
         for (let rIdx = 0; rIdx < sortedTextRows.length; rIdx++) {
           const tr = sortedTextRows[rIdx]
@@ -1282,9 +1298,12 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
               bands.push(currentBand)
             }
             const initialNome: string[] = []
+            let bandBold = tr.col1Bold || tr.isRowBold
+
             // Se havia um prefixo imediatamente acima (deltaY <= 13pt)
             if (pendingPrefix && Math.abs(pendingPrefix.y - tr.y) <= 13) {
               initialNome.push(pendingPrefix.text)
+              if (pendingPrefix.isBold) bandBold = true
             }
             pendingPrefix = null
 
@@ -1298,6 +1317,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
               col3Text: col3Str,
               col4Text: col4Str,
               y: tr.y,
+              isBold: bandBold,
+              secaoTipo: sec.tipo,
             }
           } else {
             // Linha sem LMI na Coluna 2
@@ -1310,8 +1331,6 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
               // Apenas texto na Coluna 1.
               // Decide se é continuação inferior da banda atual ou prefixo da próxima banda:
               // Se currentBand existe e o deltaY é pequeno (<= 13pt):
-              // Se o próximo item tiver LMI e estiver a <= 13pt deste, precisamos discernir se é continuação
-              // de cima (ex: "Despesas de Recomposição de Registros e" + "Documentos") ou prefixo de baixo:
               // Palavras como "Documentos", "Tornado", "Mármores", "Portadores", "Estabelecimento" são terminações!
               const isObviousContinuation =
                 /^(?:Documentos|Tornado|Mármores|Portadores|Estabelecimento|Conteúdo|Q\.Aeronaves|Bens)\b/i.test(
@@ -1324,20 +1343,24 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
 
               if (currentBand && Math.abs(currentBand.y - tr.y) <= 13 && isObviousContinuation) {
                 currentBand.nomeParts.push(col1Str)
+                if (tr.col1Bold) currentBand.isBold = true
               } else if (currentBand && Math.abs(currentBand.y - tr.y) <= 13 && !nextHasLmi) {
                 currentBand.nomeParts.push(col1Str)
+                if (tr.col1Bold) currentBand.isBold = true
               } else if (nextHasLmi && nextRow && Math.abs(tr.y - nextRow.y) <= 13) {
                 // Prefixo da próxima
-                pendingPrefix = { text: col1Str, y: tr.y }
+                pendingPrefix = { text: col1Str, y: tr.y, isBold: tr.col1Bold }
               } else if (currentBand && Math.abs(currentBand.y - tr.y) <= 13) {
                 currentBand.nomeParts.push(col1Str)
+                if (tr.col1Bold) currentBand.isBold = true
               } else {
-                pendingPrefix = { text: col1Str, y: tr.y }
+                pendingPrefix = { text: col1Str, y: tr.y, isBold: tr.col1Bold }
               }
             } else if (currentBand) {
               if (col1Str) currentBand.nomeParts.push(col1Str)
               if (col3Str) currentBand.col3Text = `${currentBand.col3Text} ${col3Str}`.trim()
               if (col4Str) currentBand.col4Text = `${currentBand.col4Text} ${col4Str}`.trim()
+              if (tr.col1Bold || tr.isRowBold) currentBand.isBold = true
             }
           }
         }
@@ -1347,7 +1370,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
         }
 
         // Processa as bandas da seção
-        for (const band of bands) {
+        for (let bIdx = 0; bIdx < bands.length; bIdx++) {
+          const band = bands[bIdx]
           let nome = band.nomeParts
             .join(' ')
             .replace(/\s{2,}/g, ' ')
@@ -1395,7 +1419,55 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
           }
 
           const key = normalizeCobKey(nome)
-          const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
+          const isIncendioComplementaresSubtotal =
+            key.includes('incendioecomplementares') || key === 'incendioecomplementares'
+
+          // Regra 1 e 2: Na seção COBERTURA BASICA*, a linha em NEGRITO com prêmio agregado
+          // ("Incêndio e Complementares | 80.000.000,00 | 18.544,40") é um SUBTOTAL/agregado.
+          // Ela não entra como cobertura contratada no quadro — a cobertura real é a linha contratada
+          // em peso normal logo abaixo ("Incendio / Raio / Expl / Impl / Fumaça / Q.Aeronaves").
+          if (band.secaoTipo === 'basica' && (band.isBold || isIncendioComplementaresSubtotal)) {
+            // Se for subtotal com prêmio e a proposta não capturou premioLiquido global ainda,
+            // podemos registrar como referência, mas NUNCA inserimos no quadro de coberturas.
+            if (premioVal !== null && premioLiquido === null) {
+              // Referência informativa apenas
+            }
+            continue
+          }
+
+          // Seção COBERTURAS ADICIONAIS*:
+          // Padrão Allianz: a primeira linha vem em negrito com o PRÊMIO da cobertura (ex: "Danos Elétricos | 1.000.000,00 | 3.232,97")
+          // e a linha seguinte vem em peso normal com a FRANQUIA (ex: "Danos Elétricos | 1.000.000,00 | 15 | 5.000,00").
+          // Ou agregadoras de grupo como "Responsabilidade Civil", "Roubo" onde a linha de cima tem o prêmio agregado
+          // e as linhas filhas/sublinhas vêm abaixo.
+          // Se uma linha em negrito tem exatamente o mesmo nome da linha subsequente em peso normal,
+          // transferimos o prêmio da linha em negrito para a linha subsequente, ou pareamos via cobMap.
+          const nextBand = bIdx + 1 < bands.length ? bands[bIdx + 1] : null
+          const nextNome = nextBand
+            ? nextBand.nomeParts
+                .join(' ')
+                .replace(/\s{2,}/g, ' ')
+                .replace(/^[•*-]\s*/, '')
+                .trim()
+            : ''
+          const nextKey = normalizeCobKey(nextNome)
+
+          // Se a linha atual estiver em negrito e a próxima tiver o mesmo nome (par direto prêmio -> franquia):
+          if (band.isBold && nextKey === key && !franquiaStr && nextBand && !nextBand.isBold) {
+            // Adiantamos o prêmio para a próxima banda que é a contratada com franquia
+            if (premioVal !== null && !nextBand.col3Text.includes(',')) {
+              nextBand.col3Text =
+                `${nextBand.col3Text} ${premioVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`.trim()
+            }
+            continue
+          }
+
+          const isBasicaReal =
+            key.includes('incendio') &&
+            (key.includes('raio') ||
+              key.includes('expl') ||
+              key.includes('fumaca') ||
+              key.includes('aeronave'))
           const isLucrosCessantesReal =
             key.includes('perdalucrobruto') || key.includes('lucrobruto')
 
@@ -1511,7 +1583,17 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
       }
 
       const key = normalizeCobKey(rawNome)
-      const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
+      // Se for "Incêndio e Complementares", é subtotal agregado e não deve entrar no quadro
+      if (key.includes('incendioecomplementares') || key === 'incendioecomplementares') {
+        continue
+      }
+
+      const isBasicaReal =
+        key.includes('incendio') &&
+        (key.includes('raio') ||
+          key.includes('expl') ||
+          key.includes('fumaca') ||
+          key.includes('aeronave'))
       const isLucrosCessantesReal = key.includes('perdalucrobruto') || key.includes('lucrobruto')
 
       let acc = cobMap.get(key)
@@ -1536,20 +1618,40 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
     }
   }
 
-  // Constrói lista final de coberturas mantendo regras canônicas
+  // Constrói lista final de coberturas mantendo regras canônicas.
+  // Regra 3: Garantir classificação de no máximo UMA Cobertura Básica por proposta
+  // (a primeira elegida entre as candidatas reais; qualquer outra vira cobertura comum).
   const coberturas: ExtractedCoberturaItem[] = []
+  let basicaCount = 0
 
   for (const [, item] of cobMap) {
     // Normalização de categoria:
-    // Incêndio e Complementares -> Básica
+    // Linha real contratada de incêndio -> Básica ("Incêndio Básica (Danos Materiais)")
     // Perda de Lucro Bruto -> Lucros Cessantes
     // RCs nunca viram básica mesmo se mencionarem incêndio
     let categoria = matchCanonicalCategory(item.nomeOriginal)
 
-    if (item.isBasica) {
-      categoria = 'Incêndio, Raio, Explosão, Implosão e Fumaça'
+    if (item.isBasica && basicaCount === 0) {
+      categoria = 'Incêndio Básica (Danos Materiais)'
+      basicaCount++
+    } else if (item.isBasica && basicaCount > 0) {
+      // Já existe uma básica: qualquer outra candidata vira cobertura acessória / comum
+      categoria = 'Incêndio Complementar'
     } else if (item.isLucrosCessantes) {
-      categoria = 'Lucros Cessantes'
+      categoria = 'Lucros Cessantes / Perda de Receita'
+    } else {
+      // Se matchCanonicalCategory classificou como Básica mas não é a eleita:
+      if (
+        categoria === 'Incêndio Básica (Danos Materiais)' ||
+        categoria === 'Incêndio, Raio, Explosão, Implosão e Fumaça'
+      ) {
+        if (basicaCount === 0) {
+          categoria = 'Incêndio Básica (Danos Materiais)'
+          basicaCount++
+        } else {
+          categoria = 'Incêndio Complementar'
+        }
+      }
     }
 
     coberturas.push({

@@ -871,60 +871,69 @@ export default function PropostaUploadModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {coberturas.map((c, i) => {
-                        const isBasica = isCoberturaBasica({
-                          nome: c.cobertura,
-                          categoriaNormalizada: c.categoriaNormalizada,
-                        })
-                        const isLc = isCoberturaLucrosCessantes({
-                          nome: c.cobertura,
-                          categoriaNormalizada: c.categoriaNormalizada,
-                        })
-
-                        return (
-                          <tr
-                            key={i}
-                            className={`hover:bg-gray-50/70 transition-colors ${
-                              isBasica
-                                ? 'bg-blue-50/40 font-semibold'
-                                : isLc
-                                  ? 'bg-amber-50/30'
-                                  : ''
-                            }`}
-                          >
-                            <td className="py-1.5 px-3 font-medium text-gray-900">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span>{c.cobertura}</span>
-                                {isBasica && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-blue-100 text-[#16578B] border border-blue-300">
-                                    ★ Básica
-                                  </span>
-                                )}
-                                {isLc && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300">
-                                    Lucros Cessantes
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-1.5 px-2 text-gray-500 text-[10px]">
-                              {c.categoriaNormalizada}
-                            </td>
-                            <td className="py-1.5 px-2 text-right text-gray-800 font-mono">
-                              {c.lmi ? formatCurrency(c.lmi) : '—'}
-                            </td>
-                            <td className="py-1.5 px-2 text-right text-emerald-800 font-mono">
-                              {c.premioLiquido ? formatCurrency(c.premioLiquido) : '—'}
-                            </td>
-                            <td
-                              className="py-1.5 px-3 text-gray-600 text-[10px] truncate max-w-[180px]"
-                              title={c.franquia}
-                            >
-                              {c.franquia || 'Conforme apólice'}
-                            </td>
-                          </tr>
+                      {(() => {
+                        // Garante que no máximo UMA cobertura no quadro receba a marca de Básica
+                        const firstBasicaIndex = coberturas.findIndex((c) =>
+                          isCoberturaBasica({
+                            nome: c.cobertura,
+                            categoriaNormalizada: c.categoriaNormalizada,
+                          }),
                         )
-                      })}
+
+                        return coberturas.map((c, i) => {
+                          const isBasica = i === firstBasicaIndex
+                          const isLc =
+                            !isBasica &&
+                            isCoberturaLucrosCessantes({
+                              nome: c.cobertura,
+                              categoriaNormalizada: c.categoriaNormalizada,
+                            })
+
+                          return (
+                            <tr
+                              key={i}
+                              className={`hover:bg-gray-50/70 transition-colors ${
+                                isBasica
+                                  ? 'bg-blue-50/40 font-semibold'
+                                  : isLc
+                                    ? 'bg-amber-50/30'
+                                    : ''
+                              }`}
+                            >
+                              <td className="py-1.5 px-3 font-medium text-gray-900">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span>{c.cobertura}</span>
+                                  {isBasica && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-blue-100 text-[#16578B] border border-blue-300">
+                                      ★ Básica
+                                    </span>
+                                  )}
+                                  {isLc && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300">
+                                      Lucros Cessantes
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-1.5 px-2 text-gray-500 text-[10px]">
+                                {c.categoriaNormalizada}
+                              </td>
+                              <td className="py-1.5 px-2 text-right text-gray-800 font-mono">
+                                {c.lmi ? formatCurrency(c.lmi) : '—'}
+                              </td>
+                              <td className="py-1.5 px-2 text-right text-emerald-800 font-mono">
+                                {c.premioLiquido ? formatCurrency(c.premioLiquido) : '—'}
+                              </td>
+                              <td
+                                className="py-1.5 px-3 text-gray-600 text-[10px] truncate max-w-[180px]"
+                                title={c.franquia}
+                              >
+                                {c.franquia || 'Conforme apólice'}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      })()}
                     </tbody>
                   </table>
                 </div>

@@ -111,11 +111,9 @@ export function isCoberturaBasica(cob: { nome: string; categoriaNormalizada?: st
     return true
   }
 
-  // Nome expressando Danos Materiais (prédio/conteúdo), Incêndio e Complementares ou Incêndio Básica
+  // Nome expressando Danos Materiais (prédio/conteúdo) ou Incêndio Básica
   if (
     normNome.includes('incendio basica') ||
-    normNome.includes('incendio e complementares') ||
-    normNome === 'incendio e complementares' ||
     (normNome.includes('danos materiais') &&
       (normNome.includes('predio') ||
         normNome.includes('conteudo') ||
