@@ -1882,9 +1882,13 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
   // 6. Dados do Proponente e Questionário
   // Exemplo no PDF da Porto:
   // "DADOS DO PROPONENTE"
-  // "RAZÃO SOCIAL"
-  // "CONDOMINIO SAO INTERNATIONAL SQUARE"
-  // "TIPO DE PESSOA JURÍDICA" "CNPJ 24742208/0002-25"
+  // "RAZÃO SOCIAL" "TIPO DE PESSOA" "CNPJ"
+  // "CONDOMINIO SAO INTERNATIONAL SQUARE" "JURÍDICA" "24742208/0002-25"
+  //
+  // ATENÇÃO: em extração tabular por linha/coordenada Y, uma linha pode ser o cabeçalho
+  // "RAZÃO SOCIAL TIPO DE PESSOA CNPJ", e a linha seguinte os valores correspondentes:
+  // "CONDOMINIO SAO INTERNATIONAL SQUARE JURÍDICA 24742208/0002-25".
+  // NUNCA preencher a sopa de rótulos "RAZÃO SOCIAL TIPO DE PESSOA CNPJ" como nome!
   let seguradoNome = ''
   let seguradoCnpj = ''
 
@@ -1894,52 +1898,139 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
   )
   const propSectionText = propSectionMatch ? propSectionMatch[1] : fullText
 
-  // Busca a Razão Social:
-  // Padrão 1: "RAZÃO SOCIAL" seguido pelo nome em linha própria
-  const propLineMatch = propSectionText.match(
-    /RAZ[ÃA]O\s+SOCIAL\s*\n\s*([A-Za-z0-9\s.,–\-_&']+?)(?=\s*(?:\n|TIPO\s+DE\s+PESSOA|CNPJ|INFORMA[ÇC][ÕO]ES|$))/i,
-  )
-  if (
-    propLineMatch &&
-    !/^(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA|F[ÍI]SICA)/i.test(propLineMatch[1].trim())
-  ) {
-    seguradoNome = propLineMatch[1].trim()
-  } else {
-    // Padrão 2: Em mesma linha
-    const propInlineMatch = propSectionText.match(
-      /RAZ[ÃA]O\s+SOCIAL\s*[:\s]*([A-Za-z0-9\s.,–\-_&']+?)(?:\s+(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA)|$|\n)/i,
-    )
-    if (
-      propInlineMatch &&
-      !/^(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA|F[ÍI]SICA)/i.test(propInlineMatch[1].trim())
-    ) {
-      seguradoNome = propInlineMatch[1].trim()
+  const sanitizePropName = (candidate: string): string => {
+    let clean = candidate.replace(/\s{2,}/g, ' ').trim()
+    // Remove sufixos de outras colunas na mesma linha (TIPO DE PESSOA, JURÍDICA, FÍSICA, CNPJ ...)
+    clean = clean.replace(/\s+JUR[ÍI]DICA.*$/i, '').trim()
+    clean = clean.replace(/\s+F[ÍI]SICA.*$/i, '').trim()
+    clean = clean.replace(/\s+TIPO\s+DE\s+PESSOA.*$/i, '').trim()
+    clean = clean.replace(/\s+CNPJ.*$/i, '').trim()
+    clean = clean.replace(/\s+\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}.*$/i, '').trim()
+    clean = clean.replace(/\s+\d{8,14}.*$/i, '').trim()
+    // Rejeita sopa de rótulos / cabeçalhos
+    if (/^RAZ[ÃA]O\s+SOCIAL/i.test(clean)) return ''
+    if (/TIPO\s+DE\s+PESSOA/i.test(clean)) return ''
+    if (/^CNPJ/i.test(clean)) return ''
+    if (/^JUR[ÍI]DICA$/i.test(clean) || /^F[ÍI]SICA$/i.test(clean)) return ''
+    if (/^DADOS\s+DO\s+PROPONENTE/i.test(clean)) return ''
+    return clean
+  }
+
+  // Tenta extração geométrica dos fragmentos da página 1 se disponíveis
+  const page1 = pages.find((p) => p.pageNumber === 1) || pages[0]
+  if (page1 && page1.items && page1.items.length > 0) {
+    // Procura fragmento "DADOS DO PROPONENTE"
+    const propHeaderItem = page1.items.find((it) => /DADOS\s+DO\s+PROPONENTE/i.test(it.str.trim()))
+    if (propHeaderItem) {
+      // Itens abaixo do cabeçalho da seção até o próximo bloco (ex.: "INFORMAÇÕES CADASTRAIS")
+      const brokerHeaderItem = page1.items.find(
+        (it) =>
+          it.y < propHeaderItem.y &&
+          /INFORMA[ÇC][ÕO]ES\s+CADASTRAIS|LOCAL\s+DE\s+RISCO/i.test(it.str.trim()),
+      )
+      const bottomLimitY = brokerHeaderItem ? brokerHeaderItem.y : propHeaderItem.y - 120
+
+      // Filtra fragmentos na seção do proponente
+      const sectionItems = page1.items.filter(
+        (it) => it.y < propHeaderItem.y - 2 && it.y > bottomLimitY,
+      )
+
+      // Fragmentos na coluna de Razão Social (X à esquerda, normalmente X < 350)
+      // Agrupa por linha Y
+      const propRowMap = new Map<number, typeof page1.items>()
+      for (const it of sectionItems) {
+        const str = it.str.trim()
+        if (!str) continue
+        let fY: number | null = null
+        for (const ey of propRowMap.keys()) {
+          if (Math.abs(ey - it.y) <= 3.5) {
+            fY = ey
+            break
+          }
+        }
+        if (fY === null) {
+          fY = it.y
+          propRowMap.set(fY, [])
+        }
+        propRowMap.get(fY)!.push(it)
+      }
+
+      const sortedPropYs = Array.from(propRowMap.keys()).sort((a, b) => b - a)
+      for (const y of sortedPropYs) {
+        const rowItems = (propRowMap.get(y) || []).sort((a, b) => a.x - b.x)
+        const rowText = rowItems.map((it) => it.str.trim()).join(' ')
+        // Se a linha for o cabeçalho "RAZÃO SOCIAL TIPO DE PESSOA CNPJ", pula
+        if (
+          /RAZ[ÃA]O\s+SOCIAL/i.test(rowText) &&
+          (/TIPO\s+DE\s+PESSOA/i.test(rowText) || /CNPJ/i.test(rowText))
+        ) {
+          continue
+        }
+        if (/^RAZ[ÃA]O\s+SOCIAL\s*$/i.test(rowText)) {
+          continue
+        }
+
+        // Pega os itens da coluna da esquerda (Razão Social, normalmente X < 350)
+        const leftItems = rowItems.filter((it) => it.x < 350)
+        const candidate = leftItems.map((it) => it.str.trim()).join(' ')
+        const sanitized = sanitizePropName(candidate)
+        if (sanitized && sanitized.length >= 3) {
+          seguradoNome = sanitized
+          break
+        }
+      }
     }
   }
 
-  // Se ainda vazio ou se pegou rótulo incorreto, varre as linhas após DADOS DO PROPONENTE
-  if (!seguradoNome || /TIPO\s+DE\s+PESSOA/i.test(seguradoNome)) {
-    seguradoNome = ''
+  // Fallbacks de texto para Razão Social
+  if (!seguradoNome) {
+    // Procura nas linhas de texto ordenadas
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes('DADOS DO PROPONENTE')) {
+      const line = lines[i].trim()
+      if (line.includes('DADOS DO PROPONENTE')) {
         for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
           const l = lines[j].trim()
-          if (!l || l === 'RAZÃO SOCIAL' || l === 'RAZAO SOCIAL') continue
+          if (!l) continue
           if (
-            l.startsWith('TIPO DE PESSOA') ||
-            l.startsWith('CNPJ') ||
             l.startsWith('INFORMAÇÕES') ||
             l.startsWith('SUSEP') ||
             l.startsWith('LOCAL DE RISCO')
           ) {
             break
           }
-          // Esta linha é a razão social do segurado
-          seguradoNome = l.replace(/\s{2,}/g, ' ').trim()
-          break
+          // Pula linhas que são apenas rótulos
+          if (/^RAZ[ÃA]O\s+SOCIAL(?:\s+TIPO\s+DE\s+PESSOA)?(?:\s+CNPJ)?$/i.test(l)) {
+            continue
+          }
+          if (/^TIPO\s+DE\s+PESSOA/i.test(l)) continue
+          if (/^CNPJ/i.test(l)) continue
+
+          const sanitized = sanitizePropName(l)
+          if (sanitized && sanitized.length >= 3) {
+            seguradoNome = sanitized
+            break
+          }
         }
         break
       }
+    }
+  }
+
+  // Fallback via regex na propSectionText
+  if (!seguradoNome) {
+    const propLineMatch = propSectionText.match(
+      /RAZ[ÃA]O\s+SOCIAL\s*\n\s*([A-Za-z0-9\s.,–\-_&']+?)(?=\s*(?:\n|TIPO\s+DE\s+PESSOA|CNPJ|INFORMA[ÇC][ÕO]ES|$))/i,
+    )
+    if (propLineMatch) {
+      seguradoNome = sanitizePropName(propLineMatch[1])
+    }
+  }
+  if (!seguradoNome) {
+    const propInlineMatch = propSectionText.match(
+      /RAZ[ÃA]O\s+SOCIAL\s*[:\s]*([A-Za-z0-9\s.,–\-_&']+?)(?:\s+(?:TIPO\s+DE\s+PESSOA|CNPJ|JUR[ÍI]DICA)|$|\n)/i,
+    )
+    if (propInlineMatch) {
+      seguradoNome = sanitizePropName(propInlineMatch[1])
     }
   }
 
@@ -2099,12 +2190,18 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       })
 
       // Agrupa fragmentos por linha de texto visual (delta Y <= 3.5pt)
+      // Preserva ordem dos fragmentos por coordenada X
+      interface PortoFragmentItem {
+        str: string
+        x: number
+      }
+
       interface PortoTextRow {
         y: number
-        col1: string[]
-        col2: string[]
-        col3: string[]
-        col4: string[]
+        col1: PortoFragmentItem[]
+        col2: PortoFragmentItem[]
+        col3: PortoFragmentItem[]
+        col4: PortoFragmentItem[]
       }
 
       const rowMap = new Map<number, PortoTextRow>()
@@ -2133,14 +2230,15 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         const s = it.str.trim()
         if (!s) continue
 
+        const frag: PortoFragmentItem = { str: s, x: it.x }
         if (it.x < col2Left) {
-          r.col1.push(s)
+          r.col1.push(frag)
         } else if (it.x < col3Left) {
-          r.col2.push(s)
+          r.col2.push(frag)
         } else if (it.x < col4Left) {
-          r.col3.push(s)
+          r.col3.push(frag)
         } else {
-          r.col4.push(s)
+          r.col4.push(frag)
         }
       }
 
@@ -2148,12 +2246,36 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       const sortedRows = Array.from(rowMap.values()).sort((a, b) => b.y - a.y)
 
       // Monta as linhas de cobertura.
-      // Regra fundamental:
-      // - Quando uma linha tem LMI na Coluna 2 (ou Prêmio na Col 3): é o início ou corpo principal de uma cobertura.
-      // - Quando uma linha tem APENAS texto na Coluna 1 (sem LMI/Prêmio/POS) ou continuação de POS:
-      //   A continuação pertence SEMPRE À COBERTURA ANTERIOR (se houver uma cobertura aberta logo acima, deltaY <= 25pt).
-      //   NUNCA deve ser atribuída à cobertura seguinte!
-      // - A linha "VALOR EM RISCO DECLARADO" é ignorada (não entra no quadro).
+      // ESTRUTURA VISUAL DA TABELA PORTO SEGURO (CONFORME ORÇAMENTO IMPRESSO):
+      // - Quando o nome da cobertura é curto (1 linha):
+      //     Linha Y: [Nome da Cobertura] | [LMI] | [Prêmio] | [P.O.S.]
+      // - Quando o nome quebra em 2 linhas (ex: Básica e Equipamento Eletrônico):
+      //     Linha Y1: [INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE] | (vazio) | (vazio) | (vazio)
+      //     Linha Y2: [AERONAVE] | [R$ 80.000.000,00] | [R$ 12.012,60] | [10% das indenizações.]
+      // - No caso de Equipamento Eletrônico:
+      //     Linha Y1: [TUMULTO, GREVE E LOCK-OUT] | [R$ 1.000.000,00] | [R$ 1.538,67] | [Não há.]  <-- Cobertura 5 COMPLETA
+      //     Linha Y2: [EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE] | (vazio) | (vazio) | [Indenizações decorrentes...]
+      //     Linha Y3: [SUBTRAÇÃO] | [R$ 500.000,00] | [R$ 3.198,10] | [Raio: 10% das indenizações...]
+      //     Linha Y4: (vazio) | (vazio) | (vazio) | [Indenizações Decorrentes de Vendaval...]
+      //     Linha Y5: (vazio) | (vazio) | (vazio) | [10% das indenizações, com mínimo de R$1.000,00.]
+      //
+      // REGRA DE AGRUPAMENTO:
+      // "Uma cobertura = todas as linhas de nome consecutivas + os valores da banda seguinte."
+      // Quando uma linha contém valores (LMI e/ou Prêmio):
+      //   - Ela consome quaisquer linhas de nome pendentes que a precederam imediatamente (pendingNomePrefixes).
+      //   - Ela consome o texto de nome de sua própria linha (col1).
+      //   - Ela associa os valores desta linha (LMI, Prêmio, POS inicial).
+      //   - Quaisquer linhas subsequentes sem valores e SEM nome (ou apenas continuação de P.O.S.)
+      //     são anexadas como continuação de P.O.S. da cobertura já criada!
+      //
+      // Quando uma linha NÃO contém valores:
+      //   - Se tiver texto em col1: é prefixo do nome da PRÓXIMA cobertura (armazenado em pendingNomePrefixes).
+      //     ATENÇÃO: Nunca fundir com a cobertura anterior que já tem valores!
+      //   - Se tiver texto em col4 (P.O.S.) na mesma linha do prefixo do nome (ex: Equipamento Eletrônico linha Y2):
+      //     esse P.O.S. pertence à PRÓXIMA cobertura (armazenado em pendingPosPrefixes) OU se não houver próxima,
+      //     à anterior. Na Porto Seguro, a linha Y2 traz o prefixo do nome + a 1ª frase do P.O.S. da MESMA cobertura!
+      //   - Se NÃO tiver texto em col1 mas tiver texto em col4: é continuação de P.O.S. da cobertura mais recente (accRows).
+
       interface PortoAccumulatedRow {
         nomeParts: string[]
         col2Text: string
@@ -2164,13 +2286,31 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
 
       const accRows: PortoAccumulatedRow[] = []
       let pendingNomePrefixes: string[] = []
+      let pendingPosPrefixes: string[] = []
 
       for (let rIdx = 0; rIdx < sortedRows.length; rIdx++) {
         const r = sortedRows[rIdx]
-        const col1Str = r.col1.join(' ').trim()
-        const col2Str = r.col2.join(' ').trim()
-        const col3Str = r.col3.join(' ').trim()
-        const col4Str = r.col4.join(' ').trim()
+        // Ordena itens de cada coluna por X antes de juntar
+        const col1Str = r.col1
+          .sort((a, b) => a.x - b.x)
+          .map((it) => it.str)
+          .join(' ')
+          .trim()
+        const col2Str = r.col2
+          .sort((a, b) => a.x - b.x)
+          .map((it) => it.str)
+          .join(' ')
+          .trim()
+        const col3Str = r.col3
+          .sort((a, b) => a.x - b.x)
+          .map((it) => it.str)
+          .join(' ')
+          .trim()
+        const col4Str = r.col4
+          .sort((a, b) => a.x - b.x)
+          .map((it) => it.str)
+          .join(' ')
+          .trim()
 
         // Ignora expressamente o VRD no quadro de coberturas
         if (
@@ -2180,15 +2320,13 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           continue
         }
 
-        // Verifica se esta linha contém valores de LMI ou Prêmio
+        // Verifica se esta linha contém valores numéricos monetários de LMI ou Prêmio
         const hasValues =
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col2Str) ||
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col3Str)
 
         if (hasValues) {
-          // Linha com valores: uma cobertura = todas as linhas de nome consecutivas
-          // que a precedem (se houver linhas de nome sem valor imediatamente acima)
-          // mais o nome desta linha com os valores desta banda.
+          // Linha com valores: fecha a cobertura que recebe esses valores
           const currentNomeParts: string[] = []
           if (pendingNomePrefixes.length > 0) {
             currentNomeParts.push(...pendingNomePrefixes)
@@ -2198,33 +2336,52 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
             currentNomeParts.push(col1Str)
           }
 
+          const currentPosParts: string[] = []
+          if (pendingPosPrefixes.length > 0) {
+            currentPosParts.push(...pendingPosPrefixes)
+            pendingPosPrefixes = []
+          }
+          if (col4Str) {
+            currentPosParts.push(col4Str)
+          }
+
           const newAcc: PortoAccumulatedRow = {
             nomeParts: currentNomeParts,
             col2Text: col2Str,
             col3Text: col3Str,
-            col4Parts: col4Str ? [col4Str] : [],
+            col4Parts: currentPosParts,
             y: r.y,
           }
           accRows.push(newAcc)
         } else {
-          // Linha SEM valores (sem LMI nem Prêmio).
-          // Na tabela da Porto Seguro, quando o nome da cobertura é longo,
-          // a PRIMEIRA linha carrega o início do nome (sem valores de LMI/Prêmio),
-          // e a linha seguinte traz o restante do nome JUNTO com os valores de LMI, Prêmio e P.O.S.
-          // Se houver texto na coluna 4 (P.O.S.) sem texto de nome na coluna 1, é continuação de P.O.S. da cobertura anterior.
-          if (col4Str && !col1Str) {
-            if (accRows.length > 0) {
-              accRows[accRows.length - 1].col4Parts.push(col4Str)
-            }
-          } else if (col1Str) {
-            // Linha com texto na coluna 1 sem valores: guarda como prefixo do nome da cobertura
-            // que receberá os valores da banda seguinte.
+          // Linha SEM valores (sem LMI nem Prêmio)
+          if (col1Str) {
+            // Linha com nome: é a primeira linha de uma cobertura cujo nome quebrou em 2 linhas!
+            // Ex 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" -> prefixo para Básica
+            // Ex 2: "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE" -> prefixo para Equipamento Eletrônico
+            // Ex 3: "DERRAME E VAZAMENTO DE ÁGUA DE CHUVEIROS" -> prefixo
+            // Ex 4: "CONTAMINAÇÃO E DETERIORAÇÃO DE MERCADORIAS EM" -> prefixo
+            // Ex 5: "VENDAVAL, FURACAO, CICLONE, TORNADO E QUEDA DE" -> prefixo
+            // Ex 6: "RESPONSABILIDADE CIVIL GUARDA DE VEÍCULOS DE" -> prefixo
             pendingNomePrefixes.push(col1Str)
-            if (col4Str && accRows.length > 0) {
+
+            // Se também tem texto na Coluna 4 (P.O.S.), esse P.O.S. pertence a esta mesma nova cobertura
+            // (ex: na linha "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE", col4 tem "Indenizações decorrentes de Danos Elétricos e Queda de")
+            if (col4Str) {
+              pendingPosPrefixes.push(col4Str)
+            }
+          } else if (col4Str) {
+            // Linha sem nome (col1 vazia) mas com texto na coluna 4:
+            // É continuação de P.O.S.!
+            // Se houver uma cobertura recém-fechada (accRows), anexa a ela:
+            if (accRows.length > 0 && pendingNomePrefixes.length === 0) {
+              accRows[accRows.length - 1].col4Parts.push(col4Str)
+            } else if (pendingNomePrefixes.length > 0) {
+              // Se há um prefixo de nome pendente, anexa ao P.O.S. que acompanhará a nova cobertura
+              pendingPosPrefixes.push(col4Str)
+            } else if (accRows.length > 0) {
               accRows[accRows.length - 1].col4Parts.push(col4Str)
             }
-          } else if (col4Str && accRows.length > 0) {
-            accRows[accRows.length - 1].col4Parts.push(col4Str)
           }
         }
       }
@@ -2233,6 +2390,10 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       if (pendingNomePrefixes.length > 0 && accRows.length > 0) {
         accRows[accRows.length - 1].nomeParts.push(...pendingNomePrefixes)
         pendingNomePrefixes = []
+      }
+      if (pendingPosPrefixes.length > 0 && accRows.length > 0) {
+        accRows[accRows.length - 1].col4Parts.push(...pendingPosPrefixes)
+        pendingPosPrefixes = []
       }
 
       // Converte as bandas acumuladas em itens finais de cobertura
@@ -2293,10 +2454,11 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       nomeParts: string[]
       lmi: number | null
       premio: number | null
-      pos: string
+      posParts: string[]
     }
     const textAccList: TextRawAcc[] = []
     let pendingTextPrefixes: string[] = []
+    let pendingTextPosPrefixes: string[] = []
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
@@ -2331,7 +2493,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         continue
       }
 
-      // Linha com R$ (LMI/Prêmio)
+      // Linha com R$ (LMI e/ou Prêmio)
       const m = line.match(
         /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()]+?)\s+R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(?:R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}))?\s*(.*)$/,
       )
@@ -2340,7 +2502,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         const rawNome = m[1].trim()
         const lmiVal = parsePtBrNumber(m[2])
         const premVal = m[3] ? parsePtBrNumber(m[3]) : null
-        let posText = m[4]?.trim() || 'Não informada'
+        const posText = m[4]?.trim() || ''
 
         if (rawNome.toUpperCase().includes('VALOR EM RISCO DECLARADO')) {
           continue
@@ -2355,30 +2517,53 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
           assembledNames.push(rawNome)
         }
 
+        const assembledPos: string[] = []
+        if (pendingTextPosPrefixes.length > 0) {
+          assembledPos.push(...pendingTextPosPrefixes)
+          pendingTextPosPrefixes = []
+        }
+        if (posText) {
+          assembledPos.push(posText)
+        }
+
         textAccList.push({
           nomeParts: assembledNames,
           lmi: lmiVal,
           premio: premVal,
-          pos: posText,
+          posParts: assembledPos,
         })
       } else {
-        // Linha sem R$: prefixo da cobertura seguinte ou continuação de franquia
+        // Linha sem R$: prefixo de nome da próxima cobertura ou continuação de P.O.S.
         if (
           !line.includes('COBERTURAS') &&
           !line.startsWith('PÁGINA') &&
           !line.startsWith('9H095J')
         ) {
-          if (
-            (line.includes('indenizações') || line.includes('Não há') || line.includes('mínimo')) &&
-            textAccList.length > 0
-          ) {
-            const prev = textAccList[textAccList.length - 1]
-            prev.pos = `${prev.pos} ${line}`.trim()
+          const isPosOnly =
+            line.includes('indenizações') ||
+            line.includes('Não há') ||
+            line.includes('mínimo') ||
+            line.includes('Indenizações') ||
+            line.includes('dias de paralisação')
+
+          if (isPosOnly && textAccList.length > 0 && pendingTextPrefixes.length === 0) {
+            textAccList[textAccList.length - 1].posParts.push(line)
+          } else if (isPosOnly && pendingTextPrefixes.length > 0) {
+            pendingTextPosPrefixes.push(line)
           } else {
             pendingTextPrefixes.push(line)
           }
         }
       }
+    }
+
+    if (pendingTextPrefixes.length > 0 && textAccList.length > 0) {
+      textAccList[textAccList.length - 1].nomeParts.push(...pendingTextPrefixes)
+      pendingTextPrefixes = []
+    }
+    if (pendingTextPosPrefixes.length > 0 && textAccList.length > 0) {
+      textAccList[textAccList.length - 1].posParts.push(...pendingTextPosPrefixes)
+      pendingTextPosPrefixes = []
     }
 
     for (const t of textAccList) {
@@ -2387,11 +2572,16 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         .replace(/\s{2,}/g, ' ')
         .trim()
       if (!nomeCompleto || t.lmi === null) continue
+      const posFull =
+        t.posParts
+          .join(' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim() || 'Não há.'
       extractedList.push({
         nome: nomeCompleto,
         lmi: t.lmi,
         premio: t.premio,
-        franquia: t.pos || 'Não há.',
+        franquia: posFull,
       })
     }
   }
