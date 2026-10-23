@@ -1113,31 +1113,26 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
     }
   }
 
+  interface AssembledCoverageRow {
+    section: 'basica' | 'adicional'
+    nome: string
+    lmiVal: number
+    rest: string
+  }
+
+  const assembledRows: AssembledCoverageRow[] = []
   let currentSection: 'basica' | 'adicional' | null = null
-
-  // Reconstrói linhas com quebra de título em 2 linhas
-  // Ex: "Quebra de Vidros e Anúncios Luminosos e" + "Mármores 300.000,00 1.543,19"
-  // Ex: "Despesas de Recomposição de Registros e" + "Documentos 1.600.000,00 10 1.500,00"
-  // Ex: "Roubo de Valores em Trânsito em Mãos de" + "Portadores 97.500,00 10 1.500,00"
-  // Ex: "Roubo de Valores no Interior do" + "Estabelecimento 97.500,00 10 1.500,00"
-  // Ex: "Vendaval, Furacão, Ciclone, Granizo e" + "Tornado 1.000.000,00 15 5.000,00"
-  // Ex: "Incendio / Raio / Expl / Impl / Fumaça /" + "Q.Aeronaves 80.000.000,00 10 20.000,00"
-  const assembledRows: Array<{ section: 'basica' | 'adicional'; text: string }> = []
-
-  let pendingTitlePrefix = ''
 
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i]
 
     if (/^COBERTURA\s+BASICA\*/i.test(line)) {
       currentSection = 'basica'
-      pendingTitlePrefix = ''
       continue
     }
 
     if (/^COBERTURAS\s+ADICIONAIS\*/i.test(line)) {
       currentSection = 'adicional'
-      pendingTitlePrefix = ''
       continue
     }
 
@@ -1149,84 +1144,106 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
       /^PROCESSO\s+SUSEP/i.test(line)
     ) {
       currentSection = null
-      pendingTitlePrefix = ''
       continue
     }
 
     if (!currentSection) continue
 
+    // Ignora eventuais cabeçalhos repetidos da tabela de coberturas
+    if (
+      /^SubLimite\b/i.test(line) ||
+      /^Limite\s+M[áa]ximo\b/i.test(line) ||
+      /^de\s+Indeniza[çc][ãa]o\b/i.test(line) ||
+      /^Cobertura\s+R\$/i.test(line) ||
+      /^Pr[êe]mio\s+por\s+Cobertura/i.test(line) ||
+      /^Franquia(?:\s*(?:%|R\$))?/i.test(line) ||
+      /^%\s+R\$/i.test(line) ||
+      /^\*\s*Todos\s+os\s+limites/i.test(line)
+    ) {
+      continue
+    }
+
     // Verifica se a linha contém valores monetários no formato 000.000,00
     const hasMonetaryVal = /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(line)
 
-    if (!hasMonetaryVal) {
-      // Linha de texto sem valor — é a primeira parte de um título quebrado
-      pendingTitlePrefix = pendingTitlePrefix ? `${pendingTitlePrefix} ${line}` : line
-    } else {
-      const fullRowText = pendingTitlePrefix ? `${pendingTitlePrefix} ${line}` : line
-      pendingTitlePrefix = ''
-      assembledRows.push({ section: currentSection, text: fullRowText })
+    if (hasMonetaryVal) {
+      // Tenta fazer o match da linha de cobertura: [Nome] [SubLimite/LMI] [Prêmio/Franquia/Resto...]
+      const matchLine = line.match(
+        /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()•*&'+ºª]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/,
+      )
+
+      if (matchLine) {
+        const rawNome = matchLine[1]
+          .replace(/^[•*-]\s*/, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim()
+        const lmiVal = parsePtBrNumber(matchLine[2])
+        const rest = (matchLine[3] || '').trim()
+
+        if (rawNome && lmiVal !== null) {
+          assembledRows.push({
+            section: currentSection,
+            nome: rawNome,
+            lmiVal,
+            rest,
+          })
+          continue
+        }
+      }
+    }
+
+    // Se a linha NÃO tem valor monetário (ou não deu match numérico),
+    // trata como CONTINUAÇÃO do nome da cobertura anterior na mesma seção
+    // Ex: "Despesas de Recomposição de Registros e" (linha 1 com valores) + "Documentos" (linha 2 sem valores)
+    // -> Concatena ao nome da cobertura anterior com espaço (pt-BR)
+    // e NÃO cria nova cobertura nem cola seu texto no início da cobertura seguinte.
+    if (assembledRows.length > 0) {
+      const lastRow = assembledRows[assembledRows.length - 1]
+      if (lastRow && lastRow.section === currentSection) {
+        const cleanAdd = line
+          .replace(/^[•*-]\s*/, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim()
+        if (cleanAdd && cleanAdd !== '-' && cleanAdd !== '—') {
+          lastRow.nome = `${lastRow.nome} ${cleanAdd}`.replace(/\s{2,}/g, ' ').trim()
+        }
+      }
     }
   }
 
   // Processa cada linha de cobertura montada
-  for (const { section, text } of assembledRows) {
-    // Formato geral da linha:
-    // [Nome da Cobertura] [LMI] [Resto...]
-    // Onde LMI é o primeiro número monetário de grande porte (>= 1.000,00)
-    // Ex: "Incêndio e Complementares 80.000.000,00 18.544,40"
-    // Ex: "Demolição e Desentulho 4.000.000,00 10 1.500,00"
-    // Ex: "Perda e/ou Pagamento de Aluguel 4.000.000,00 - 10 Dias"
-    // Ex: "Perda de Lucro Bruto 15.000.000,00 - 10 Dias"
-    // Ex: "Danos Elétricos 1.000.000,00 3.232,97"
-    // Ex: "Danos Elétricos 1.000.000,00 15 5.000,00"
-    // Ex: "RC Gastos com Defesa 50.000,00 30,88"
-
-    const matchLine = text.match(
-      /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/,
-    )
-    if (!matchLine) continue
-
-    let rawNome = matchLine[1].trim()
-    const lmiVal = parsePtBrNumber(matchLine[2])
-    const rest = (matchLine[3] || '').trim()
-
-    // Limpa ruídos
-    rawNome = rawNome
-      .replace(/^[•*-]\s*/, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim()
+  for (const { section, nome: rawNome, lmiVal, rest } of assembledRows) {
     if (!rawNome || lmiVal === null) continue
 
     // Extrai dados da cauda da linha (prêmio e/ou franquia)
     let rowPremio: number | null = null
     let rowFranquiaStr = ''
+    let remainingRest = rest
 
     // Caso 1: Franquia em dias, ex: "- 10 Dias" ou "10 Dias"
-    const diasMatch = rest.match(/(\d+)\s*Dias/i)
+    const diasMatch = remainingRest.match(/(\d+)\s*Dias/i)
     if (diasMatch) {
       rowFranquiaStr = `${diasMatch[1]} Dias`
+      remainingRest = remainingRest.replace(/-?\s*\d+\s*Dias/i, '').trim()
     }
 
     // Caso 2: Franquia com percentual e valor mínimo em R$, ex: "10 1.500,00", "15 5.000,00", "20 10.000,00"
     // Atenção: o percentual vem como número inteiro isolado (10, 15, 20) antes do valor monetário
-    const pctAndMinMatch = rest.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-    if (pctAndMinMatch && !diasMatch) {
+    const pctAndMinMatch = remainingRest.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+    if (pctAndMinMatch) {
       const pct = pctAndMinMatch[1]
       const minRs = pctAndMinMatch[2]
-      rowFranquiaStr = `${pct}% com mín. R$ ${minRs}`
-    } else if (!pctAndMinMatch && !diasMatch) {
-      // Caso 3: Apenas um valor monetário na cauda, ex: "18.544,40", "3.232,97", "30,88"
-      // Esse valor é o Prêmio por Cobertura R$!
-      const singleMoneyMatch = rest.match(/^([\d]{1,3}(?:\.[\d]{3})*,\d{2})$/)
-      if (singleMoneyMatch) {
-        rowPremio = parsePtBrNumber(singleMoneyMatch[1])
-      } else {
-        // Se houver mais de um valor ou formato residual
-        const moneyMatches = rest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
-        if (moneyMatches && moneyMatches.length === 1) {
-          rowPremio = parsePtBrNumber(moneyMatches[0])
-        }
+      if (!rowFranquiaStr) {
+        rowFranquiaStr = `${pct}% com mín. R$ ${minRs}`
       }
+      remainingRest = remainingRest.replace(pctAndMinMatch[0], '').trim()
+    }
+
+    // Caso 3: Apenas um valor monetário na cauda (ou residual), ex: "18.544,40", "3.232,97", "30,88"
+    // Esse valor é o Prêmio por Cobertura R$!
+    const moneyMatch = remainingRest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+    if (moneyMatch) {
+      rowPremio = parsePtBrNumber(moneyMatch[0])
     }
 
     // Identificação de papéis de básica e lucros cessantes
@@ -1260,6 +1277,9 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
       // Mantém maior LMI se houver diferença
       if (lmiVal && (!acc.lmi || lmiVal > acc.lmi)) {
         acc.lmi = lmiVal
+      }
+      if (rawNome.length > acc.nomeOriginal.length) {
+        acc.nomeOriginal = rawNome
       }
     }
   }
