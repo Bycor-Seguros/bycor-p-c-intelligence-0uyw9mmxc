@@ -29,11 +29,14 @@ import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
 
 interface PropostaCoverageItem {
-  nome: string
-  categoria_normalizada: string
-  lmi: number
-  franquia: string
-  premio?: number
+  nome?: string
+  cobertura?: string
+  categoria_normalizada?: string
+  categoriaNormalizada?: string
+  lmi?: number | null
+  franquia?: string
+  premio?: number | null
+  premioLiquido?: number | null
 }
 
 interface PropostaRecord {
@@ -170,16 +173,34 @@ export default function TabulacaoPage() {
     setEditModalOpen(true)
   }
 
+  // Normalizar item de cobertura para acesso consistente
+  const getCoverageFields = (c: PropostaCoverageItem) => {
+    const nome = c.nome || c.cobertura || 'Cobertura'
+    const cat = c.categoria_normalizada || c.categoriaNormalizada || ''
+    const lmi = c.lmi !== undefined && c.lmi !== null ? Number(c.lmi) : 0
+    const franquia = c.franquia || 'Conforme apólice'
+    const premio =
+      c.premio !== undefined && c.premio !== null
+        ? Number(c.premio)
+        : c.premioLiquido !== undefined && c.premioLiquido !== null
+          ? Number(c.premioLiquido)
+          : null
+    return { nome, cat, lmi, franquia, premio }
+  }
+
   // Add coverage row inline
   const handleAddCoverageRow = () => {
     if (!newCovNome.trim()) return
+    const cat = newCovCat || ''
     setEditCoverages((prev) => [
       ...prev,
       {
         nome: newCovNome.trim(),
-        categoria_normalizada: newCovCat,
+        cobertura: newCovNome.trim(),
+        categoria_normalizada: cat,
+        categoriaNormalizada: cat,
         lmi: Number(newCovLmi) || 0,
-        franquia: newCovFranquia.trim(),
+        franquia: newCovFranquia.trim() || 'Conforme apólice',
       },
     ])
     setNewCovNome('')
@@ -213,7 +234,8 @@ export default function TabulacaoPage() {
     const set = new Set<string>()
     comparedProposals.forEach((p) => {
       ;(p.coberturas || []).forEach((c) => {
-        if (c.categoria_normalizada) set.add(c.categoria_normalizada)
+        const cat = c.categoria_normalizada || c.categoriaNormalizada
+        if (cat) set.add(cat)
       })
     })
     return Array.from(set).sort()
@@ -229,8 +251,10 @@ export default function TabulacaoPage() {
     ]
     const rows = distinctCategories.map((cat) => {
       const values = comparedProposals.map((p) => {
-        const found = (p.coberturas || []).find((c) => c.categoria_normalizada === cat)
-        return found ? found.lmi : 0
+        const found = (p.coberturas || []).find(
+          (c) => (c.categoria_normalizada || c.categoriaNormalizada) === cat,
+        )
+        return found && found.lmi !== null && found.lmi !== undefined ? found.lmi : 0
       })
       return [`"${cat}"`, ...values].join(';')
     })
@@ -464,19 +488,19 @@ export default function TabulacaoPage() {
                       </td>
                       {comparedProposals.map((p) => {
                         const cov = (p.coberturas || []).find(
-                          (c) => c.categoria_normalizada === cat,
+                          (c) => (c.categoria_normalizada || c.categoriaNormalizada) === cat,
                         )
-                        const hasDesvio = !cov // Required coverage missing
+                        const covFields = cov ? getCoverageFields(cov) : null
                         return (
                           <td key={p.id} className="py-2 px-4 border-r">
-                            {cov ? (
+                            {covFields ? (
                               <div>
                                 <div className="font-bold text-gray-900 tabular-nums">
-                                  {formatCurrency(cov.lmi)}
+                                  {formatCurrency(covFields.lmi)}
                                 </div>
-                                {cov.franquia && (
+                                {covFields.franquia && (
                                   <div className="text-[10px] text-gray-500 mt-0.5">
-                                    Franquia: {cov.franquia}
+                                    Franquia: {covFields.franquia}
                                   </div>
                                 )}
                               </div>
@@ -614,26 +638,29 @@ export default function TabulacaoPage() {
               {editCoverages.length === 0 ? (
                 <div className="p-4 text-center text-gray-400">Nenhuma cobertura inserida</div>
               ) : (
-                editCoverages.map((cov, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 flex items-center justify-between hover:bg-gray-50"
-                  >
-                    <div>
-                      <div className="font-bold text-gray-900">{cov.nome}</div>
-                      <div className="text-[11px] text-[#16578B]">{cov.categoria_normalizada}</div>
-                      <div className="text-[11px] text-gray-500">
-                        LMI: {formatCurrency(cov.lmi)} | Franquia: {cov.franquia || '—'}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRemoveCoverageRow(idx)}
-                      className="text-red-500 hover:text-red-700 p-1"
+                editCoverages.map((cov, idx) => {
+                  const f = getCoverageFields(cov)
+                  return (
+                    <div
+                      key={idx}
+                      className="p-2.5 flex items-center justify-between hover:bg-gray-50"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
+                      <div>
+                        <div className="font-bold text-gray-900">{f.nome}</div>
+                        <div className="text-[11px] text-[#16578B]">{f.cat}</div>
+                        <div className="text-[11px] text-gray-500">
+                          LMI: {formatCurrency(f.lmi)} | Franquia: {f.franquia || '—'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveCoverageRow(idx)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })
               )}
             </div>
 

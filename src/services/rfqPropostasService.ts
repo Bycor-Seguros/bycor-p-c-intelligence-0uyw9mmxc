@@ -30,9 +30,15 @@ export interface RfqSeguradoraRecord {
       lmi_lmg?: number
       premio_liquido?: number
       premio_bruto?: number
+      iof?: number
       data_proposta?: string
       pos_franquias?: string
       status?: string
+      coberturas?: any[]
+      clausulas?: string
+      exclusoes?: string
+      arquivo?: string
+      arquivo_nome?: string
     }
   }
 }
@@ -54,9 +60,11 @@ export interface RegistrarPropostaParams {
   lmiLmg?: number
   premioLiquido?: number
   premioBruto?: number
+  iof?: number
   posFranquias?: string
   clausulas?: string
   exclusoes?: string
+  coberturas?: any[]
 }
 
 export interface RegistrarPropostaUploadParams {
@@ -311,14 +319,18 @@ export async function registrarPropostaManual(
     exclusoes,
   } = params
 
+  const { iof, coberturas } = params
+
   // 1. Cria ou atualiza o registro na coleção propostas
   // Verifica se já existe proposta para esse RFQ + seguradora
-  const existingProps = await pb.collection('propostas').getFullList<{ id: string }>({
-    filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
-  })
+  const existingProps = await pb
+    .collection('propostas')
+    .getFullList<{ id: string; coberturas?: any[] }>({
+      filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
+    })
 
   let propostaId: string
-  const propPayload = {
+  const propPayload: Record<string, any> = {
     rfq: rfqId,
     seguradora: seguradoraId,
     data_proposta: dataProposta || new Date().toISOString().slice(0, 10),
@@ -329,13 +341,27 @@ export async function registrarPropostaManual(
     clausulas: clausulas?.trim() || '',
     exclusoes: exclusoes?.trim() || '',
     status: 'Pendente',
-    coberturas: [],
+  }
+
+  if (iof !== undefined) {
+    propPayload.iof = iof ? Number(iof) : 0
+  }
+
+  if (coberturas !== undefined) {
+    propPayload.coberturas = coberturas
   }
 
   if (existingProps.length > 0) {
     propostaId = existingProps[0].id
+    // Se coberturas não foi passado na edição, mantém as que já existiam
+    if (coberturas === undefined && existingProps[0].coberturas) {
+      propPayload.coberturas = existingProps[0].coberturas
+    }
     await pb.collection('propostas').update(propostaId, propPayload)
   } else {
+    if (propPayload.coberturas === undefined) {
+      propPayload.coberturas = []
+    }
     const createdProp = await pb.collection('propostas').create(propPayload)
     propostaId = createdProp.id
   }

@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   ChevronRight,
   Edit2,
+  Trash2,
+  Plus,
+  Check,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -34,8 +37,9 @@ import {
 } from '@/services/propostaReader'
 import { registrarPropostaComArquivo, RfqSeguradoraRecord } from '@/services/rfqPropostasService'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { isCoberturaBasica, isCoberturaLucrosCessantes } from '@/services/submissionKitService'
+import { matchCanonicalCategory } from '@/services/riskCardReader'
 
 interface PropostaUploadModalProps {
   open: boolean
@@ -94,6 +98,23 @@ export default function PropostaUploadModal({
   const [exclusoes, setExclusoes] = useState<string>('')
   const [coberturas, setCoberturas] = useState<ExtractedCoberturaItem[]>([])
 
+  // Estado para exclusão com confirmação e edição inline de coberturas
+  const [deletingIndex, setDeletingIndex] = useState<number | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editNome, setEditNome] = useState('')
+  const [editCategoria, setEditCategoria] = useState('')
+  const [editLmi, setEditLmi] = useState<string>('')
+  const [editPremio, setEditPremio] = useState<string>('')
+  const [editFranquia, setEditFranquia] = useState('')
+
+  // Estado para adicionar nova cobertura
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newNome, setNewNome] = useState('')
+  const [newCategoria, setNewCategoria] = useState<string>(CATEGORIAS_48[0])
+  const [newLmi, setNewLmi] = useState<string>('')
+  const [newPremio, setNewPremio] = useState<string>('')
+  const [newFranquia, setNewFranquia] = useState('')
+
   const [saving, setSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -120,6 +141,78 @@ export default function PropostaUploadModal({
     setErrorMessage(null)
     setTargetSeguradoraId(initialSeguradoraId || '')
     setSeguradoraNome(initialSeguradoraNome || '')
+    setDeletingIndex(null)
+    setEditingIndex(null)
+    setShowAddForm(false)
+  }
+
+  // Funções de manipulação do quadro de coberturas
+  const startEditingCoverage = (index: number) => {
+    const item = coberturas[index]
+    if (!item) return
+    setEditingIndex(index)
+    setEditNome(item.cobertura)
+    setEditCategoria(item.categoriaNormalizada || matchCanonicalCategory(item.cobertura))
+    setEditLmi(item.lmi !== null && item.lmi !== undefined ? String(item.lmi) : '')
+    setEditPremio(
+      item.premioLiquido !== null && item.premioLiquido !== undefined
+        ? String(item.premioLiquido)
+        : '',
+    )
+    setEditFranquia(item.franquia || '')
+    setDeletingIndex(null)
+  }
+
+  const cancelEditingCoverage = () => {
+    setEditingIndex(null)
+  }
+
+  const saveEditingCoverage = () => {
+    if (editingIndex === null) return
+    if (!editNome.trim()) {
+      alert('Informe o nome da cobertura.')
+      return
+    }
+    const cat = editCategoria.trim() || matchCanonicalCategory(editNome.trim())
+    const updated = [...coberturas]
+    updated[editingIndex] = {
+      cobertura: editNome.trim(),
+      categoriaNormalizada: cat,
+      lmi: editLmi === '' ? null : Number(editLmi),
+      premioLiquido: editPremio === '' ? null : Number(editPremio),
+      franquia: editFranquia.trim() || 'Conforme apólice',
+    }
+    setCoberturas(updated)
+    setEditingIndex(null)
+  }
+
+  const confirmDeleteCoverage = (index: number) => {
+    setCoberturas((prev) => prev.filter((_, i) => i !== index))
+    setDeletingIndex(null)
+    if (editingIndex === index) {
+      setEditingIndex(null)
+    }
+  }
+
+  const handleAddNewCoverage = () => {
+    if (!newNome.trim()) {
+      alert('Informe o nome da cobertura.')
+      return
+    }
+    const cat = newCategoria.trim() || matchCanonicalCategory(newNome.trim())
+    const newItem: ExtractedCoberturaItem = {
+      cobertura: newNome.trim(),
+      categoriaNormalizada: cat,
+      lmi: newLmi === '' ? null : Number(newLmi),
+      premioLiquido: newPremio === '' ? null : Number(newPremio),
+      franquia: newFranquia.trim() || 'Conforme apólice',
+    }
+    setCoberturas((prev) => [...prev, newItem])
+    setNewNome('')
+    setNewLmi('')
+    setNewPremio('')
+    setNewFranquia('')
+    setShowAddForm(false)
   }
 
   // Preenche formulário da prévia a partir do segmento extraído
@@ -881,28 +974,153 @@ export default function PropostaUploadModal({
               </div>
             )}
 
-            {/* SEÇÃO 5: COBERTURAS EXTRAÍDAS */}
-            {coberturas.length > 0 && (
-              <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-[#16578B]" />
-                    <span>Quadro de Coberturas Extraídas ({coberturas.length} itens)</span>
+            {/* SEÇÃO 5: COBERTURAS EXTRAÍDAS (EDITÁVEL ANTES DE GRAVAR) */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#16578B]" />
+                  <span>Quadro de Coberturas ({coberturas.length} itens)</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 hidden sm:inline">
+                    Edite ou exclua coberturas excedentes antes de confirmar
                   </span>
-                  <span className="text-[10px] text-gray-500">
-                    Alimentará diretamente a Tabulação C3
-                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowAddForm(!showAddForm)
+                      setDeletingIndex(null)
+                      setEditingIndex(null)
+                    }}
+                    className="h-6 text-[10px] px-2 text-[#16578B] border-blue-200 hover:bg-blue-50"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    <span>Adicionar cobertura</span>
+                  </Button>
                 </div>
+              </div>
 
-                <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+              {/* Formulário inline para adicionar nova cobertura */}
+              {showAddForm && (
+                <div className="p-3 bg-white border border-blue-200 rounded-lg space-y-2 shadow-sm animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs text-[#0F2B46] flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5 text-[#16578B]" />
+                      <span>Nova Cobertura Manual</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddForm(false)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div className="sm:col-span-2 space-y-0.5">
+                      <Label className="text-[10px] text-gray-600">Nome da Cobertura</Label>
+                      <Input
+                        type="text"
+                        placeholder="Ex: Danos Elétricos"
+                        value={newNome}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setNewNome(val)
+                          const autoCat = matchCanonicalCategory(val)
+                          if (autoCat && CATEGORIAS_48.includes(autoCat as any)) {
+                            setNewCategoria(autoCat)
+                          }
+                        }}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 space-y-0.5">
+                      <Label className="text-[10px] text-gray-600">Categoria Canônica</Label>
+                      <select
+                        value={newCategoria}
+                        onChange={(e) => setNewCategoria(e.target.value)}
+                        className="w-full h-7 rounded border border-gray-300 bg-white px-2 text-xs"
+                      >
+                        {CATEGORIAS_48.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] text-gray-600">LMI / IS (R$)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0,00"
+                        value={newLmi}
+                        onChange={(e) => setNewLmi(e.target.value)}
+                        className="h-7 text-xs font-mono"
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] text-gray-600">Prêmio (R$)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0,00"
+                        value={newPremio}
+                        onChange={(e) => setNewPremio(e.target.value)}
+                        className="h-7 text-xs font-mono"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 space-y-0.5">
+                      <Label className="text-[10px] text-gray-600">Franquia / P.O.S.</Label>
+                      <Input
+                        type="text"
+                        placeholder="Ex: 10% min R$ 5.000"
+                        value={newFranquia}
+                        onChange={(e) => setNewFranquia(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-1.5 pt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAddForm(false)}
+                      className="h-6 text-[10px] px-2 text-gray-600"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddNewCoverage}
+                      className="h-6 text-[10px] px-2.5 bg-[#0F2B46] text-white hover:bg-[#1B3C5D]"
+                    >
+                      Incluir no Quadro
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {coberturas.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400 bg-white border border-gray-200 rounded-lg">
+                  Nenhuma cobertura incluída. Clique em "Adicionar cobertura" se desejar inserir
+                  manualmente.
+                </div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg bg-white">
                   <table className="w-full text-left text-[11px]">
-                    <thead className="bg-gray-50 border-b text-gray-600 font-semibold sticky top-0">
+                    <thead className="bg-gray-50 border-b text-gray-600 font-semibold sticky top-0 z-10">
                       <tr>
                         <th className="py-1.5 px-3">Cobertura</th>
                         <th className="py-1.5 px-2">Classificação</th>
                         <th className="py-1.5 px-2 text-right">LMI</th>
                         <th className="py-1.5 px-2 text-right">Prêmio</th>
                         <th className="py-1.5 px-3">Franquia / P.O.S.</th>
+                        <th className="py-1.5 px-2 text-right w-20">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -923,16 +1141,114 @@ export default function PropostaUploadModal({
                               nome: c.cobertura,
                               categoriaNormalizada: c.categoriaNormalizada,
                             })
+                          const isEditing = editingIndex === i
+                          const isDeleting = deletingIndex === i
+
+                          if (isEditing) {
+                            return (
+                              <tr key={i} className="bg-blue-50/60">
+                                <td colSpan={6} className="p-2.5 space-y-2">
+                                  <div className="flex items-center justify-between pb-1 border-b border-blue-200 text-xs font-semibold text-[#0F2B46]">
+                                    <span>Editar Linha de Cobertura #{i + 1}</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={saveEditingCoverage}
+                                        className="h-6 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1"
+                                      >
+                                        <Check className="w-3 h-3" />
+                                        <span>Salvar Linha</span>
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={cancelEditingCoverage}
+                                        className="h-6 text-[10px] px-2 text-gray-600"
+                                      >
+                                        Cancelar
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                                    <div className="sm:col-span-2 space-y-0.5">
+                                      <Label className="text-[10px] text-gray-600">Nome</Label>
+                                      <Input
+                                        type="text"
+                                        value={editNome}
+                                        onChange={(e) => setEditNome(e.target.value)}
+                                        className="h-7 text-xs bg-white"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2 space-y-0.5">
+                                      <Label className="text-[10px] text-gray-600">
+                                        Categoria Canônica
+                                      </Label>
+                                      <select
+                                        value={editCategoria}
+                                        onChange={(e) => setEditCategoria(e.target.value)}
+                                        className="w-full h-7 rounded border border-gray-300 bg-white px-2 text-xs"
+                                      >
+                                        {CATEGORIAS_48.map((cat) => (
+                                          <option key={cat} value={cat}>
+                                            {cat}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <Label className="text-[10px] text-gray-600">
+                                        LMI / IS (R$)
+                                      </Label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={editLmi}
+                                        onChange={(e) => setEditLmi(e.target.value)}
+                                        className="h-7 text-xs font-mono bg-white"
+                                      />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <Label className="text-[10px] text-gray-600">
+                                        Prêmio (R$)
+                                      </Label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={editPremio}
+                                        onChange={(e) => setEditPremio(e.target.value)}
+                                        className="h-7 text-xs font-mono bg-white"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2 space-y-0.5">
+                                      <Label className="text-[10px] text-gray-600">
+                                        Franquia / P.O.S.
+                                      </Label>
+                                      <Input
+                                        type="text"
+                                        value={editFranquia}
+                                        onChange={(e) => setEditFranquia(e.target.value)}
+                                        className="h-7 text-xs bg-white"
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          }
 
                           return (
                             <tr
                               key={i}
                               className={`hover:bg-gray-50/70 transition-colors ${
-                                isBasica
-                                  ? 'bg-blue-50/40 font-semibold'
-                                  : isLc
-                                    ? 'bg-amber-50/30'
-                                    : ''
+                                isDeleting
+                                  ? 'bg-rose-50/60'
+                                  : isBasica
+                                    ? 'bg-blue-50/40 font-semibold'
+                                    : isLc
+                                      ? 'bg-amber-50/30'
+                                      : ''
                               }`}
                             >
                               <td className="py-1.5 px-3 font-medium text-gray-900">
@@ -954,16 +1270,67 @@ export default function PropostaUploadModal({
                                 {c.categoriaNormalizada}
                               </td>
                               <td className="py-1.5 px-2 text-right text-gray-800 font-mono">
-                                {c.lmi ? formatCurrency(c.lmi) : '—'}
+                                {c.lmi !== null && c.lmi !== undefined
+                                  ? formatCurrency(c.lmi)
+                                  : '—'}
                               </td>
                               <td className="py-1.5 px-2 text-right text-emerald-800 font-mono">
-                                {c.premioLiquido ? formatCurrency(c.premioLiquido) : '—'}
+                                {c.premioLiquido !== null && c.premioLiquido !== undefined
+                                  ? formatCurrency(c.premioLiquido)
+                                  : '—'}
                               </td>
                               <td
-                                className="py-1.5 px-3 text-gray-600 text-[10px] truncate max-w-[180px]"
+                                className="py-1.5 px-3 text-gray-600 text-[10px] truncate max-w-[150px]"
                                 title={c.franquia}
                               >
                                 {c.franquia || 'Conforme apólice'}
+                              </td>
+                              <td className="py-1.5 px-2 text-right whitespace-nowrap">
+                                {isDeleting ? (
+                                  <div className="inline-flex items-center gap-1 bg-white border border-rose-300 rounded px-1.5 py-0.5 shadow-sm">
+                                    <span className="text-[10px] text-rose-700 font-semibold">
+                                      Excluir?
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmDeleteCoverage(i)}
+                                      className="text-rose-700 hover:text-rose-900 font-bold px-1 text-[10px] underline"
+                                      title="Confirmar exclusão desta cobertura"
+                                    >
+                                      Sim
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingIndex(null)}
+                                      className="text-gray-500 hover:text-gray-700 px-1 text-[10px]"
+                                      title="Cancelar exclusão"
+                                    >
+                                      Não
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditingCoverage(i)}
+                                      className="p-1 text-gray-500 hover:text-[#16578B] hover:bg-blue-50 rounded transition-colors"
+                                      title="Editar nome, LMI, prêmio e franquia desta linha"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDeletingIndex(i)
+                                        setEditingIndex(null)
+                                      }}
+                                      className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                      title="Excluir esta cobertura extra do quadro"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           )
@@ -972,8 +1339,8 @@ export default function PropostaUploadModal({
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* BOTÕES DE CONFIRMAÇÃO */}
             <div className="pt-2 flex items-center justify-between border-t border-gray-100">
