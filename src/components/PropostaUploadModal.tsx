@@ -17,6 +17,7 @@ import {
   Trash2,
   Plus,
   Check,
+  Download,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -118,6 +119,55 @@ export default function PropostaUploadModal({
   const [saving, setSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Função utilitária para baixar o diagnóstico de extração em JSON
+  const handleDownloadDiagnostico = (segment?: PropostaSegmentoExtracao | null) => {
+    const target = segment || selectedSegment || extractionResult?.documentos[0]
+    if (!target) return
+
+    const diagPayload = {
+      arquivoOrigem: selectedFile?.name || 'proposta.pdf',
+      dataProcessamento: new Date().toISOString(),
+      documento: {
+        id: target.id,
+        titulo: target.titulo,
+        seguradora: target.seguradora,
+        numeroCotacao: target.numeroCotacao,
+        versao: target.versao,
+        vigenciaInicio: target.vigenciaInicio,
+        vigenciaFim: target.vigenciaFim,
+        premioLiquido: target.premioLiquido,
+        premioTotal: target.premioTotal,
+        iof: target.iof,
+        custoApolice: target.custoApolice,
+        lmiTotal: target.lmiTotal,
+        coberturas: target.coberturas,
+        dadosComplementares: target.dadosComplementares,
+      },
+      diagnostico: target.diagnostico || {
+        nota: 'Diagnóstico detalhado não gerado para este segmento',
+      },
+    }
+
+    const safeInsurerSlug = (target.seguradora.nomeCanonica || 'porto')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `diagnostico-extracao-${safeInsurerSlug}-${timestamp}.json`
+
+    const blob = new Blob([JSON.stringify(diagPayload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   // Ao abrir o modal, reseta ou inicializa com a seguradora da linha
   const handleOpenChange = (newOpen: boolean) => {
@@ -564,7 +614,18 @@ export default function PropostaUploadModal({
             </div>
 
             <div className="pt-2 flex justify-between items-center text-xs text-gray-400">
-              <span>Você poderá registrar os outros segmentos depois repetindo o processo.</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => handleDownloadDiagnostico(extractionResult.documentos[0])}
+                className="text-xs h-7 text-gray-500 hover:text-[#16578B] flex items-center gap-1.5 px-2"
+                title="Baixar dados brutos e geometria de extração do documento em JSON"
+              >
+                <Download className="w-3.5 h-3.5 text-gray-400" />
+                <span>Baixar diagnóstico de extração (JSON)</span>
+              </Button>
+
               <Button
                 type="button"
                 variant="ghost"
@@ -1344,21 +1405,35 @@ export default function PropostaUploadModal({
 
             {/* BOTÕES DE CONFIRMAÇÃO */}
             <div className="pt-2 flex items-center justify-between border-t border-gray-100">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setStep(
-                    extractionResult && extractionResult.documentos.length > 1
-                      ? 'select_segment'
-                      : 'upload',
-                  )
-                }
-                className="text-xs h-8 text-gray-600"
-              >
-                Voltar
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setStep(
+                      extractionResult && extractionResult.documentos.length > 1
+                        ? 'select_segment'
+                        : 'upload',
+                    )
+                  }
+                  className="text-xs h-8 text-gray-600"
+                >
+                  Voltar
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownloadDiagnostico(selectedSegment)}
+                  className="text-xs h-8 text-gray-500 hover:text-[#16578B] flex items-center gap-1.5 px-2"
+                  title="Baixar dados brutos, limites calibrados, linhas montadas e resultado final da extração em JSON"
+                >
+                  <Download className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Baixar diagnóstico de extração</span>
+                </Button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <Button

@@ -27,6 +27,75 @@ export interface SeguradoraDetectada {
   confianca: 'alta' | 'media' | 'baixa'
 }
 
+export interface DiagnosticoFragmento {
+  str: string
+  x: number
+  y: number
+  pagina: number
+  width?: number
+  height?: number
+  fontName?: string
+  isBold?: boolean
+}
+
+export interface DiagnosticoLimitesCalibrados {
+  pagina: number
+  antes: {
+    col2Left: number
+    col3Left: number
+    col4Left: number
+  }
+  depois: {
+    col2Left: number
+    col3Left: number
+    col4Left: number
+    lmiXs?: number[]
+    premioXs?: number[]
+    posXs?: number[]
+    tableTopY: number | null
+    tableBottomY: number | null
+  }
+}
+
+export interface DiagnosticoLinhaMontada {
+  pagina: number
+  y: number
+  col1: Array<{ str: string; x: number }>
+  col2: Array<{ str: string; x: number }>
+  col3: Array<{ str: string; x: number }>
+  col4: Array<{ str: string; x: number }>
+}
+
+export interface DiagnosticoExtracao {
+  seguradoraDetectada: string
+  totalPaginasDocumento: number
+  paginasAnalisadas: number[]
+  fragmentosBrutos: DiagnosticoFragmento[]
+  limitesCalibrados?: DiagnosticoLimitesCalibrados[]
+  linhasMontadas?: DiagnosticoLinhaMontada[]
+  resultadoFinal: {
+    numeroCotacao: string
+    vigenciaInicio: string
+    vigenciaFim: string
+    dataCotacao?: string
+    premioLiquido: number | null
+    premioTotal: number | null
+    iof: number | null
+    custoApolice?: number | null
+    lmiTotal: number | null
+    formaPagamento?: string
+    proponente?: {
+      nome?: string
+      cnpj?: string
+      atividade?: string
+      tipoConstrucao?: string
+      valorEmRiscoDeclarado?: number | null
+    }
+    coberturas: ExtractedCoberturaItem[]
+  }
+  timestamp: string
+}
+
 export interface PropostaSegmentoExtracao {
   id: string
   titulo: string
@@ -50,6 +119,7 @@ export interface PropostaSegmentoExtracao {
   coberturas: ExtractedCoberturaItem[]
   rawTextPreview: string
   statusExtracao: 'completa' | 'parcial' | 'minima'
+  diagnostico?: DiagnosticoExtracao
   dadosComplementares?: {
     seguradoNome?: string
     seguradoCnpj?: string
@@ -1705,9 +1775,18 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
 // PARSER PORTO SEGURO (PORTO PRINT WEB)
 // ==========================================
 
-export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtracao> {
+export function extractPortoDetails(
+  pages: PdfPageText[],
+  options?: { collectDiagnostics?: boolean },
+): Partial<PropostaSegmentoExtracao> {
   const fullText = pages.map((p) => p.text).join('\n')
   const lines = pages.flatMap((p) => p.lines)
+
+  // Buffers de diagnóstico instrumentados
+  const diagPaginasAnalisadas: number[] = []
+  const diagFragmentos: DiagnosticoFragmento[] = []
+  const diagLimites: DiagnosticoLimitesCalibrados[] = []
+  const diagLinhasMontadas: DiagnosticoLinhaMontada[] = []
 
   // 1. Número do Orçamento / Cotação da Porto:
   // Ex: "NÚMERO DO ORÇAMENTO" seguido na mesma linha ou na linha seguinte de "118013040"
@@ -2156,6 +2235,24 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       const effectiveBottomY = tableBottomY !== null ? tableBottomY + 5 : 40
       const effectiveTopY = tableTopY - 5 // abaixo dos rótulos de coluna
 
+      diagPaginasAnalisadas.push(page.pageNumber)
+
+      // Coleta fragmentos de diagnóstico da página da tabela de coberturas
+      if (items && items.length > 0) {
+        for (const it of items) {
+          diagFragmentos.push({
+            str: it.str,
+            x: it.x,
+            y: it.y,
+            pagina: page.pageNumber,
+            width: it.width,
+            height: it.height,
+            fontName: it.fontName,
+            isBold: it.isBold,
+          })
+        }
+      }
+
       // Filtra fragmentos dentro da tabela de coberturas
       const tableItems = items.filter((it) => {
         if (it.y > effectiveTopY || it.y < effectiveBottomY) return false
@@ -2177,6 +2274,12 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
       let col2Left = 240
       let col3Left = 315
       let col4Left = 370
+
+      const antesLimites = {
+        col2Left,
+        col3Left,
+        col4Left,
+      }
 
       // 1) Refina com base em cabeçalhos (fragmentos isolados ou mesclados)
       for (const it of items) {
@@ -2231,6 +2334,21 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
         const minPosX = Math.min(...posXs)
         col4Left = Math.max(col3Left + 35, Math.min(col4Left, minPosX - 4))
       }
+
+      diagLimites.push({
+        pagina: page.pageNumber,
+        antes: antesLimites,
+        depois: {
+          col2Left,
+          col3Left,
+          col4Left,
+          lmiXs,
+          premioXs,
+          posXs,
+          tableTopY,
+          tableBottomY,
+        },
+      })
 
       // Agrupa fragmentos por linha de texto visual (delta Y <= 3.5pt)
       // Preserva ordem dos fragmentos por coordenada X
@@ -2308,6 +2426,18 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
 
       // Ordena linhas de cima para baixo (Y decrescente no PDF)
       const sortedRows = Array.from(rowMap.values()).sort((a, b) => b.y - a.y)
+
+      // Registra linhas montadas para o diagnóstico
+      for (const r of sortedRows) {
+        diagLinhasMontadas.push({
+          pagina: page.pageNumber,
+          y: r.y,
+          col1: r.col1.map((frag) => ({ str: frag.str, x: frag.x })),
+          col2: r.col2.map((frag) => ({ str: frag.str, x: frag.x })),
+          col3: r.col3.map((frag) => ({ str: frag.str, x: frag.x })),
+          col4: r.col4.map((frag) => ({ str: frag.str, x: frag.x })),
+        })
+      }
 
       // Monta as linhas de cobertura.
       // ESTRUTURA VISUAL DA TABELA PORTO SEGURO (CONFORME ORÇAMENTO IMPRESSO):
@@ -2713,6 +2843,51 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
     })
   }
 
+  const diagnosticoPorto: DiagnosticoExtracao = {
+    seguradoraDetectada: 'Porto Seguro Cia. de Seguros Gerais',
+    totalPaginasDocumento: pages.length,
+    paginasAnalisadas:
+      diagPaginasAnalisadas.length > 0 ? diagPaginasAnalisadas : pages.map((p) => p.pageNumber),
+    fragmentosBrutos:
+      diagFragmentos.length > 0
+        ? diagFragmentos
+        : pages.flatMap((p) =>
+            (p.items || []).map((it) => ({
+              str: it.str,
+              x: it.x,
+              y: it.y,
+              pagina: p.pageNumber,
+              width: it.width,
+              height: it.height,
+              fontName: it.fontName,
+              isBold: it.isBold,
+            })),
+          ),
+    limitesCalibrados: diagLimites,
+    linhasMontadas: diagLinhasMontadas,
+    resultadoFinal: {
+      numeroCotacao: cotacao,
+      vigenciaInicio,
+      vigenciaFim,
+      dataCotacao,
+      premioLiquido,
+      premioTotal,
+      iof,
+      custoApolice,
+      lmiTotal: valorEmRiscoDeclarado || (coberturas[0]?.lmi ?? null),
+      formaPagamento: formaPagamento || 'Boleto Bancário',
+      proponente: {
+        nome: seguradoNome || undefined,
+        cnpj: seguradoCnpj || undefined,
+        atividade: atividade || undefined,
+        tipoConstrucao: respostasQuestionario['tipo_construcao'] || 'Alvenaria',
+        valorEmRiscoDeclarado,
+      },
+      coberturas,
+    },
+    timestamp: new Date().toISOString(),
+  }
+
   return {
     numeroCotacao: cotacao,
     versao: '1',
@@ -2728,6 +2903,7 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
     numeroParcelas,
     coberturas,
     posFranquiasGerais: 'Conforme P.O.S. detalhada por cobertura',
+    diagnostico: diagnosticoPorto,
     dadosComplementares: {
       seguradoNome,
       seguradoCnpj,
@@ -2739,7 +2915,6 @@ export function extractPortoDetails(pages: PdfPageText[]): Partial<PropostaSegme
     },
   }
 }
-
 // Fallback genérico para qualquer outra seguradora
 function extractGenericDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtracao> {
   const fullText = pages.map((p) => p.text).join('\n')
@@ -2825,9 +3000,53 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
       } else if (canonica === 'allianz') {
         extracted = extractAllianzDetails(segmentPages)
       } else if (canonica === 'porto') {
-        extracted = extractPortoDetails(segmentPages)
+        extracted = extractPortoDetails(segmentPages, { collectDiagnostics: true })
       } else {
         extracted = extractGenericDetails(segmentPages)
+      }
+
+      // Se não for Porto Seguro ou se extracted não tiver diagnóstico criado, gera o diagnóstico
+      // com os fragmentos brutos e resultado final disponível
+      let diagnosticoSeg: DiagnosticoExtracao | undefined = extracted.diagnostico
+      if (!diagnosticoSeg) {
+        diagnosticoSeg = {
+          seguradoraDetectada: seguradora.nomeCanonica,
+          totalPaginasDocumento: segmentPages.length,
+          paginasAnalisadas: segmentPages.map((p) => p.pageNumber),
+          fragmentosBrutos: segmentPages.flatMap((p) =>
+            (p.items || []).map((it) => ({
+              str: it.str,
+              x: it.x,
+              y: it.y,
+              pagina: p.pageNumber,
+              width: it.width,
+              height: it.height,
+              fontName: it.fontName,
+              isBold: it.isBold,
+            })),
+          ),
+          resultadoFinal: {
+            numeroCotacao: extracted.numeroCotacao || '',
+            vigenciaInicio: extracted.vigenciaInicio || '',
+            vigenciaFim: extracted.vigenciaFim || '',
+            dataCotacao: extracted.dataCotacao || '',
+            premioLiquido: extracted.premioLiquido ?? null,
+            premioTotal: extracted.premioTotal ?? null,
+            iof: extracted.iof ?? null,
+            custoApolice: extracted.custoApolice ?? null,
+            lmiTotal: extracted.lmiTotal ?? null,
+            formaPagamento: extracted.formaPagamento || '',
+            proponente: {
+              nome: extracted.dadosComplementares?.seguradoNome,
+              cnpj: extracted.dadosComplementares?.seguradoCnpj,
+              atividade: extracted.dadosComplementares?.atividade,
+              tipoConstrucao: extracted.dadosComplementares?.tipoConstrucao,
+              valorEmRiscoDeclarado: extracted.dadosComplementares?.valorEmRiscoDeclarado,
+            },
+            coberturas: extracted.coberturas || [],
+          },
+          timestamp: new Date().toISOString(),
+        }
       }
 
       // Constrói resumo legível do documento
@@ -2873,6 +3092,7 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
         coberturas: extracted.coberturas || [],
         rawTextPreview: previewLines,
         statusExtracao,
+        diagnostico: diagnosticoSeg,
         dadosComplementares: extracted.dadosComplementares,
       })
     }
