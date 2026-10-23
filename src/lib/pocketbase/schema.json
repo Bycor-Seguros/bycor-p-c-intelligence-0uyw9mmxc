@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-22T23:29:48.164Z",
+  "generatedAt": "2026-10-23T00:01:34.817Z",
   "collections": [
     {
       "name": "users",
@@ -1233,7 +1233,7 @@
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
-        "delete": "@request.auth.role = 'admin'"
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {
@@ -1312,7 +1312,7 @@
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
-        "delete": "@request.auth.role = 'admin'"
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {
@@ -1543,7 +1543,7 @@
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
-        "delete": "@request.auth.role = 'admin'"
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {
@@ -1978,7 +1978,7 @@
         "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
-        "delete": "@request.auth.role = 'admin'"
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {

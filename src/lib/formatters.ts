@@ -54,6 +54,48 @@ export function getDaysRemaining(dateFimStr: string | null | undefined): number 
   }
 }
 
+export type RfqStatusType = 'Aberto' | 'Enviado' | 'Respondido' | 'Fechado'
+
+export function getRfqStatusBadgeInfo(status: string | null | undefined): {
+  label: RfqStatusType
+  bg: string
+  color: string
+  dot: string
+} {
+  const norm = (status || '').toLowerCase().trim()
+  switch (norm) {
+    case 'enviado':
+      return {
+        label: 'Enviado',
+        bg: 'bg-blue-50 text-blue-700 border-blue-200',
+        color: '#1D4ED8',
+        dot: 'bg-blue-500',
+      }
+    case 'respondido':
+      return {
+        label: 'Respondido',
+        bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        color: '#059669',
+        dot: 'bg-emerald-500',
+      }
+    case 'fechado':
+      return {
+        label: 'Fechado',
+        bg: 'bg-slate-100 text-slate-700 border-slate-300',
+        color: '#334155',
+        dot: 'bg-slate-500',
+      }
+    case 'aberto':
+    default:
+      return {
+        label: 'Aberto',
+        bg: 'bg-gray-100 text-gray-700 border-gray-300',
+        color: '#4B5563',
+        dot: 'bg-gray-400',
+      }
+  }
+}
+
 export function getStatusBadgeInfo(status: string | null | undefined) {
   const norm = (status || '').toLowerCase().trim()
   switch (norm) {

@@ -31,7 +31,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { formatDate, getDaysRemaining } from '@/lib/formatters'
+import { formatDate, getDaysRemaining, getRfqStatusBadgeInfo } from '@/lib/formatters'
+import {
+  RfqRecord,
+  marcarRfqComoEnviado,
+  encerrarRfq,
+  deletarRfqCompleto,
+} from '@/services/rfqService'
 import {
   SubmissionKitData,
   loadSubmissionKitData,
@@ -51,25 +57,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SubmissionKitModal } from '@/components/SubmissionKitModal'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
-
-interface RfqRecord {
-  id: string
-  conta_empreendimento: string
-  seguradoras_solicitadas: string[]
-  data_envio: string
-  prazo_limite: string
-  status: 'Aberto' | 'Enviado' | 'Respondido' | 'Fechado'
-  observacoes: string
-  kit_gerado?: boolean
-  kit_gerado_em?: string
-  created: string
-  expand?: {
-    conta_empreendimento?: {
-      nome_empreendimento: string
-      razao_social: string
-    }
-  }
-}
 
 interface EmpreendimentoOption {
   id: string
@@ -104,6 +91,10 @@ export default function RfqPage() {
   // Detail Modal
   const [selectedRfq, setSelectedRfq] = useState<RfqRecord | null>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [deleteRfqConfirmOpen, setDeleteRfqConfirmOpen] = useState(false)
+  const [deletingRfq, setDeletingRfq] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [encerrarConfirmOpen, setEncerrarConfirmOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingKit, setDeletingKit] = useState(false)
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
@@ -261,6 +252,14 @@ export default function RfqPage() {
           ? { ...prev, kit_gerado: true, kit_gerado_em: new Date().toISOString() }
           : prev,
       )
+
+      // Sugestão prática: se o RFQ estiver Aberto, lembra o usuário da transição para Enviado
+      if (rfq.status === 'Aberto') {
+        setFeedbackMessage(
+          `Kit de Submissão carregado com sucesso. Ao disparar aos portais das seguradoras, use "Marcar como Enviado" no Gerenciar.`,
+        )
+        setTimeout(() => setFeedbackMessage(null), 6000)
+      }
     } catch (err) {
       console.error('Erro ao abrir Kit de Submissão:', err)
       alert('Falha ao compilar dados do Kit de Submissão: ' + (err as Error).message)
@@ -295,6 +294,89 @@ export default function RfqPage() {
       alert('Falha ao excluir o Kit de Submissão: ' + (err as Error).message)
     } finally {
       setDeletingKit(false)
+    }
+  }
+
+  // Marcar RFQ como Enviado
+  const handleMarcarEnviado = async () => {
+    if (!selectedRfq) return
+    try {
+      setUpdatingStatus(true)
+      const now = new Date().toISOString().slice(0, 10)
+      const updated = await marcarRfqComoEnviado(selectedRfq.id, now)
+
+      setSelectedRfq((prev) =>
+        prev ? { ...prev, ...updated, status: 'Enviado', data_envio: now } : prev,
+      )
+      setRfqs((prev) =>
+        prev.map((r) =>
+          r.id === selectedRfq.id ? { ...r, ...updated, status: 'Enviado', data_envio: now } : r,
+        ),
+      )
+
+      setFeedbackMessage(
+        `RFQ #${selectedRfq.id.slice(0, 6).toUpperCase()} marcado como "Enviado" com sucesso.`,
+      )
+      setTimeout(() => setFeedbackMessage(null), 4500)
+    } catch (err) {
+      console.error('Erro ao marcar RFQ como enviado:', err)
+      alert('Erro ao marcar como Enviado: ' + (err as Error).message)
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
+
+  // Encerrar RFQ (status Fechado)
+  const handleEncerrarRfq = async () => {
+    if (!selectedRfq) return
+    try {
+      setUpdatingStatus(true)
+      const updated = await encerrarRfq(selectedRfq.id)
+
+      setSelectedRfq((prev) => (prev ? { ...prev, ...updated, status: 'Fechado' } : prev))
+      setRfqs((prev) =>
+        prev.map((r) => (r.id === selectedRfq.id ? { ...r, ...updated, status: 'Fechado' } : r)),
+      )
+      setEncerrarConfirmOpen(false)
+
+      setFeedbackMessage(
+        `RFQ #${selectedRfq.id.slice(0, 6).toUpperCase()} encerrado e marcado como "Fechado". Histórico preservado para rastreabilidade.`,
+      )
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } catch (err) {
+      console.error('Erro ao encerrar RFQ:', err)
+      alert('Erro ao encerrar RFQ: ' + (err as Error).message)
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
+
+  // Deletar RFQ Completo
+  const handleDeleteRfqCompleto = async () => {
+    if (!selectedRfq) return
+    const rfqCodigo = `RFQ-${selectedRfq.id.slice(0, 6).toUpperCase()}`
+    const empNome =
+      selectedRfq.expand?.conta_empreendimento?.nome_empreendimento || 'Empreendimento'
+
+    try {
+      setDeletingRfq(true)
+      await deletarRfqCompleto(selectedRfq.id)
+
+      // Atualiza lista removendo o RFQ
+      setRfqs((prev) => prev.filter((r) => r.id !== selectedRfq.id))
+      setDeleteRfqConfirmOpen(false)
+      setDetailModalOpen(false)
+      setSelectedRfq(null)
+
+      setFeedbackMessage(
+        `O processo ${rfqCodigo} (${empNome}) e todos os registros vinculados foram excluídos com sucesso.`,
+      )
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } catch (err) {
+      console.error('Erro ao excluir RFQ:', err)
+      alert('Falha ao excluir o RFQ: ' + (err as Error).message)
+    } finally {
+      setDeletingRfq(false)
     }
   }
 
@@ -423,17 +505,17 @@ export default function RfqPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                            rfq.status === 'Respondido'
-                              ? 'bg-teal-50 text-teal-700 border border-teal-200'
-                              : rfq.status === 'Enviado'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}
-                        >
-                          {rfq.status}
-                        </span>
+                        {(() => {
+                          const statusInfo = getRfqStatusBadgeInfo(rfq.status)
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${statusInfo.bg}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
+                              <span>{statusInfo.label}</span>
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div
@@ -594,11 +676,24 @@ export default function RfqPage() {
             <DialogHeader>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-6">
                 <div>
-                  <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
-                    <Send className="w-5 h-5 text-[#16578B]" />
-                    <span>Gerenciar RFQ #{selectedRfq.id.slice(0, 6).toUpperCase()}</span>
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-gray-500 mt-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                      <Send className="w-5 h-5 text-[#16578B]" />
+                      <span>Gerenciar RFQ #{selectedRfq.id.slice(0, 6).toUpperCase()}</span>
+                    </DialogTitle>
+                    {(() => {
+                      const statusInfo = getRfqStatusBadgeInfo(selectedRfq.status)
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border shadow-xs ${statusInfo.bg}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
+                          <span>{statusInfo.label}</span>
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <DialogDescription className="text-xs text-gray-500 mt-1">
                     {selectedRfq.expand?.conta_empreendimento?.nome_empreendimento ||
                       'Empreendimento'}{' '}
                     · Enviado em {formatDate(selectedRfq.data_envio)} · Prazo SLA:{' '}
@@ -608,7 +703,40 @@ export default function RfqPage() {
                   </DialogDescription>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Botão de Marcar como Enviado (quando status for Aberto) */}
+                  {selectedRfq.status === 'Aberto' && (
+                    <Button
+                      size="sm"
+                      onClick={handleMarcarEnviado}
+                      disabled={updatingStatus}
+                      className="text-xs h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5 shadow-sm"
+                      title="Registrar envio formal do edital de cotação para as seguradoras parceiras"
+                    >
+                      {updatingStatus ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 text-blue-100" />
+                      )}
+                      <span>Marcar como Enviado</span>
+                    </Button>
+                  )}
+
+                  {/* Botão de Encerrar RFQ (quando ainda não estiver Fechado) */}
+                  {selectedRfq.status !== 'Fechado' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEncerrarConfirmOpen(true)}
+                      disabled={updatingStatus}
+                      className="text-xs h-8 px-3 border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold flex items-center gap-1"
+                      title="Encerrar este RFQ (processo encerrado sem contratação ou descontinuado, mantendo rastreabilidade)"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Encerrar RFQ</span>
+                    </Button>
+                  )}
+
                   <Button
                     size="sm"
                     variant="outline"
@@ -716,7 +844,20 @@ export default function RfqPage() {
                 onEditarRfq={() => handleOpenEditRfq(selectedRfq)}
               />
 
-              <div className="pt-3 border-t flex justify-end">
+              {/* Zona Destrutiva / Rodapé de Ações do RFQ */}
+              <div className="pt-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteRfqConfirmOpen(true)}
+                  disabled={deletingRfq}
+                  className="text-xs h-8 px-3 bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center gap-1.5 shadow-sm"
+                  title="Excluir este RFQ e todos os seus registros vinculados"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Deletar RFQ</span>
+                </Button>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -799,6 +940,123 @@ export default function RfqPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* MODAL DE CONFIRMAÇÃO: ENCERRAR RFQ */}
+      <AlertDialog open={encerrarConfirmOpen} onOpenChange={setEncerrarConfirmOpen}>
+        <AlertDialogContent className="max-w-md animate-scale-in">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-slate-600 shrink-0" />
+              <span>Encerrar Processo de RFQ</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 space-y-2 pt-1">
+              <p>
+                Deseja marcar como <strong className="text-gray-900">Fechado</strong> o processo{' '}
+                <strong className="text-gray-900 font-mono">
+                  RFQ-{selectedRfq?.id.slice(0, 6).toUpperCase()}
+                </strong>{' '}
+                (
+                {selectedRfq?.expand?.conta_empreendimento?.nome_empreendimento || 'Empreendimento'}
+                )?
+              </p>
+              <div className="bg-slate-50 border border-slate-200 rounded p-2.5 text-[11px] text-slate-700">
+                <strong>Rastreabilidade preservada:</strong> O status passará para "Fechado" para
+                sinalizar que o edital foi concluído ou não terá continuidade. Todas as propostas,
+                documentos e registros do painel continuarão salvos para consulta histórica.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 pt-2">
+            <AlertDialogCancel disabled={updatingStatus} className="text-xs h-9 px-3">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleEncerrarRfq()
+              }}
+              disabled={updatingStatus}
+              className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs h-9 px-4 flex items-center gap-1.5"
+            >
+              {updatingStatus ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Encerrando...</span>
+                </>
+              ) : (
+                <span>Confirmar Encerramento</span>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* MODAL DE CONFIRMAÇÃO: DELETAR RFQ COMPLETO */}
+      <AlertDialog open={deleteRfqConfirmOpen} onOpenChange={setDeleteRfqConfirmOpen}>
+        <AlertDialogContent className="max-w-md animate-scale-in">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+              <span>Confirmar Exclusão Definitiva do RFQ</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 space-y-2.5 pt-1">
+              <p>
+                Atenção: Você está prestes a excluir permanentemente o pedido de cotação{' '}
+                <strong className="text-gray-900 font-mono">
+                  RFQ-{selectedRfq?.id.slice(0, 6).toUpperCase()}
+                </strong>{' '}
+                do empreendimento{' '}
+                <strong className="text-gray-900">
+                  {selectedRfq?.expand?.conta_empreendimento?.nome_empreendimento ||
+                    'Empreendimento'}
+                </strong>
+                .
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded p-2.5 text-[11px] text-red-800 space-y-1">
+                <div className="font-bold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>O que será removido em cascata:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-[10.5px]">
+                  <li>O registro deste RFQ;</li>
+                  <li>Todos os registros de acompanhamento das seguradoras (status e SLA);</li>
+                  <li>Todas as propostas registradas para este RFQ e arquivos de cotação;</li>
+                  <li>Registros do Kit de Submissão e documentos associados ao RFQ.</li>
+                </ul>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-[11px] text-emerald-800">
+                <strong>O que NÃO é afetado:</strong> O cadastro do empreendimento, o cliente, as
+                seguradoras parceiras e suas apólices vigentes permanecem 100% intactos na carteira.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 pt-2">
+            <AlertDialogCancel disabled={deletingRfq} className="text-xs h-9 px-3">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteRfqCompleto()
+              }}
+              disabled={deletingRfq}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs h-9 px-4 flex items-center gap-1.5"
+            >
+              {deletingRfq ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Excluindo tudo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Sim, Deletar RFQ e Vinculados</span>
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* MODAL DE CONFIRMAÇÃO DE DELEÇÃO DO KIT */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
