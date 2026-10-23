@@ -47,7 +47,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { formatDate } from '@/lib/formatters'
+import { formatDate, formatCurrency } from '@/lib/formatters'
 
 interface DocumentRecord {
   id: string
