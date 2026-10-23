@@ -714,7 +714,9 @@ export default function RecebimentoPage() {
                     <span className="text-gray-500">VRD Declarado Total:</span>{' '}
                     <strong className="text-gray-900">
                       {parsedRiskCard.vrd.totalAtualizado || parsedRiskCard.vrd.totalAtual
-                        ? `R$ ${(parsedRiskCard.vrd.totalAtualizado || parsedRiskCard.vrd.totalAtual)?.toLocaleString('pt-BR')}`
+                        ? formatCurrency(
+                            parsedRiskCard.vrd.totalAtualizado || parsedRiskCard.vrd.totalAtual,
+                          )
                         : '—'}
                     </strong>
                     {parsedRiskCard.vrd.percentualIncc && (
@@ -772,11 +774,11 @@ export default function RecebimentoPage() {
                         </div>
                         <div className="shrink-0 flex items-center gap-2 font-mono text-[10px]">
                           <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                            Apólice: R$ {Number(div.valorApoliceVigente).toLocaleString('pt-BR')}
+                            Apólice: {formatCurrency(div.valorApoliceVigente)}
                           </span>
                           <span className="text-gray-400">vs</span>
                           <span className="px-1.5 py-0.5 rounded bg-blue-100 text-[#16578B] font-bold">
-                            Cartão: R$ {Number(div.valorCartaoRisco).toLocaleString('pt-BR')}
+                            Cartão: {formatCurrency(div.valorCartaoRisco)}
                           </span>
                         </div>
                       </div>
@@ -818,7 +820,7 @@ export default function RecebimentoPage() {
                             </span>
                             {s.valorIndenizado && (
                               <span className="font-semibold text-red-700">
-                                R$ {s.valorIndenizado.toLocaleString('pt-BR')}
+                                {formatCurrency(s.valorIndenizado)}
                               </span>
                             )}
                           </div>
@@ -849,16 +851,14 @@ export default function RecebimentoPage() {
                               <div className="font-mono text-[11px] text-right shrink-0">
                                 {c.isEscolhida ? (
                                   <span className="text-[#16578B] font-bold">
-                                    R$ {c.isEscolhida.toLocaleString('pt-BR')}
+                                    {formatCurrency(c.isEscolhida)}
                                   </span>
                                 ) : c.isAtualizada ? (
                                   <span className="text-gray-900 font-semibold">
-                                    R$ {c.isAtualizada.toLocaleString('pt-BR')}
+                                    {formatCurrency(c.isAtualizada)}
                                   </span>
                                 ) : c.isAtual ? (
-                                  <span className="text-gray-600">
-                                    R$ {c.isAtual.toLocaleString('pt-BR')}
-                                  </span>
+                                  <span className="text-gray-600">{formatCurrency(c.isAtual)}</span>
                                 ) : (
                                   <span className="text-gray-400">—</span>
                                 )}

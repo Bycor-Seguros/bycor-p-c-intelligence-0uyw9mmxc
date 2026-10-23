@@ -736,45 +736,68 @@ export function PainelControlePropostas({
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-gray-700">LMI / LMG Máximo (R$)</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">
+                    LMI / LMG Máximo (R$)
+                  </Label>
+                  {lmiLmg !== '' && (
+                    <span className="text-[10px] font-mono text-gray-600">
+                      {formatCurrency(lmiLmg)}
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="number"
-                  placeholder="Ex: 80000000"
+                  placeholder="Ex: 95000000.00"
                   value={lmiLmg}
                   onChange={(e) => setLmiLmg(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="h-8 text-xs"
+                  className="h-8 text-xs font-semibold"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-gray-700">Prêmio Líquido (R$)</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">Prêmio Líquido (R$)</Label>
+                  {premioLiquido !== '' && (
+                    <span className="text-[10px] font-mono text-gray-600">
+                      {formatCurrency(premioLiquido)}
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   step="0.01"
-                  placeholder="Ex: 45000.00"
+                  placeholder="Ex: 69215.24"
                   value={premioLiquido}
                   onChange={(e) =>
                     setPremioLiquido(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  className="h-8 text-xs"
+                  className="h-8 text-xs font-semibold"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-gray-700">
-                  Prêmio Total / Bruto (R$)
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">
+                    Prêmio Total / Bruto (R$)
+                  </Label>
+                  {premioBruto !== '' && (
+                    <span className="text-[10px] font-mono text-emerald-700">
+                      {formatCurrency(premioBruto)}
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   step="0.01"
-                  placeholder="Ex: 48321.00"
+                  placeholder="Ex: 74323.32"
                   value={premioBruto}
                   onChange={(e) =>
                     setPremioBruto(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  className="h-8 text-xs font-semibold"
+                  className="h-8 text-xs font-semibold text-emerald-800"
                 />
               </div>
             </div>

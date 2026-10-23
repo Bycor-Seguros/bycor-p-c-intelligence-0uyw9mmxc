@@ -660,55 +660,83 @@ export default function PropostaUploadModal({
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Prêmio Total / Bruto (R$)
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Prêmio Total / Bruto (R$)
+                    </Label>
+                    {premioBruto && (
+                      <span className="text-[10px] font-mono text-emerald-700">
+                        {formatCurrency(premioBruto)}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     step="0.01"
                     value={premioBruto}
                     onChange={(e) => setPremioBruto(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0,00"
                     className="h-8 text-xs font-bold text-emerald-800"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Prêmio Líquido (R$)
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Prêmio Líquido (R$)
+                    </Label>
+                    {premioLiquido && (
+                      <span className="text-[10px] font-mono text-gray-600">
+                        {formatCurrency(premioLiquido)}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     step="0.01"
                     value={premioLiquido}
                     onChange={(e) => setPremioLiquido(e.target.value)}
-                    placeholder="0.00"
-                    className="h-8 text-xs"
+                    placeholder="0,00"
+                    className="h-8 text-xs font-semibold"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    LMI / LMG Máximo (R$)
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      LMI / LMG Máximo (R$)
+                    </Label>
+                    {lmiLmg && (
+                      <span className="text-[10px] font-mono text-gray-600">
+                        {formatCurrency(lmiLmg)}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
-                    step="1"
+                    step="0.01"
                     value={lmiLmg}
                     onChange={(e) => setLmiLmg(e.target.value)}
-                    placeholder="0"
-                    className="h-8 text-xs"
+                    placeholder="0,00"
+                    className="h-8 text-xs font-semibold"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">IOF (R$)</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-700">IOF (R$)</Label>
+                    {iof && (
+                      <span className="text-[10px] font-mono text-gray-600">
+                        {formatCurrency(iof)}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     step="0.01"
                     value={iof}
                     onChange={(e) => setIof(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0,00"
                     className="h-8 text-xs text-gray-600"
                   />
                 </div>
@@ -716,15 +744,22 @@ export default function PropostaUploadModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Custo da Apólice (R$)
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Custo da Apólice (R$)
+                    </Label>
+                    {custoApolice && (
+                      <span className="text-[10px] font-mono text-gray-600">
+                        {formatCurrency(custoApolice)}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     step="0.01"
                     value={custoApolice}
                     onChange={(e) => setCustoApolice(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0,00"
                     className="h-8 text-xs text-gray-600"
                   />
                 </div>

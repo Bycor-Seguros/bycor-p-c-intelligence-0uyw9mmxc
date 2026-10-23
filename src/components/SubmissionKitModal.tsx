@@ -23,6 +23,7 @@ import {
   generateSubmissionKitXlsx,
   printSubmissionKitPdf,
 } from '@/services/submissionKitService'
+import { formatCurrency } from '@/lib/formatters'
 
 interface SubmissionKitModalProps {
   data: SubmissionKitData | null
@@ -57,9 +58,9 @@ export function SubmissionKitModal({ data, loading, onClose }: SubmissionKitModa
       `Local de Risco: ${data.endereco} ${data.cidade ? `— ${data.cidade}/${data.uf}` : ''}`,
       `Atividade: ${data.atividadeExercida || data.atividade}`,
       `Tipo Cobertura: ${data.tipoCobertura}`,
-      `VRD Prédio / DM: ${data.vrdPredio ? `R$ ${data.vrdPredio.toLocaleString('pt-BR')}` : '—'}`,
-      `VRD LC: ${data.vrdLucrosCessantes ? `R$ ${data.vrdLucrosCessantes.toLocaleString('pt-BR')}` : '—'}`,
-      `VRD Total: ${data.vrdTotal ? `R$ ${data.vrdTotal.toLocaleString('pt-BR')}` : '—'}`,
+      `VRD Prédio / DM: ${data.vrdPredio ? formatCurrency(data.vrdPredio) : '—'}`,
+      `VRD LC: ${data.vrdLucrosCessantes ? formatCurrency(data.vrdLucrosCessantes) : '—'}`,
+      `VRD Total: ${data.vrdTotal ? formatCurrency(data.vrdTotal) : '—'}`,
       `Padrão Construtivo: ${data.tipoConstrucao || '—'}`,
       `SLA Cotação: ${data.prazoLimite}`,
     ]
@@ -196,7 +197,7 @@ export function SubmissionKitModal({ data, loading, onClose }: SubmissionKitModa
             VRD Total Declarado
           </span>
           <div className="font-bold text-[#0F2B46] text-sm mt-0.5">
-            {data.vrdTotal ? `R$ ${data.vrdTotal.toLocaleString('pt-BR')}` : 'A definir'}
+            {data.vrdTotal ? formatCurrency(data.vrdTotal) : 'A definir'}
           </div>
           <div className="text-[10px] text-blue-800">Tipo: {data.tipoCobertura}</div>
         </div>

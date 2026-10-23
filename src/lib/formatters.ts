@@ -1,10 +1,39 @@
 // Formatting and utility functions for Bycor P&C Intelligence
 
+export function parseCurrencyValue(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') {
+    return isNaN(value) ? null : value
+  }
+  const str = String(value)
+    .trim()
+    .replace(/^R\$\s*/i, '')
+    .trim()
+  if (!str) return null
+
+  let num: number
+  if (str.includes(',') && str.includes('.')) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // Padrão brasileiro: 69.215,24 ou 95.000.000,00
+      num = parseFloat(str.replace(/\./g, '').replace(',', '.'))
+    } else {
+      // Padrão internacional: 69,215.24
+      num = parseFloat(str.replace(/,/g, ''))
+    }
+  } else if (str.includes(',')) {
+    // Apenas vírgula decimal brasileira: 69215,24
+    num = parseFloat(str.replace(',', '.'))
+  } else {
+    // Número JS puro (ex: "80000000" ou "69215.24")
+    num = parseFloat(str)
+  }
+
+  return isNaN(num) ? null : num
+}
+
 export function formatCurrency(value: number | string | null | undefined): string {
-  if (value === null || value === undefined || value === '') return '—'
-  const num =
-    typeof value === 'string' ? parseFloat(value.replace(/\./g, '').replace(',', '.')) : value
-  if (isNaN(num)) return '—'
+  const num = parseCurrencyValue(value)
+  if (num === null) return '—'
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
@@ -13,9 +42,22 @@ export function formatCurrency(value: number | string | null | undefined): strin
   }).format(num)
 }
 
-export function formatNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  return new Intl.NumberFormat('pt-BR').format(value)
+export function formatNumber(value: number | string | null | undefined, decimals = 2): string {
+  const num = parseCurrencyValue(value)
+  if (num === null) return '—'
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(num)
+}
+
+export function formatCurrencyNumber(value: number | string | null | undefined): string {
+  const num = parseCurrencyValue(value)
+  if (num === null) return '—'
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num)
 }
 
 export function formatDate(dateStr: string | null | undefined): string {

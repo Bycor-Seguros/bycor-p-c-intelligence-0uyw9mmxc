@@ -941,14 +941,14 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
   }
 
   // 5. Informações Financeiras e de Pagamento:
-  // "Prêmio Líquido: (R$): 69.215,24" ou "Prêmio Líquido: 69.215,24"
-  // "Prêmio Total (R$): 74.323,32"
-  // "IOF (R$): 5.108,08"
-  // "Custo da Apólice (R$): 0,00"
+  // "Prêmio Líquido: (R$): 69.215,24" ou "Prêmio Líquido (R$): 69.215,24" ou "Prêmio Líquido: 69.215,24"
+  // "Prêmio Total (R$): 74.323,32" ou "Prêmio Total: (R$): 74.323,32"
+  // "IOF (R$): 5.108,08" ou "IOF: (R$): 5.108,08"
+  // "Custo da Apólice (R$): 0,00" ou "Custo da Apólice: (R$): 0,00"
   // "Forma de Pagamento: Boleto Bancário", "Nº de Parcelas: 4"
   let premioLiquido: number | null = null
   const prLiqMatch = fullText.match(
-    /Pr[êe]mio\s+L[íi]quido(?:\s*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    /Pr[êe]mio\s+L[íi]quido(?:\s*[:\s]*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
   if (prLiqMatch) {
     premioLiquido = parsePtBrNumber(prLiqMatch[1])
@@ -956,21 +956,21 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
 
   let premioTotal: number | null = null
   const prTotMatch = fullText.match(
-    /Pr[êe]mio\s+Total(?:\s*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    /Pr[êe]mio\s+Total(?:\s*[:\s]*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
   if (prTotMatch) {
     premioTotal = parsePtBrNumber(prTotMatch[1])
   }
 
   let iof: number | null = null
-  const iofMatch = fullText.match(/IOF(?:\s*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  const iofMatch = fullText.match(/IOF(?:\s*[:\s]*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
   if (iofMatch) {
     iof = parsePtBrNumber(iofMatch[1])
   }
 
   let custoApolice: number | null = null
   const custoMatch = fullText.match(
-    /Custo\s+da\s+Ap[óo]lice(?:\s*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    /Custo\s+da\s+Ap[óo]lice(?:\s*[:\s]*\(R\$\))?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
   )
   if (custoMatch) {
     custoApolice = parsePtBrNumber(custoMatch[1])
