@@ -62,10 +62,19 @@ export async function loadPdfJs(): Promise<any> {
   return pdfjsLoadingPromise
 }
 
+export interface PdfTextFragment {
+  str: string
+  x: number
+  y: number
+  width?: number
+  height?: number
+}
+
 export interface PdfPageText {
   pageNumber: number
   text: string
   lines: string[]
+  items?: PdfTextFragment[]
 }
 
 /**
@@ -104,18 +113,33 @@ export async function extractTextFromPdf(
 
       // Organiza itens por posição vertical para reconstruir linhas aproximadas
       // item.transform[5] é coordenada Y aproximada
-      const items = (textContent.items || []) as Array<{
+      const rawItems = (textContent.items || []) as Array<{
         str: string
         transform?: number[]
+        width?: number
+        height?: number
         hasEOL?: boolean
       }>
 
+      const pageFragments: PdfTextFragment[] = []
+
       // Agrupar itens com Y similar na mesma linha, preservando coordenada X para ordenação correta
       const lineMap = new Map<number, Array<{ str: string; x: number }>>()
-      items.forEach((item) => {
+      rawItems.forEach((item) => {
         if (!item.str) return
         const y = item.transform ? Math.round(item.transform[5]) : 0
         const x = item.transform ? Math.round(item.transform[4]) : 0
+        const width = item.width ? Math.round(item.width) : undefined
+        const height = item.height ? Math.round(item.height) : undefined
+
+        pageFragments.push({
+          str: item.str,
+          x,
+          y,
+          width,
+          height,
+        })
+
         // Achar chave Y mais próxima (tolerância de 4 pontos)
         let foundY = y
         for (const existingY of lineMap.keys()) {
@@ -149,6 +173,7 @@ export async function extractTextFromPdf(
         pageNumber: i,
         text,
         lines,
+        items: pageFragments,
       })
     } catch (pageErr) {
       console.warn(`Erro na leitura da página ${i}:`, pageErr)

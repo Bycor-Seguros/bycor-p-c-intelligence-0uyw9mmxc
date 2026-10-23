@@ -1066,12 +1066,11 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
 
   // ==========================================
   // 9. EXTRAÇÃO DE COBERTURAS E FRANQUIAS (TABELAS DA ALLIANZ)
-  // ==========================================
-  // Tabela 1: "COBERTURA BASICA*"
-  // Tabela 2: "COBERTURAS ADICIONAIS*" (quebra entre pág 2 e 3 com cabeçalho repetido)
-  // Pareamento: muitas adicionais aparecem em 2 linhas:
-  // Linha 1: [Nome] [LMI] [Prêmio]
-  // Linha 2: [Nome] [LMI] [Franquia % / Dias] [Franquia R$]
+  // Reconstrução GEOMÉTRICA por coordenadas X/Y
+  // Coluna 1: Nome da Cobertura (X < col2Left ~ 230pt)
+  // Coluna 2: SubLimite / Limite de Indenização (230pt <= X < 335pt)
+  // Coluna 3: Prêmio por Cobertura R$ (335pt <= X < 415pt)
+  // Coluna 4: Franquia % / R$ (X >= 415pt)
   // ==========================================
 
   interface AllianzCobAccumulator {
@@ -1094,192 +1093,445 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
 
   const cobMap = new Map<string, AllianzCobAccumulator>()
 
-  // Reúne todas as linhas de todas as páginas limpando cabeçalhos/rodapés de página repetidos
-  const allLines: string[] = []
-  for (const page of pages) {
-    for (const rawLine of page.lines) {
-      const line = rawLine.trim()
-      // Filtra números de página e rodapés/cabeçalhos de cotação
-      if (/^P[áa]gina\s+\d+\s+de\s+\d+/i.test(line)) continue
-      if (/^N[º°.]\s*Cota[çc][ãa]o:\s*\d+/i.test(line)) continue
-      if (/^\*\s*Todos\s+os\s+limites\s+e\s+sublimites/i.test(line)) continue
-      if (/^SubLimite\s+M[áa]ximo/i.test(line)) continue
-      if (/^Limite\s+M[áa]ximo\s+de\s+Indeniza[çc][ãa]o/i.test(line)) continue
-      if (/^de\s+Indeniza[çc][ãa]o\s+Pr[êe]mio\s+por/i.test(line)) continue
-      if (/^Cobertura\s+R\$\s+%\s+R\$/i.test(line)) continue
-      if (/^Pr[êe]mio\s+por\s+Cobertura/i.test(line)) continue
-      if (/^%\s+R\$/i.test(line)) continue
-      allLines.push(line)
-    }
-  }
+  // Extrai coberturas geometricamente usando os fragmentos enriquecidos (items)
+  const hasGeometricFragments = pages.some((p) => p.items && p.items.length > 0)
 
-  interface AssembledCoverageRow {
-    section: 'basica' | 'adicional'
-    nome: string
-    lmiVal: number
-    rest: string
-  }
+  if (hasGeometricFragments) {
+    // Processa geometricamente as páginas que contêm tabelas de cobertura (especialmente páginas 2 e 3)
+    for (const page of pages) {
+      if (!page.items || page.items.length === 0) continue
 
-  const assembledRows: AssembledCoverageRow[] = []
-  let currentSection: 'basica' | 'adicional' | null = null
+      const items = page.items
 
-  for (let i = 0; i < allLines.length; i++) {
-    const line = allLines[i]
+      // Acha os limites verticais (Y) das seções na página:
+      // "COBERTURA BASICA*"
+      // "COBERTURAS ADICIONAIS*"
+      // Término de tabela: "INFORMAÇÕES DE PAGAMENTO", "* Todos os limites...", etc.
+      interface SectionHeader {
+        tipo: 'basica' | 'adicional'
+        y: number
+      }
 
-    if (/^COBERTURA\s+BASICA\*/i.test(line)) {
-      currentSection = 'basica'
-      continue
-    }
+      const sectionHeaders: SectionHeader[] = []
+      let endTableY: number | null = null
 
-    if (/^COBERTURAS\s+ADICIONAIS\*/i.test(line)) {
-      currentSection = 'adicional'
-      continue
-    }
+      for (const it of items) {
+        const text = it.str.trim()
+        if (/COBERTURA\s+BASICA\*/i.test(text)) {
+          sectionHeaders.push({ tipo: 'basica', y: it.y })
+        } else if (/COBERTURAS\s+ADICIONAIS\*/i.test(text)) {
+          sectionHeaders.push({ tipo: 'adicional', y: it.y })
+        } else if (
+          /INFORMA[ÇC][ÕO]ES\s+DE\s+PAGAMENTO/i.test(text) ||
+          /CL[ÁA]USULAS\s+COMPLEMENTARES/i.test(text) ||
+          /OBSERVA[ÇC][ÕO]ES/i.test(text)
+        ) {
+          if (endTableY === null || it.y > endTableY) {
+            endTableY = it.y
+          }
+        }
+      }
 
-    // Fim da tabela de coberturas
-    if (
-      /^INFORMA[ÇC][ÕO]ES\s+DE\s+PAGAMENTO/i.test(line) ||
-      /^CL[ÁA]USULAS\s+COMPLEMENTARES/i.test(line) ||
-      /^OBSERVA[ÇC][ÕO]ES/i.test(line) ||
-      /^PROCESSO\s+SUSEP/i.test(line)
-    ) {
-      currentSection = null
-      continue
-    }
+      if (sectionHeaders.length === 0) continue
 
-    if (!currentSection) continue
+      // Ordena seções da página de cima para baixo (em PDF, Y decrescente)
+      sectionHeaders.sort((a, b) => b.y - a.y)
 
-    // Ignora eventuais cabeçalhos repetidos da tabela de coberturas
-    if (
-      /^SubLimite\b/i.test(line) ||
-      /^Limite\s+M[áa]ximo\b/i.test(line) ||
-      /^de\s+Indeniza[çc][ãa]o\b/i.test(line) ||
-      /^Cobertura\s+R\$/i.test(line) ||
-      /^Pr[êe]mio\s+por\s+Cobertura/i.test(line) ||
-      /^Franquia(?:\s*(?:%|R\$))?/i.test(line) ||
-      /^%\s+R\$/i.test(line) ||
-      /^\*\s*Todos\s+os\s+limites/i.test(line)
-    ) {
-      continue
-    }
+      // Identifica X-edges das colunas na página a partir de itens de cabeçalho conhecidos
+      // Fallback para valores calibrados da grade Allianz (PDF A4: largura ~595pt, margem esquerda ~30pt):
+      // Col 1 (Nome): 25 <= X < 230
+      // Col 2 (SubLimite/Limite): 230 <= X < 335
+      // Col 3 (Prêmio): 335 <= X < 415
+      // Col 4 (Franquia): 415 <= X < 580
+      let col2Left = 230
+      let col3Left = 335
+      let col4Left = 415
 
-    // Verifica se a linha contém valores monetários no formato 000.000,00
-    const hasMonetaryVal = /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(line)
+      // Tenta refinar X-edges se os cabeçalhos de coluna estiverem presentes na página
+      for (const it of items) {
+        const s = it.str.trim()
+        if (/SubLimite\s+M[áa]ximo/i.test(s) || /Limite\s+M[áa]ximo/i.test(s)) {
+          col2Left = Math.min(col2Left, it.x - 5)
+        } else if (/Pr[êe]mio\s+por/i.test(s)) {
+          col3Left = Math.min(col3Left, it.x - 5)
+        } else if (/Franquia/i.test(s)) {
+          col4Left = Math.min(col4Left, it.x - 5)
+        }
+      }
 
-    if (hasMonetaryVal) {
-      // Tenta fazer o match da linha de cobertura: [Nome] [SubLimite/LMI] [Prêmio/Franquia/Resto...]
-      const matchLine = line.match(
-        /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()•*&'+ºª]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/,
-      )
+      // Processa cada seção da página
+      for (let sIdx = 0; sIdx < sectionHeaders.length; sIdx++) {
+        const sec = sectionHeaders[sIdx]
+        const topY = sec.y - 12 // logo abaixo do título "COBERTURA BASICA*" ou "COBERTURAS ADICIONAIS*"
+        const bottomY =
+          sIdx < sectionHeaders.length - 1
+            ? sectionHeaders[sIdx + 1].y + 5
+            : endTableY !== null
+              ? endTableY + 5
+              : 50 // margem inferior segura da folha
 
-      if (matchLine) {
-        const rawNome = matchLine[1]
-          .replace(/^[•*-]\s*/, '')
-          .replace(/\s{2,}/g, ' ')
-          .trim()
-        const lmiVal = parsePtBrNumber(matchLine[2])
-        const rest = (matchLine[3] || '').trim()
+        // Coleta itens pertencentes a esta tabela
+        const tableItems = items.filter((it) => {
+          if (it.y > topY || it.y < bottomY) return false
+          const text = it.str.trim()
+          if (!text) return false
 
-        if (rawNome && lmiVal !== null) {
-          assembledRows.push({
-            section: currentSection,
-            nome: rawNome,
-            lmiVal,
-            rest,
-          })
-          continue
+          // Ignora cabeçalhos repetidos de coluna dentro da grade
+          if (
+            /^(?:SubLimite|Limite|de\s+Indeniza[çc][ãa]o|Pr[êe]mio|Cobertura|Franquia|%|R\$|\*)/i.test(
+              text,
+            ) &&
+            it.y >= topY - 25
+          ) {
+            return false
+          }
+          if (/^\*\s*Todos\s+os\s+limites/i.test(text)) return false
+          if (/^P[áa]gina\s+\d+\s+de/i.test(text)) return false
+          if (/^N[º°.]\s*Cota[çc][ãa]o/i.test(text)) return false
+          if (/^Prote[çc][ãa]o\s+eletr[ôo]nica/i.test(text) && it.y > topY) return false
+
+          return true
+        })
+
+        // Agrupa fragmentos por bandas de linha visual (Y próximo).
+        // Na Allianz, a altura de cada linha visual é ~12-16pt, e textos multilinha na mesma célula
+        // têm deltaY de ~8-10pt.
+        // Agrupamos inicialmente por linhas de texto (delta Y <= 3.5pt):
+        interface TextRow {
+          y: number
+          col1: string[]
+          col2: string[]
+          col3: string[]
+          col4: string[]
+        }
+
+        const textRowMap = new Map<number, TextRow>()
+
+        for (const it of tableItems) {
+          const y = it.y
+          let foundRowY: number | null = null
+          for (const existingY of textRowMap.keys()) {
+            if (Math.abs(existingY - y) <= 3.5) {
+              foundRowY = existingY
+              break
+            }
+          }
+
+          if (foundRowY === null) {
+            foundRowY = y
+            textRowMap.set(foundRowY, {
+              y: foundRowY,
+              col1: [],
+              col2: [],
+              col3: [],
+              col4: [],
+            })
+          }
+
+          const row = textRowMap.get(foundRowY)!
+          const s = it.str.trim()
+          if (!s) continue
+
+          // Atribuição rigorosa às 4 colunas baseada na coordenada X
+          if (it.x < col2Left) {
+            row.col1.push(s)
+          } else if (it.x < col3Left) {
+            row.col2.push(s)
+          } else if (it.x < col4Left) {
+            row.col3.push(s)
+          } else {
+            row.col4.push(s)
+          }
+        }
+
+        // Ordena linhas de texto de cima para baixo (Y decrescente)
+        const sortedTextRows = Array.from(textRowMap.values()).sort((a, b) => b.y - a.y)
+
+        // Agrupamento por proximidade vertical de célula / banda:
+        // Na Allianz, a grade visual possui células estilizadas.
+        // Cada registro da tabela possui seu SubLimite/Limite na Coluna 2.
+        // Nomes que se estendem por 2 linhas de texto aparecem com:
+        // a) 1ª linha do nome tem LMI na Coluna 2, e a 2ª linha (abaixo) tem apenas texto na Coluna 1
+        //    (Ex: "Despesas de Recomposição de Registros e" [1.600.000,00] seguido de "Documentos" [sem valores])
+        //    (Ex: "Roubo de Valores no Interior do" [sem valores] seguido de "Estabelecimento" [97.500,00])
+        // b) 1ª linha tem o prefixo do nome (sem valores) e a 2ª linha tem o sufixo + LMI.
+        // Distância vertical entre linhas da MESMA célula multilinha: deltaY <= 13pt.
+        interface VisualBand {
+          nomeParts: string[]
+          col2Text: string
+          col3Text: string
+          col4Text: string
+          y: number
+        }
+
+        const bands: VisualBand[] = []
+        let currentBand: VisualBand | null = null
+        let pendingPrefix: { text: string; y: number } | null = null
+
+        for (let rIdx = 0; rIdx < sortedTextRows.length; rIdx++) {
+          const tr = sortedTextRows[rIdx]
+          const col1Str = tr.col1.join(' ').trim()
+          const col2Str = tr.col2.join(' ').trim()
+          const col3Str = tr.col3.join(' ').trim()
+          const col4Str = tr.col4.join(' ').trim()
+
+          const hasLmiInCol2 = /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col2Str)
+
+          if (hasLmiInCol2) {
+            if (currentBand) {
+              bands.push(currentBand)
+            }
+            const initialNome: string[] = []
+            // Se havia um prefixo imediatamente acima (deltaY <= 13pt)
+            if (pendingPrefix && Math.abs(pendingPrefix.y - tr.y) <= 13) {
+              initialNome.push(pendingPrefix.text)
+            }
+            pendingPrefix = null
+
+            if (col1Str) {
+              initialNome.push(col1Str)
+            }
+
+            currentBand = {
+              nomeParts: initialNome,
+              col2Text: col2Str,
+              col3Text: col3Str,
+              col4Text: col4Str,
+              y: tr.y,
+            }
+          } else {
+            // Linha sem LMI na Coluna 2
+            const nextRow = rIdx + 1 < sortedTextRows.length ? sortedTextRows[rIdx + 1] : null
+            const nextHasLmi = nextRow
+              ? /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(nextRow.col2.join(' ').trim())
+              : false
+
+            if (col1Str && !col2Str && !col3Str && !col4Str) {
+              // Apenas texto na Coluna 1.
+              // Decide se é continuação inferior da banda atual ou prefixo da próxima banda:
+              // Se currentBand existe e o deltaY é pequeno (<= 13pt):
+              // Se o próximo item tiver LMI e estiver a <= 13pt deste, precisamos discernir se é continuação
+              // de cima (ex: "Despesas de Recomposição de Registros e" + "Documentos") ou prefixo de baixo:
+              // Palavras como "Documentos", "Tornado", "Mármores", "Portadores", "Estabelecimento" são terminações!
+              const isObviousContinuation =
+                /^(?:Documentos|Tornado|Mármores|Portadores|Estabelecimento|Conteúdo|Q\.Aeronaves|Bens)\b/i.test(
+                  col1Str,
+                ) ||
+                col1Str.startsWith('e ') ||
+                col1Str.startsWith('de ') ||
+                col1Str.startsWith('do ') ||
+                col1Str.startsWith('da ')
+
+              if (currentBand && Math.abs(currentBand.y - tr.y) <= 13 && isObviousContinuation) {
+                currentBand.nomeParts.push(col1Str)
+              } else if (currentBand && Math.abs(currentBand.y - tr.y) <= 13 && !nextHasLmi) {
+                currentBand.nomeParts.push(col1Str)
+              } else if (nextHasLmi && nextRow && Math.abs(tr.y - nextRow.y) <= 13) {
+                // Prefixo da próxima
+                pendingPrefix = { text: col1Str, y: tr.y }
+              } else if (currentBand && Math.abs(currentBand.y - tr.y) <= 13) {
+                currentBand.nomeParts.push(col1Str)
+              } else {
+                pendingPrefix = { text: col1Str, y: tr.y }
+              }
+            } else if (currentBand) {
+              if (col1Str) currentBand.nomeParts.push(col1Str)
+              if (col3Str) currentBand.col3Text = `${currentBand.col3Text} ${col3Str}`.trim()
+              if (col4Str) currentBand.col4Text = `${currentBand.col4Text} ${col4Str}`.trim()
+            }
+          }
+        }
+
+        if (currentBand) {
+          bands.push(currentBand)
+        }
+
+        // Processa as bandas da seção
+        for (const band of bands) {
+          let nome = band.nomeParts
+            .join(' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
+          // Limpa marcadores iniciais
+          nome = nome.replace(/^[•*-]\s*/, '').trim()
+          if (!nome) continue
+
+          const lmiVal = parsePtBrNumber(band.col2Text)
+          if (lmiVal === null) continue
+
+          // Extrai Prêmio da Coluna 3
+          let premioVal: number | null = null
+          const pMatch = band.col3Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+          if (pMatch) {
+            premioVal = parsePtBrNumber(pMatch[0])
+          }
+
+          // Extrai Franquia da Coluna 4 (e residual de Col 3/4)
+          let franquiaStr = ''
+          const combinedCol4 = `${band.col4Text} ${band.col3Text}`
+
+          // Caso 1: Dias (ex.: "- 10 Dias", "10 Dias")
+          const diasM = combinedCol4.match(/(\d+)\s*Dias/i)
+          if (diasM) {
+            franquiaStr = `${diasM[1]} Dias`
+          } else {
+            // Caso 2: Percentual + mínimo em R$ (ex.: "10 1.500,00", "20 10.000,00", "15 5.000,00")
+            const pctMinM = combinedCol4.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+            if (pctMinM) {
+              franquiaStr = `${pctMinM[1]}% com mín. R$ ${pctMinM[2]}`
+            } else {
+              // Caso 3: Apenas valor monetário de franquia
+              const minOnlyM = band.col4Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+              if (minOnlyM) {
+                franquiaStr = `R$ ${minOnlyM[0]}`
+              } else {
+                // Caso 4: Apenas percentual
+                const pctOnlyM = band.col4Text.match(/\b(\d{1,2})%?\b/)
+                if (pctOnlyM && pctOnlyM[1] !== '0') {
+                  franquiaStr = `${pctOnlyM[1]}%`
+                }
+              }
+            }
+          }
+
+          const key = normalizeCobKey(nome)
+          const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
+          const isLucrosCessantesReal =
+            key.includes('perdalucrobruto') || key.includes('lucrobruto')
+
+          let acc = cobMap.get(key)
+          if (!acc) {
+            acc = {
+              nomeOriginal: nome,
+              isBasica: isBasicaReal,
+              isLucrosCessantes: isLucrosCessantesReal,
+              lmi: lmiVal,
+              premio: premioVal,
+              franquia: franquiaStr || 'Não informada',
+            }
+            cobMap.set(key, acc)
+          } else {
+            // Linha pareada (segunda linha de adicional com franquia ou primeira com prêmio)
+            if (acc.premio === null && premioVal !== null) {
+              acc.premio = premioVal
+            }
+            if (
+              (acc.franquia === 'Não informada' || acc.franquia === 'Não há' || !acc.franquia) &&
+              franquiaStr
+            ) {
+              acc.franquia = franquiaStr
+            }
+            if (lmiVal && (!acc.lmi || lmiVal > acc.lmi)) {
+              acc.lmi = lmiVal
+            }
+            if (nome.length > acc.nomeOriginal.length) {
+              acc.nomeOriginal = nome
+            }
+          }
         }
       }
     }
+  }
 
-    // Se a linha NÃO tem valor monetário (ou não deu match numérico),
-    // trata como CONTINUAÇÃO do nome da cobertura anterior na mesma seção
-    // Ex: "Despesas de Recomposição de Registros e" (linha 1 com valores) + "Documentos" (linha 2 sem valores)
-    // -> Concatena ao nome da cobertura anterior com espaço (pt-BR)
-    // e NÃO cria nova cobertura nem cola seu texto no início da cobertura seguinte.
-    if (assembledRows.length > 0) {
-      const lastRow = assembledRows[assembledRows.length - 1]
-      if (lastRow && lastRow.section === currentSection) {
-        const cleanAdd = line
-          .replace(/^[•*-]\s*/, '')
-          .replace(/\s{2,}/g, ' ')
-          .trim()
-        if (cleanAdd && cleanAdd !== '-' && cleanAdd !== '—') {
+  // Fallback de texto caso não haja items geométricos (ex.: teste unitário puro com mock simples)
+  if (cobMap.size === 0) {
+    const allLines: string[] = []
+    for (const page of pages) {
+      for (const rawLine of page.lines) {
+        const line = rawLine.trim()
+        if (/^P[áa]gina\s+\d+\s+de\s+\d+/i.test(line)) continue
+        if (/^N[º°.]\s*Cota[çc][ãa]o:\s*\d+/i.test(line)) continue
+        if (/^\*\s*Todos\s+os\s+limites/i.test(line)) continue
+        if (/^SubLimite\s+M[áa]ximo/i.test(line)) continue
+        if (/^Limite\s+M[áa]ximo/i.test(line)) continue
+        allLines.push(line)
+      }
+    }
+
+    interface AssembledCoverageRow {
+      nome: string
+      lmiVal: number
+      rest: string
+    }
+
+    const assembledRows: AssembledCoverageRow[] = []
+    let inSection = false
+
+    for (let i = 0; i < allLines.length; i++) {
+      const line = allLines[i]
+      if (/COBERTURA\s+BASICA\*/i.test(line) || /COBERTURAS\s+ADICIONAIS\*/i.test(line)) {
+        inSection = true
+        continue
+      }
+      if (
+        /INFORMA[ÇC][ÕO]ES\s+DE\s+PAGAMENTO/i.test(line) ||
+        /CL[ÁA]USULAS\s+COMPLEMENTARES/i.test(line)
+      ) {
+        inSection = false
+        continue
+      }
+      if (!inSection) continue
+
+      const matchLine = line.match(
+        /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()•*&'+ºª]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/,
+      )
+      if (matchLine) {
+        const rawNome = matchLine[1].replace(/^[•*-]\s*/, '').trim()
+        const lmiVal = parsePtBrNumber(matchLine[2])
+        const rest = (matchLine[3] || '').trim()
+        if (rawNome && lmiVal !== null) {
+          assembledRows.push({ nome: rawNome, lmiVal, rest })
+          continue
+        }
+      }
+      if (assembledRows.length > 0) {
+        const lastRow = assembledRows[assembledRows.length - 1]
+        const cleanAdd = line.replace(/^[•*-]\s*/, '').trim()
+        if (cleanAdd && !/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(cleanAdd)) {
           lastRow.nome = `${lastRow.nome} ${cleanAdd}`.replace(/\s{2,}/g, ' ').trim()
         }
       }
     }
-  }
 
-  // Processa cada linha de cobertura montada
-  for (const { section, nome: rawNome, lmiVal, rest } of assembledRows) {
-    if (!rawNome || lmiVal === null) continue
-
-    // Extrai dados da cauda da linha (prêmio e/ou franquia)
-    let rowPremio: number | null = null
-    let rowFranquiaStr = ''
-    let remainingRest = rest
-
-    // Caso 1: Franquia em dias, ex: "- 10 Dias" ou "10 Dias"
-    const diasMatch = remainingRest.match(/(\d+)\s*Dias/i)
-    if (diasMatch) {
-      rowFranquiaStr = `${diasMatch[1]} Dias`
-      remainingRest = remainingRest.replace(/-?\s*\d+\s*Dias/i, '').trim()
-    }
-
-    // Caso 2: Franquia com percentual e valor mínimo em R$, ex: "10 1.500,00", "15 5.000,00", "20 10.000,00"
-    // Atenção: o percentual vem como número inteiro isolado (10, 15, 20) antes do valor monetário
-    const pctAndMinMatch = remainingRest.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-    if (pctAndMinMatch) {
-      const pct = pctAndMinMatch[1]
-      const minRs = pctAndMinMatch[2]
-      if (!rowFranquiaStr) {
-        rowFranquiaStr = `${pct}% com mín. R$ ${minRs}`
+    for (const { nome: rawNome, lmiVal, rest } of assembledRows) {
+      if (!rawNome || lmiVal === null) continue
+      let rowPremio: number | null = null
+      let rowFranquiaStr = ''
+      const diasMatch = rest.match(/(\d+)\s*Dias/i)
+      if (diasMatch) {
+        rowFranquiaStr = `${diasMatch[1]} Dias`
       }
-      remainingRest = remainingRest.replace(pctAndMinMatch[0], '').trim()
-    }
+      const pctAndMinMatch = rest.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+      if (pctAndMinMatch) {
+        rowFranquiaStr = `${pctAndMinMatch[1]}% com mín. R$ ${pctAndMinMatch[2]}`
+      }
+      const moneyMatch = rest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+      if (moneyMatch) {
+        rowPremio = parsePtBrNumber(moneyMatch[0])
+      }
 
-    // Caso 3: Apenas um valor monetário na cauda (ou residual), ex: "18.544,40", "3.232,97", "30,88"
-    // Esse valor é o Prêmio por Cobertura R$!
-    const moneyMatch = remainingRest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
-    if (moneyMatch) {
-      rowPremio = parsePtBrNumber(moneyMatch[0])
-    }
+      const key = normalizeCobKey(rawNome)
+      const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
+      const isLucrosCessantesReal = key.includes('perdalucrobruto') || key.includes('lucrobruto')
 
-    // Identificação de papéis de básica e lucros cessantes
-    const key = normalizeCobKey(rawNome)
-    const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
-    const isLucrosCessantesReal = key.includes('perdalucrobruto') || key.includes('lucrobruto')
-
-    // Procura no acumulador se já existe essa cobertura (pareamento de linha dupla)
-    let acc = cobMap.get(key)
-    if (!acc) {
-      acc = {
-        nomeOriginal: rawNome,
-        isBasica: isBasicaReal,
-        isLucrosCessantes: isLucrosCessantesReal,
-        lmi: lmiVal,
-        premio: rowPremio,
-        franquia: rowFranquiaStr || 'Não informada',
-      }
-      cobMap.set(key, acc)
-    } else {
-      // Atualiza / completa com dados da outra linha (prêmio ou franquia)
-      if (acc.premio === null && rowPremio !== null) {
-        acc.premio = rowPremio
-      }
-      if (
-        (acc.franquia === 'Não informada' || acc.franquia === 'Não há' || !acc.franquia) &&
-        rowFranquiaStr
-      ) {
-        acc.franquia = rowFranquiaStr
-      }
-      // Mantém maior LMI se houver diferença
-      if (lmiVal && (!acc.lmi || lmiVal > acc.lmi)) {
-        acc.lmi = lmiVal
-      }
-      if (rawNome.length > acc.nomeOriginal.length) {
-        acc.nomeOriginal = rawNome
+      let acc = cobMap.get(key)
+      if (!acc) {
+        cobMap.set(key, {
+          nomeOriginal: rawNome,
+          isBasica: isBasicaReal,
+          isLucrosCessantes: isLucrosCessantesReal,
+          lmi: lmiVal,
+          premio: rowPremio,
+          franquia: rowFranquiaStr || 'Não informada',
+        })
+      } else {
+        if (acc.premio === null && rowPremio !== null) acc.premio = rowPremio
+        if (
+          (acc.franquia === 'Não informada' || acc.franquia === 'Não há' || !acc.franquia) &&
+          rowFranquiaStr
+        ) {
+          acc.franquia = rowFranquiaStr
+        }
       }
     }
   }
