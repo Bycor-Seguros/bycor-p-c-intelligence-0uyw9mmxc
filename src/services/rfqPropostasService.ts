@@ -673,7 +673,9 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     }
   }
 
-  // 6. Registra histórico na seguradora (Mapa de Mercado)
+  // 6. Registra histórico e complementa CNPJ/SUSEP na seguradora (Mapa de Mercado)
+  // Regra do usuário: cria se não existe (marcada como "Cadastrada a partir de proposta — completar dados");
+  // se já existe, apenas complementa CNPJ/SUSEP se estiverem vazios; NUNCA sobrescreve dados existentes.
   try {
     const segRec = await pb.collection('seguradoras').getOne(targetSegId)
     const currentHist = (segRec.historico_relacionamento as any[]) || []
@@ -686,9 +688,35 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
         lmiLmg ? ` — LMI R$ ${lmiLmg}` : ''
       }${autoCadastrada ? ' (Seguradora auto-cadastrada)' : ''}`,
     })
-    await pb.collection('seguradoras').update(targetSegId, {
+
+    const updatePayload: Record<string, any> = {
       historico_relacionamento: currentHist,
-    })
+    }
+
+    let obsAtual = segRec.observacoes || ''
+    let needsObsUpdate = false
+
+    if (
+      seguradoraCnpj &&
+      !obsAtual.includes(seguradoraCnpj) &&
+      !obsAtual.toLowerCase().includes('cnpj:')
+    ) {
+      obsAtual += `${obsAtual ? ' | ' : ''}CNPJ: ${seguradoraCnpj}`
+      needsObsUpdate = true
+    }
+    if (
+      seguradoraSusep &&
+      !obsAtual.includes(seguradoraSusep) &&
+      !obsAtual.toLowerCase().includes('susep:')
+    ) {
+      obsAtual += `${obsAtual ? ' | ' : ''}SUSEP: ${seguradoraSusep}`
+      needsObsUpdate = true
+    }
+    if (needsObsUpdate) {
+      updatePayload.observacoes = obsAtual
+    }
+
+    await pb.collection('seguradoras').update(targetSegId, updatePayload)
   } catch (e) {
     console.warn('Não foi possível registrar histórico na seguradora:', e)
   }

@@ -111,9 +111,11 @@ export function isCoberturaBasica(cob: { nome: string; categoriaNormalizada?: st
     return true
   }
 
-  // Nome expressando Danos Materiais (prédio/conteúdo) ou Incêndio Básica
+  // Nome expressando Danos Materiais (prédio/conteúdo), Incêndio e Complementares ou Incêndio Básica
   if (
     normNome.includes('incendio basica') ||
+    normNome.includes('incendio e complementares') ||
+    normNome === 'incendio e complementares' ||
     (normNome.includes('danos materiais') &&
       (normNome.includes('predio') ||
         normNome.includes('conteudo') ||
@@ -123,10 +125,14 @@ export function isCoberturaBasica(cob: { nome: string; categoriaNormalizada?: st
   }
 
   // Combinação padrão de riscos da Cobertura Básica:
-  // Contém "incendio" e pelo menos um evento essencial da básica (raio, explosao, implosao)
+  // Contém "incendio" e pelo menos um evento essencial da básica (raio, explosao, implosao, fumaca, queda de aeronave)
   if (
     normNome.includes('incendio') &&
-    (normNome.includes('raio') || normNome.includes('explosao') || normNome.includes('implosao'))
+    (normNome.includes('raio') ||
+      normNome.includes('explosao') ||
+      normNome.includes('implosao') ||
+      normNome.includes('fumaca') ||
+      normNome.includes('aeronave'))
   ) {
     return true
   }
@@ -163,17 +169,19 @@ export function isCoberturaLucrosCessantes(cob: {
   if (
     normCat === 'lucros cessantes / perda de receita' ||
     normCat === 'lucros cessantes' ||
-    normCat.includes('perda de receita')
+    normCat.includes('perda de receita') ||
+    normCat.includes('lucro bruto')
   ) {
     return true
   }
 
-  // Termos no nome indicativos de Lucros Cessantes do segurado
+  // Termos no nome indicativos de Lucros Cessantes do segurado (Allianz: "Perda de Lucro Bruto", Porto: "LUCROS CESSANTES")
   return (
     normNome.includes('lucros cessantes') ||
     normNome.includes('lucro cessante') ||
     normNome.includes('perda de receita') ||
     normNome.includes('lucro bruto') ||
+    normNome.includes('perda de lucro bruto') ||
     normNome.includes('lucro liquido') ||
     normNome.includes('despesas fixas')
   )

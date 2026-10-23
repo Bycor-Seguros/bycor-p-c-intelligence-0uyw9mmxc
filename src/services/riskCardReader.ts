@@ -338,9 +338,16 @@ export function matchCanonicalCategory(rawName: string): string {
   if (
     norm.includes('lucros cessantes') ||
     norm.includes('lucro bruto') ||
+    norm.includes('perda de lucro bruto') ||
     norm.includes('despesas fixas')
   ) {
     return 'Lucros Cessantes / Perda de Receita'
+  }
+  if (
+    norm.includes('incendio e complementares') ||
+    (norm.includes('incendio') && norm.includes('complementares'))
+  ) {
+    return 'Incêndio Básica (Danos Materiais)'
   }
   if (norm.includes('honorarios') && norm.includes('peritos')) {
     return 'Honorários de Peritos'

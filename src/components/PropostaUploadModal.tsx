@@ -34,6 +34,7 @@ import {
 } from '@/services/propostaReader'
 import { registrarPropostaComArquivo, RfqSeguradoraRecord } from '@/services/rfqPropostasService'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { isCoberturaBasica, isCoberturaLucrosCessantes } from '@/services/submissionKitService'
 
 interface PropostaUploadModalProps {
   open: boolean
@@ -83,9 +84,11 @@ export default function PropostaUploadModal({
   const [premioLiquido, setPremioLiquido] = useState<string>('')
   const [premioBruto, setPremioBruto] = useState<string>('')
   const [iof, setIof] = useState<string>('')
+  const [custoApolice, setCustoApolice] = useState<string>('')
   const [lmiLmg, setLmiLmg] = useState<string>('')
   const [posFranquias, setPosFranquias] = useState<string>('')
   const [formaPagamento, setFormaPagamento] = useState<string>('')
+  const [numeroParcelas, setNumeroParcelas] = useState<string>('')
   const [clausulas, setClausulas] = useState<string>('')
   const [exclusoes, setExclusoes] = useState<string>('')
   const [coberturas, setCoberturas] = useState<ExtractedCoberturaItem[]>([])
@@ -153,9 +156,13 @@ export default function PropostaUploadModal({
     setPremioLiquido(seg.premioLiquido ? String(seg.premioLiquido) : '')
     setPremioBruto(seg.premioTotal ? String(seg.premioTotal) : '')
     setIof(seg.iof ? String(seg.iof) : '')
+    setCustoApolice(
+      seg.custoApolice !== undefined && seg.custoApolice !== null ? String(seg.custoApolice) : '',
+    )
     setLmiLmg(seg.lmiTotal ? String(seg.lmiTotal) : '')
     setPosFranquias(seg.posFranquiasGerais || '')
     setFormaPagamento(seg.formaPagamento || '')
+    setNumeroParcelas(seg.numeroParcelas ? String(seg.numeroParcelas) : '')
     setCoberturas(seg.coberturas || [])
     setStep('preview')
   }
@@ -701,7 +708,21 @@ export default function PropostaUploadModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold text-gray-700">
+                    Custo da Apólice (R$)
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={custoApolice}
+                    onChange={(e) => setCustoApolice(e.target.value)}
+                    placeholder="0.00"
+                    className="h-8 text-xs text-gray-600"
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold text-gray-700">
                     Forma de Pagamento
@@ -710,27 +731,116 @@ export default function PropostaUploadModal({
                     type="text"
                     value={formaPagamento}
                     onChange={(e) => setFormaPagamento(e.target.value)}
-                    placeholder="Ex: À vista - boleto / 1 + 3 parcelas"
+                    placeholder="Ex: Boleto Bancário (4x)"
                     className="h-8 text-xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Franquias Gerais
-                  </Label>
+                  <Label className="text-[11px] font-semibold text-gray-700">Nº de Parcelas</Label>
                   <Input
-                    type="text"
-                    value={posFranquias}
-                    onChange={(e) => setPosFranquias(e.target.value)}
-                    placeholder="Ex: 10% com mínimo de R$ 5.000 para Danos Elétricos"
-                    className="h-8 text-xs"
+                    type="number"
+                    step="1"
+                    value={numeroParcelas}
+                    onChange={(e) => setNumeroParcelas(e.target.value)}
+                    placeholder="Ex: 4 ou 6"
+                    className="h-8 text-xs font-mono"
                   />
                 </div>
               </div>
+
+              <div className="space-y-1 pt-1">
+                <Label className="text-[11px] font-semibold text-gray-700">
+                  Franquias Gerais / P.O.S.
+                </Label>
+                <Input
+                  type="text"
+                  value={posFranquias}
+                  onChange={(e) => setPosFranquias(e.target.value)}
+                  placeholder="Ex: 10% com mínimo de R$ 5.000 para Danos Elétricos"
+                  className="h-8 text-xs"
+                />
+              </div>
             </div>
 
-            {/* SEÇÃO 4: COBERTURAS EXTRAÍDAS */}
+            {/* SEÇÃO 4: DADOS QUALITATIVOS E COMPLEMENTARES (QUANDO DISPONÍVEIS) */}
+            {selectedSegment?.dadosComplementares && (
+              <div className="p-3 rounded-xl border border-blue-100 bg-blue-50/40 space-y-2">
+                <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-[#16578B]" />
+                  <span>Informações Complementares e Qualitativas do Documento</span>
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-gray-700">
+                  {selectedSegment.dadosComplementares.seguradoNome && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Proponente:</span>
+                      <strong className="text-gray-900">
+                        {selectedSegment.dadosComplementares.seguradoNome}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedSegment.dadosComplementares.seguradoCnpj && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">CNPJ Proponente:</span>
+                      <strong className="font-mono text-gray-900">
+                        {selectedSegment.dadosComplementares.seguradoCnpj}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedSegment.dadosComplementares.tipoConstrucao && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Construção:</span>
+                      <span className="text-gray-800">
+                        {selectedSegment.dadosComplementares.tipoConstrucao}
+                      </span>
+                    </div>
+                  )}
+                  {selectedSegment.dadosComplementares.atividade && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Atividade do Local:</span>
+                      <span className="text-gray-800">
+                        {selectedSegment.dadosComplementares.atividade}
+                      </span>
+                    </div>
+                  )}
+                  {selectedSegment.dadosComplementares.valorEmRiscoDeclarado && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Valor em Risco (VRD):</span>
+                      <strong className="text-gray-900">
+                        {formatCurrency(selectedSegment.dadosComplementares.valorEmRiscoDeclarado)}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedSegment.dadosComplementares.respostasQuestionario?.['valor_de_novo'] && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Valor de Novo:</span>
+                      <span className="font-bold text-emerald-800">
+                        {selectedSegment.dadosComplementares.respostasQuestionario['valor_de_novo']}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedSegment.dadosComplementares.protecionais &&
+                  selectedSegment.dadosComplementares.protecionais.length > 0 && (
+                    <div className="pt-1 border-t border-blue-100 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 font-semibold mr-1">
+                        Protecionais:
+                      </span>
+                      {selectedSegment.dadosComplementares.protecionais.map((p, idx) => (
+                        <span
+                          key={idx}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white border border-blue-200 text-blue-900"
+                        >
+                          ✔ {p}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            )}
+
+            {/* SEÇÃO 5: COBERTURAS EXTRAÍDAS */}
             {coberturas.length > 0 && (
               <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/50 space-y-2">
                 <div className="flex items-center justify-between">
@@ -743,38 +853,72 @@ export default function PropostaUploadModal({
                   </span>
                 </div>
 
-                <div className="max-h-44 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg bg-white">
                   <table className="w-full text-left text-[11px]">
                     <thead className="bg-gray-50 border-b text-gray-600 font-semibold sticky top-0">
                       <tr>
                         <th className="py-1.5 px-3">Cobertura</th>
-                        <th className="py-1.5 px-2">Categoria Normalizada</th>
+                        <th className="py-1.5 px-2">Classificação</th>
                         <th className="py-1.5 px-2 text-right">LMI</th>
                         <th className="py-1.5 px-2 text-right">Prêmio</th>
-                        <th className="py-1.5 px-3">Franquia</th>
+                        <th className="py-1.5 px-3">Franquia / P.O.S.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {coberturas.map((c, i) => (
-                        <tr key={i} className="hover:bg-gray-50/70">
-                          <td className="py-1.5 px-3 font-medium text-gray-900">{c.cobertura}</td>
-                          <td className="py-1.5 px-2 text-gray-500 text-[10px]">
-                            {c.categoriaNormalizada}
-                          </td>
-                          <td className="py-1.5 px-2 text-right text-gray-800 font-mono">
-                            {c.lmi ? formatCurrency(c.lmi) : '—'}
-                          </td>
-                          <td className="py-1.5 px-2 text-right text-emerald-800 font-mono">
-                            {c.premioLiquido ? formatCurrency(c.premioLiquido) : '—'}
-                          </td>
-                          <td
-                            className="py-1.5 px-3 text-gray-500 text-[10px] truncate max-w-[150px]"
-                            title={c.franquia}
+                      {coberturas.map((c, i) => {
+                        const isBasica = isCoberturaBasica({
+                          nome: c.cobertura,
+                          categoriaNormalizada: c.categoriaNormalizada,
+                        })
+                        const isLc = isCoberturaLucrosCessantes({
+                          nome: c.cobertura,
+                          categoriaNormalizada: c.categoriaNormalizada,
+                        })
+
+                        return (
+                          <tr
+                            key={i}
+                            className={`hover:bg-gray-50/70 transition-colors ${
+                              isBasica
+                                ? 'bg-blue-50/40 font-semibold'
+                                : isLc
+                                  ? 'bg-amber-50/30'
+                                  : ''
+                            }`}
                           >
-                            {c.franquia || 'Conforme apólice'}
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="py-1.5 px-3 font-medium text-gray-900">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>{c.cobertura}</span>
+                                {isBasica && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-blue-100 text-[#16578B] border border-blue-300">
+                                    ★ Básica
+                                  </span>
+                                )}
+                                {isLc && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300">
+                                    Lucros Cessantes
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-1.5 px-2 text-gray-500 text-[10px]">
+                              {c.categoriaNormalizada}
+                            </td>
+                            <td className="py-1.5 px-2 text-right text-gray-800 font-mono">
+                              {c.lmi ? formatCurrency(c.lmi) : '—'}
+                            </td>
+                            <td className="py-1.5 px-2 text-right text-emerald-800 font-mono">
+                              {c.premioLiquido ? formatCurrency(c.premioLiquido) : '—'}
+                            </td>
+                            <td
+                              className="py-1.5 px-3 text-gray-600 text-[10px] truncate max-w-[180px]"
+                              title={c.franquia}
+                            >
+                              {c.franquia || 'Conforme apólice'}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
