@@ -33,6 +33,7 @@ import {
   ExtractedCoberturaItem,
 } from '@/services/propostaReader'
 import { registrarPropostaComArquivo, RfqSeguradoraRecord } from '@/services/rfqPropostasService'
+import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { isCoberturaBasica, isCoberturaLucrosCessantes } from '@/services/submissionKitService'
 
@@ -125,11 +126,16 @@ export default function PropostaUploadModal({
   const applySegmentToForm = (seg: PropostaSegmentoExtracao) => {
     setSelectedSegment(seg)
 
-    // Tenta casar a seguradora detectada com as do banco
-    const detectedName = seg.seguradora.nomeCanonica.toLowerCase()
+    // Tenta casar a seguradora detectada com as do banco (match estrito por token/canônica, sem colisão de substring)
+    const detectedCanonical = canonicalizeInsurerName(seg.seguradora.nomeCanonica)
     const matchedBank = seguradorasDisponiveis.find((s) => {
-      const sLower = s.nome.toLowerCase()
-      return sLower.includes(detectedName) || detectedName.includes(sLower)
+      const sCanonical = canonicalizeInsurerName(s.nome)
+      if (detectedCanonical && sCanonical) {
+        return detectedCanonical === sCanonical
+      }
+      const sLower = s.nome.toLowerCase().trim()
+      const detectedName = seg.seguradora.nomeCanonica.toLowerCase().trim()
+      return sLower === detectedName
     })
 
     if (matchedBank) {

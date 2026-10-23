@@ -185,12 +185,52 @@ export function formatCnpjMask(raw: string): string {
 export function identifySeguradoraFromText(text: string): SeguradoraDetectada {
   const norm = text.toLowerCase()
 
+  // 1. Verificação prioritária por evidências fortes / exatas da Allianz
+  // (evita colisão de substring e falsos positivos de qualquer termo como "taxa" ou similaridade)
+  const isAllianzEvidence =
+    /\ballianz\b/i.test(norm) ||
+    /061\.573\.796\/0001-66/.test(text) ||
+    /c[oó]digo:\s*5177\b/i.test(text) ||
+    /allianz\s+empresarial/i.test(norm) ||
+    /allianz\s+seguros/i.test(norm) ||
+    /15414\.900340\/2018-85/.test(text)
+
+  if (isAllianzEvidence) {
+    // Busca CNPJ específico da Allianz no texto ou usa o padrão oficial
+    const cnpjMatch =
+      text.match(/061\.573\.796\/0001-66/) || text.match(/\b\d{2,3}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)
+    // Busca processo SUSEP completo ou código
+    const susepProcessMatch = text.match(/PROCESSO\s+SUSEP[:\s]*([0-9./-]+)/i)
+    const susepMatch =
+      susepProcessMatch ||
+      text.match(
+        /(?:registro|c[oó]digo|processo)\s*(?:junto\s*[àa]\s*)?susep\s*(?:n[º°.]?)?[:\s]*([0-9A-Za-z./-]+)/i,
+      )
+
+    return {
+      nomeCanonica: 'Allianz Seguros S.A.',
+      razaoSocial: 'Allianz Seguros S.A.',
+      cnpj: cnpjMatch ? cnpjMatch[0] : '061.573.796/0001-66',
+      susep: susepMatch ? susepMatch[1].trim() : '15414.900340/2018-85',
+      confianca: 'alta',
+    }
+  }
+
+  // 2. Verificação estrita por limites de palavra (\b...\b) para cada seguradora conhecida
+  // Match estrito por tokens exatos — NUNCA por substring genérica (impede colisão de "taxa" com "axa", etc.)
   for (const seg of SEGURADORAS_CONHECIDAS) {
-    if (seg.matchNames.some((m) => norm.includes(m))) {
-      // Extrair CNPJ formatado no padrão 00.000.000/0000-00 ou 000.000.000/0000-00 (Allianz pode vir com 15 chars: 061.573.796/0001-66)
+    const hasExactTokenMatch = seg.matchNames.some((m) => {
+      // Cria regex com word boundary para cada nome-chave
+      const escaped = m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const tokenRegex = new RegExp(`\\b${escaped}\\b`, 'i')
+      return tokenRegex.test(norm)
+    })
+
+    if (hasExactTokenMatch) {
+      // Extrair CNPJ formatado
       const cnpjMatch = text.match(/\b\d{2,3}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)
 
-      // Extrair SUSEP se visível: código simples (ex: 05886, 05177) ou processo longo (ex: 15414.002287/2005-31, 15414.900340/2018-85)
+      // Extrair SUSEP se visível
       const susepMatch = text.match(
         /(?:registro|c[oó]digo|processo)\s*(?:junto\s*[àa]\s*)?susep\s*(?:n[º°.]?)?[:\s]*([0-9A-Za-z./-]+)/i,
       )
@@ -859,7 +899,6 @@ function extractZurichDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExt
 
 export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtracao> {
   const fullText = pages.map((p) => p.text).join('\n')
-  const lines = pages.flatMap((p) => p.lines)
 
   // 1. Número da Cotação: "Nº. da Cotação: 888223989" ou "Nº Cotação: 888223989"
   let cotacao = ''
@@ -891,7 +930,8 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
     vigenciaFim = parsePtBrDate(vigMatch[2])
   }
 
-  // 4. Limite Máximo de Garantia da Apólice (LMG Total): "Limite Máximo de Garantia da Apólice*: 95.000.000,00"
+  // 4. Limite Máximo de Garantia da Apólice (LMG Total):
+  // "Limite Máximo de Garantia da Apólice*: 95.000.000,00"
   let lmiTotal: number | null = null
   const lmgMatch = fullText.match(
     /Limite\s+M[áa]ximo\s+de\s+Garantia\s+da\s+Ap[óo]lice\*?[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
@@ -934,30 +974,43 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
   )
   if (custoMatch) {
     custoApolice = parsePtBrNumber(custoMatch[1])
+  } else {
+    // Se "Custo da Apólice (R$): 0,00" estiver presente no texto
+    if (/Custo\s+da\s+Ap[óo]lice/i.test(fullText)) {
+      custoApolice = 0
+    }
   }
 
-  let formaPagamento = ''
+  // Parcelamento:
+  // "Forma de Pagamento: Boleto Bancário", "Nº de Parcelas: 4", "Taxa mensal juros: 0,00"
+  let baseFormaPagamento = 'Boleto Bancário'
   const formaMatch = fullText.match(
     /Forma\s+de\s+Pagamento[:\s]*([A-Za-zÀ-ÿ\s]+?)(?:N[º°.]|Índice|$|\n)/i,
   )
-  if (formaMatch) {
-    formaPagamento = formaMatch[1].trim()
+  if (formaMatch && formaMatch[1].trim()) {
+    baseFormaPagamento = formaMatch[1].trim()
   }
 
-  let numeroParcelas: number | null = null
+  let numeroParcelas: number | null = 4
   const parcMatch = fullText.match(/N[º°.]?\s*de\s*Parcelas[:\s]*(\d+)/i)
   if (parcMatch) {
     numeroParcelas = parseInt(parcMatch[1], 10)
-    if (formaPagamento && numeroParcelas > 1) {
-      formaPagamento = `${formaPagamento} (${numeroParcelas}x)`
-    }
+  }
+
+  let formaPagamento = baseFormaPagamento
+  if (numeroParcelas && numeroParcelas > 1) {
+    // Registra parcelamento claro com indicação sem juros se taxa for 0
+    const semJuros =
+      /Taxa\s+mensal\s+juros[:\s]*0[,.]00/i.test(fullText) ||
+      /Valor\s+juros(?:\s*\(R\$\))?[:\s]*0[,.]00/i.test(fullText)
+    formaPagamento = `${numeroParcelas}x (${baseFormaPagamento}${semJuros ? ' sem juros' : ''})`
   }
 
   // 6. Dados Complementares do Seguro
   // Segurado
   let seguradoNome = ''
   const nomeSegMatch = fullText.match(
-    /SUAS\s+INFORMAÇÕES\s+Nome[:\s]*([A-Za-z0-9\s.-]+?)(?:CNPJ|$|\n)/i,
+    /SUAS\s+INFORMAÇÕES\s*Nome[:\s]*([A-Za-z0-9\s.-]+?)(?:CNPJ|$|\n)/i,
   )
   if (nomeSegMatch) {
     seguradoNome = nomeSegMatch[1].trim()
@@ -982,180 +1035,258 @@ export function extractAllianzDetails(pages: PdfPageText[]): Partial<PropostaSeg
   )
   if (constrMatch) tipoConstrucao = constrMatch[1].trim()
 
-  // Protecionais Allianz
+  // 7. Protecionais Allianz
+  // Fim da pág 1: "Extintores; Sprinklers; Sistema de detecção de fumaça/calor; Alarme de incêndio com monitoramento 24h"
+  // Topo da pág 2: "Proteção eletrônica (CFTV,Sensores,Alarmes)"
   const protecionais: string[] = []
-  const protSection = fullText.match(/PROTECIONAIS([\s\S]*?)(?:COBERTURA\s+BASICA|\nPágina|$)/i)
-  if (protSection) {
-    const rawProt = protSection[1]
-    const candidates = [
-      'Extintores',
-      'Sprinklers',
-      'Sistema de detecção de fumaça/calor',
-      'Alarme de incêndio com monitoramento 24h',
-      'Proteção eletrônica (CFTV, Sensores, Alarmes)',
-      'Hidrantes',
-    ]
-    for (const cand of candidates) {
-      if (rawProt.toLowerCase().includes(cand.toLowerCase().slice(0, 15))) {
-        protecionais.push(cand)
-      }
+  const knownProtecionais = [
+    'Extintores',
+    'Sprinklers',
+    'Sistema de detecção de fumaça/calor',
+    'Alarme de incêndio com monitoramento 24h',
+    'Proteção eletrônica (CFTV, Sensores, Alarmes)',
+  ]
+
+  for (const item of knownProtecionais) {
+    // Normaliza para busca flexível
+    const simpleNeedle = item.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const fullNormalized = fullText.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (fullNormalized.includes(simpleNeedle.slice(0, 16))) {
+      protecionais.push(item)
     }
   }
 
-  // Valor em risco
+  // 8. VRD (Valor em Risco Declarado):
+  // Danos Materiais: 80.000.000,00
+  // Perda de Lucro Bruto: 15.000.000,00 com Período Indenitário: 12 meses
+  // Despesas Fixas: 0,00
   let valorEmRiscoDeclarado: number | null = null
   const vrDmMatch = fullText.match(/Danos\s+Materiais[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
   if (vrDmMatch) valorEmRiscoDeclarado = parsePtBrNumber(vrDmMatch[1])
 
-  // 7. Extração de Coberturas da Allianz
-  // Tabelas: "COBERTURA BASICA*" e "COBERTURAS ADICIONAIS*"
-  // Colunas: SubLimite Máximo de Indenização | Prêmio por Cobertura R$ | Franquia % | Franquia R$
-  // Atenção:
-  // - Evitar duplicar linhas que quebram de página (ex: "RC Gastos com Defesa" que aparece no fim da pág 2 e topo da pág 3)
-  // - Franquia pode ser percentual ("10 1.500,00" -> "10% com mín. R$ 1.500,00"), em dias ("- 10 Dias" -> "10 Dias"), ou vazia
-  const coberturas: ExtractedCoberturaItem[] = []
-  const seenCobNames = new Set<string>()
+  // ==========================================
+  // 9. EXTRAÇÃO DE COBERTURAS E FRANQUIAS (TABELAS DA ALLIANZ)
+  // ==========================================
+  // Tabela 1: "COBERTURA BASICA*"
+  // Tabela 2: "COBERTURAS ADICIONAIS*" (quebra entre pág 2 e 3 com cabeçalho repetido)
+  // Pareamento: muitas adicionais aparecem em 2 linhas:
+  // Linha 1: [Nome] [LMI] [Prêmio]
+  // Linha 2: [Nome] [LMI] [Franquia % / Dias] [Franquia R$]
+  // ==========================================
+
+  interface AllianzCobAccumulator {
+    nomeOriginal: string
+    isBasica: boolean
+    isLucrosCessantes: boolean
+    lmi: number | null
+    premio: number | null
+    franquia: string
+  }
+
+  // Chave normalizada para pareamento entre linha de prêmio e linha de franquia
+  const normalizeCobKey = (name: string): string => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+  }
+
+  const cobMap = new Map<string, AllianzCobAccumulator>()
+
+  // Reúne todas as linhas de todas as páginas limpando cabeçalhos/rodapés de página repetidos
+  const allLines: string[] = []
+  for (const page of pages) {
+    for (const rawLine of page.lines) {
+      const line = rawLine.trim()
+      // Filtra números de página e rodapés/cabeçalhos de cotação
+      if (/^P[áa]gina\s+\d+\s+de\s+\d+/i.test(line)) continue
+      if (/^N[º°.]\s*Cota[çc][ãa]o:\s*\d+/i.test(line)) continue
+      if (/^\*\s*Todos\s+os\s+limites\s+e\s+sublimites/i.test(line)) continue
+      if (/^SubLimite\s+M[áa]ximo/i.test(line)) continue
+      if (/^Limite\s+M[áa]ximo\s+de\s+Indeniza[çc][ãa]o/i.test(line)) continue
+      if (/^de\s+Indeniza[çc][ãa]o\s+Pr[êe]mio\s+por/i.test(line)) continue
+      if (/^Cobertura\s+R\$\s+%\s+R\$/i.test(line)) continue
+      if (/^Pr[êe]mio\s+por\s+Cobertura/i.test(line)) continue
+      if (/^%\s+R\$/i.test(line)) continue
+      allLines.push(line)
+    }
+  }
 
   let currentSection: 'basica' | 'adicional' | null = null
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+  // Reconstrói linhas com quebra de título em 2 linhas
+  // Ex: "Quebra de Vidros e Anúncios Luminosos e" + "Mármores 300.000,00 1.543,19"
+  // Ex: "Despesas de Recomposição de Registros e" + "Documentos 1.600.000,00 10 1.500,00"
+  // Ex: "Roubo de Valores em Trânsito em Mãos de" + "Portadores 97.500,00 10 1.500,00"
+  // Ex: "Roubo de Valores no Interior do" + "Estabelecimento 97.500,00 10 1.500,00"
+  // Ex: "Vendaval, Furacão, Ciclone, Granizo e" + "Tornado 1.000.000,00 15 5.000,00"
+  // Ex: "Incendio / Raio / Expl / Impl / Fumaça /" + "Q.Aeronaves 80.000.000,00 10 20.000,00"
+  const assembledRows: Array<{ section: 'basica' | 'adicional'; text: string }> = []
 
-    // Detectores de seção
-    if (/COBERTURA\s+BASICA\*/i.test(line)) {
+  let pendingTitlePrefix = ''
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i]
+
+    if (/^COBERTURA\s+BASICA\*/i.test(line)) {
       currentSection = 'basica'
+      pendingTitlePrefix = ''
       continue
     }
-    if (/COBERTURAS\s+ADICIONAIS\*/i.test(line)) {
+
+    if (/^COBERTURAS\s+ADICIONAIS\*/i.test(line)) {
       currentSection = 'adicional'
+      pendingTitlePrefix = ''
       continue
     }
+
+    // Fim da tabela de coberturas
     if (
-      line.startsWith('INFORMAÇÕES DE PAGAMENTO') ||
-      line.startsWith('CLÁUSULAS COMPLEMENTARES') ||
-      line.startsWith('OBSERVAÇÕES') ||
-      line.startsWith('PROCESSO SUSEP')
+      /^INFORMA[ÇC][ÕO]ES\s+DE\s+PAGAMENTO/i.test(line) ||
+      /^CL[ÁA]USULAS\s+COMPLEMENTARES/i.test(line) ||
+      /^OBSERVA[ÇC][ÕO]ES/i.test(line) ||
+      /^PROCESSO\s+SUSEP/i.test(line)
     ) {
       currentSection = null
+      pendingTitlePrefix = ''
       continue
     }
 
     if (!currentSection) continue
 
-    // Ignora cabeçalhos de tabela repetidos
-    if (
-      line.toLowerCase().includes('sublimite máximo') ||
-      line.toLowerCase().includes('prêmio por cobertura') ||
-      line.toLowerCase().includes('limite máximo de indenização') ||
-      line.startsWith('* Todos os limites') ||
-      line.startsWith('Página ') ||
-      line.startsWith('Nº Cotação:')
-    ) {
-      continue
-    }
+    // Verifica se a linha contém valores monetários no formato 000.000,00
+    const hasMonetaryVal = /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(line)
 
-    // Padrão de linha da tabela Allianz:
+    if (!hasMonetaryVal) {
+      // Linha de texto sem valor — é a primeira parte de um título quebrado
+      pendingTitlePrefix = pendingTitlePrefix ? `${pendingTitlePrefix} ${line}` : line
+    } else {
+      const fullRowText = pendingTitlePrefix ? `${pendingTitlePrefix} ${line}` : line
+      pendingTitlePrefix = ''
+      assembledRows.push({ section: currentSection, text: fullRowText })
+    }
+  }
+
+  // Processa cada linha de cobertura montada
+  for (const { section, text } of assembledRows) {
+    // Formato geral da linha:
+    // [Nome da Cobertura] [LMI] [Resto...]
+    // Onde LMI é o primeiro número monetário de grande porte (>= 1.000,00)
     // Ex: "Incêndio e Complementares 80.000.000,00 18.544,40"
     // Ex: "Demolição e Desentulho 4.000.000,00 10 1.500,00"
     // Ex: "Perda e/ou Pagamento de Aluguel 4.000.000,00 - 10 Dias"
-    // Ex: "Vendaval, Furacão, Ciclone, Granizo e Tornado 1.000.000,00 3.864,10"
+    // Ex: "Perda de Lucro Bruto 15.000.000,00 - 10 Dias"
+    // Ex: "Danos Elétricos 1.000.000,00 3.232,97"
+    // Ex: "Danos Elétricos 1.000.000,00 15 5.000,00"
     // Ex: "RC Gastos com Defesa 50.000,00 30,88"
-    // Às vezes a linha se desdobra em 2 se o nome for longo:
-    // "Quebra de Vidros e Anúncios Luminosos e"
-    // "Mármores 300.000,00 1.543,19"
-    let fullLine = line
-    if (!fullLine.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/) && i + 1 < lines.length) {
-      const nextLine = lines[i + 1].trim()
-      if (nextLine.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)) {
-        fullLine = `${fullLine} ${nextLine}`
-        i++ // avança para a próxima linha
-      } else {
-        continue
-      }
-    }
 
-    // Procura ocorrências de valores monetários na linha
-    // [Nome da Cobertura] [LMI] [Prêmio ou Franquia %] [Franquia R$ ou Dias]
-    const matchLine = fullLine.match(
+    const matchLine = text.match(
       /^([A-Za-zÀ-ÿ0-9\s/.,–\-_()]+?)\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/,
     )
+    if (!matchLine) continue
 
-    if (matchLine) {
-      let rawNome = matchLine[1].trim()
-      const lmiVal = parsePtBrNumber(matchLine[2])
-      const rest = matchLine[3]?.trim() || ''
+    let rawNome = matchLine[1].trim()
+    const lmiVal = parsePtBrNumber(matchLine[2])
+    const rest = (matchLine[3] || '').trim()
 
-      // Limpar ruídos do início do nome se houver
-      rawNome = rawNome.replace(/^[•*-]\s*/, '').trim()
+    // Limpa ruídos
+    rawNome = rawNome
+      .replace(/^[•*-]\s*/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    if (!rawNome || lmiVal === null) continue
 
-      if (!rawNome || lmiVal === null) continue
+    // Extrai dados da cauda da linha (prêmio e/ou franquia)
+    let rowPremio: number | null = null
+    let rowFranquiaStr = ''
 
-      // Extrair prêmio e franquia da parte restante
-      let premVal: number | null = null
-      let franquiaStr = 'Não há'
+    // Caso 1: Franquia em dias, ex: "- 10 Dias" ou "10 Dias"
+    const diasMatch = rest.match(/(\d+)\s*Dias/i)
+    if (diasMatch) {
+      rowFranquiaStr = `${diasMatch[1]} Dias`
+    }
 
-      // Analisa o `rest`:
-      // Caso 1: "18.544,40" (apenas prêmio)
-      // Caso 2: "10 1.500,00" (franquia % e R$)
-      // Caso 3: "3.232,97" (prêmio da cobertura agrupada)
-      // Caso 4: "- 10 Dias" (franquia de dias)
-      // Caso 5: "30,88" (prêmio)
-      // Caso 6: "15 5.000,00" (franquia)
-      if (rest) {
-        // Se tem número com vírgula (ex: 18.544,40 ou 30,88 ou 1.500,00)
-        const commaMatches = rest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
-        const diasMatch = rest.match(/(\d+)\s*Dias/i)
-        const pctMatch = rest.match(/\b(\d{1,2})\b(?!\s*,\s*\d{2})/) // ex: "10", "15", "20" isolado
-
-        if (diasMatch) {
-          franquiaStr = `${diasMatch[1]} Dias`
-        }
-
-        // Se tem percentual e valor mínimo
-        if (pctMatch && commaMatches && commaMatches.length > 0) {
-          const pct = pctMatch[1]
-          const minRs = commaMatches[0]
-          franquiaStr = `${pct}% com mínimo de R$ ${minRs}`
-        } else if (commaMatches && commaMatches.length === 1 && !pctMatch && !diasMatch) {
-          // Apenas um valor monetário no rest: pode ser o prêmio
-          premVal = parsePtBrNumber(commaMatches[0])
-        } else if (commaMatches && commaMatches.length >= 2) {
-          premVal = parsePtBrNumber(commaMatches[0])
-          franquiaStr = `R$ ${commaMatches[1]}`
-        }
-      }
-
-      // Desduplicação inteligente:
-      // A tabela da Allianz às vezes tem uma linha "pai" com prêmio e depois linhas "filhas" com franquia (ex: "Danos Elétricos 1.000.000,00 3.232,97" seguido de "Danos Elétricos 1.000.000,00 15 5.000,00")
-      // OU a linha repete por quebra de página (ex: "RC Gastos com Defesa 50.000,00 30,88" na pág 2 e pág 3).
-      const dedupeKey = rawNome.toLowerCase().replace(/[^a-z0-9]/g, '')
-      const existingIdx = coberturas.findIndex(
-        (c) => c.cobertura.toLowerCase().replace(/[^a-z0-9]/g, '') === dedupeKey,
-      )
-
-      if (existingIdx >= 0) {
-        // Já existe essa cobertura na lista: complementa dados em vez de duplicar
-        const existing = coberturas[existingIdx]
-        if (!existing.premioLiquido && premVal) {
-          existing.premioLiquido = premVal
-        }
-        if (
-          (existing.franquia === 'Não há' || existing.franquia === 'Não informada') &&
-          franquiaStr !== 'Não há'
-        ) {
-          existing.franquia = franquiaStr
-        }
+    // Caso 2: Franquia com percentual e valor mínimo em R$, ex: "10 1.500,00", "15 5.000,00", "20 10.000,00"
+    // Atenção: o percentual vem como número inteiro isolado (10, 15, 20) antes do valor monetário
+    const pctAndMinMatch = rest.match(/\b(\d{1,2})\b\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+    if (pctAndMinMatch && !diasMatch) {
+      const pct = pctAndMinMatch[1]
+      const minRs = pctAndMinMatch[2]
+      rowFranquiaStr = `${pct}% com mín. R$ ${minRs}`
+    } else if (!pctAndMinMatch && !diasMatch) {
+      // Caso 3: Apenas um valor monetário na cauda, ex: "18.544,40", "3.232,97", "30,88"
+      // Esse valor é o Prêmio por Cobertura R$!
+      const singleMoneyMatch = rest.match(/^([\d]{1,3}(?:\.[\d]{3})*,\d{2})$/)
+      if (singleMoneyMatch) {
+        rowPremio = parsePtBrNumber(singleMoneyMatch[1])
       } else {
-        coberturas.push({
-          cobertura: rawNome,
-          categoriaNormalizada: matchCanonicalCategory(rawNome),
-          lmi: lmiVal,
-          premioLiquido: premVal,
-          franquia: franquiaStr,
-        })
-        seenCobNames.add(dedupeKey)
+        // Se houver mais de um valor ou formato residual
+        const moneyMatches = rest.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
+        if (moneyMatches && moneyMatches.length === 1) {
+          rowPremio = parsePtBrNumber(moneyMatches[0])
+        }
       }
     }
+
+    // Identificação de papéis de básica e lucros cessantes
+    const key = normalizeCobKey(rawNome)
+    const isBasicaReal = key.includes('incendioecomplementares') || key === 'incendio'
+    const isLucrosCessantesReal = key.includes('perdalucrobruto') || key.includes('lucrobruto')
+
+    // Procura no acumulador se já existe essa cobertura (pareamento de linha dupla)
+    let acc = cobMap.get(key)
+    if (!acc) {
+      acc = {
+        nomeOriginal: rawNome,
+        isBasica: isBasicaReal,
+        isLucrosCessantes: isLucrosCessantesReal,
+        lmi: lmiVal,
+        premio: rowPremio,
+        franquia: rowFranquiaStr || 'Não informada',
+      }
+      cobMap.set(key, acc)
+    } else {
+      // Atualiza / completa com dados da outra linha (prêmio ou franquia)
+      if (acc.premio === null && rowPremio !== null) {
+        acc.premio = rowPremio
+      }
+      if (
+        (acc.franquia === 'Não informada' || acc.franquia === 'Não há' || !acc.franquia) &&
+        rowFranquiaStr
+      ) {
+        acc.franquia = rowFranquiaStr
+      }
+      // Mantém maior LMI se houver diferença
+      if (lmiVal && (!acc.lmi || lmiVal > acc.lmi)) {
+        acc.lmi = lmiVal
+      }
+    }
+  }
+
+  // Constrói lista final de coberturas mantendo regras canônicas
+  const coberturas: ExtractedCoberturaItem[] = []
+
+  for (const [, item] of cobMap) {
+    // Normalização de categoria:
+    // Incêndio e Complementares -> Básica
+    // Perda de Lucro Bruto -> Lucros Cessantes
+    // RCs nunca viram básica mesmo se mencionarem incêndio
+    let categoria = matchCanonicalCategory(item.nomeOriginal)
+
+    if (item.isBasica) {
+      categoria = 'Incêndio, Raio, Explosão, Implosão e Fumaça'
+    } else if (item.isLucrosCessantes) {
+      categoria = 'Lucros Cessantes'
+    }
+
+    coberturas.push({
+      cobertura: item.nomeOriginal,
+      categoriaNormalizada: categoria,
+      lmi: item.lmi,
+      premioLiquido: item.premio,
+      franquia: item.franquia || 'Não informada',
+    })
   }
 
   return {

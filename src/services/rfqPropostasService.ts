@@ -423,16 +423,18 @@ export async function autoCadastrarOuLocalizarSeguradora(dados: {
     historico_relacionamento?: any[]
   }>()
 
-  // Casamento exato ou por tokens canônicos
+  // Casamento exato ou por tokens canônicos com verificação estrita
   let match = todas.find((s) => s.nome.toLowerCase() === nomeLower)
 
   if (!match) {
-    // Casamento flexível (AXA, Chubb, Tokio Marine, Zurich, etc.)
+    // Casamento estrito por nome canônico normalizado
     const canonicaBuscada = canonicalizeInsurerName(nomeBuscado)
-    match = todas.find((s) => {
-      const canonicaExistente = canonicalizeInsurerName(s.nome)
-      return canonicaExistente === canonicaBuscada
-    })
+    if (canonicaBuscada) {
+      match = todas.find((s) => {
+        const canonicaExistente = canonicalizeInsurerName(s.nome)
+        return canonicaExistente && canonicaExistente === canonicaBuscada
+      })
+    }
   }
 
   if (match) {
