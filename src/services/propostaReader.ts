@@ -131,6 +131,8 @@ export interface PropostaSegmentoExtracao {
     produtoRamo?: string
     valorEmRiscoDeclarado?: number | null
     lucrosCessantesCausas?: string
+    primeiraParcelaValor?: number | null
+    demaisParcelasValor?: number | null
   }
 }
 
@@ -1909,8 +1911,9 @@ export function extractPortoDetails(
   // 4. Demonstrativo de Prêmio Geral (Página 5):
   // Há dois blocos na Porto:
   // "DEMONSTRATIVO DE PRÊMIO DO ITEM" e "DEMONSTRATIVO DE PRÊMIO GERAL"
-  // Devemos capturar SEMPRE do DEMONSTRATIVO DE PRÊMIO GERAL:
-  // PRÊMIO LÍQUIDO TOTAL R$ 82.296,90 (usar o TOTAL, não o de coberturas/cláusulas)
+  // O primeiro ("DO ITEM") não possui IOF (apenas Coberturas, Cláusulas, Líquido Total, Custo de Apólice, Prêmio Total).
+  // O segundo ("DEMONSTRATIVO DE PRÊMIO GERAL") é o oficial e completo:
+  // PRÊMIO LÍQUIDO TOTAL R$ 82.296,90
   // CUSTO DE APÓLICE R$ 0,00
   // I.O.F. R$ 6.073,51
   // PRÊMIO TOTAL R$ 88.370,41
@@ -1920,121 +1923,211 @@ export function extractPortoDetails(
   let iof: number | null = null
   let custoApolice: number | null = null
 
-  // Isola a seção DEMONSTRATIVO DE PRÊMIO GERAL (com ou sem acento) para máxima precisão
-  const demonstrativoGeralMatch = fullText.match(/DEMONSTRATIVO\s+DE\s+PR[ÊE]MIO\s+GERAL/i)
-  const demonstrativoGeralIdx = demonstrativoGeralMatch ? demonstrativoGeralMatch.index! : -1
+  // Isola a seção DEMONSTRATIVO DE PRÊMIO GERAL (com ou sem acento).
+  // Em documentos com múltiplos blocos, busca a ÚLTIMA ocorrência de "DEMONSTRATIVO DE PRÊMIO GERAL"
+  // para garantir que nunca seja interceptado pelo bloco "DO ITEM".
+  const geralRegex = /DEMONSTRATIVO\s+DE\s+PR[ÊE]MIO\s+GERAL/gi
+  let matchGeral: RegExpExecArray | null
+  let lastGeralIdx = -1
+  while ((matchGeral = geralRegex.exec(fullText)) !== null) {
+    lastGeralIdx = matchGeral.index
+  }
+
   const demonstrativoText =
-    demonstrativoGeralIdx !== -1
-      ? fullText.slice(demonstrativoGeralIdx, demonstrativoGeralIdx + 1500)
-      : fullText
+    lastGeralIdx !== -1 ? fullText.slice(lastGeralIdx, lastGeralIdx + 2000) : fullText
 
-  // Extração estrita do Prêmio Líquido:
-  // No layout tabular, o rótulo "PRÊMIO LÍQUIDO TOTAL" pode vir seguido do valor na mesma linha,
-  // ou os rótulos podem estar agrupados numa linha e os valores monetários na linha seguinte.
-  const prLiqRegexes = [
-    /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    /PR[ÊE]MIO\s+L[ÍI]QUIDO[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-  ]
-  for (const rgx of prLiqRegexes) {
-    const m = demonstrativoText.match(rgx)
-    if (m) {
-      premioLiquido = parsePtBrNumber(m[1])
-      break
+  // Abordagem 1: Extração geométrica direta na página 5 (ou página onde está o bloco GERAL)
+  // No layout da Porto Seguro (ver OCR pág 5):
+  // DEMONSTRATIVO DE PRÊMIO GERAL
+  // PRÊMIO LÍQUIDO COBERTURAS  PRÊMIO LÍQUIDO CLÁUSULAS  PRÊMIO LÍQUIDO TOTAL  CUSTO DE APÓLICE  I.O.F.  PRÊMIO TOTAL
+  // R$ 82.296,90               R$ 0,00                   R$ 82.296,90          R$ 0,00           R$ 6.073,51  R$ 88.370,41
+  for (const page of pages) {
+    if (!page.items || page.items.length === 0) continue
+    const items = page.items
+    const geralItem = items.find((it) =>
+      /DEMONSTRATIVO\s+DE\s+PR[ÊE]MIO\s+GERAL/i.test(it.str.trim()),
+    )
+    if (!geralItem) continue
+
+    // Procura cabeçalho logo abaixo de "DEMONSTRATIVO DE PRÊMIO GERAL" (Y menor no PDF)
+    // Coleta fragmentos entre o título e a próxima seção (ex.: "FORMAS DE PAGAMENTO" ou ~150pt abaixo)
+    const formasItem = items.find(
+      (it) => it.y < geralItem.y && /FORMAS?\s+DE\s+PAGAMENTO/i.test(it.str.trim()),
+    )
+    const minY = formasItem ? formasItem.y : geralItem.y - 120
+
+    const blockItems = items.filter((it) => it.y < geralItem.y && it.y > minY)
+    // Agrupa por linha Y
+    const rowMap = new Map<number, typeof items>()
+    for (const it of blockItems) {
+      let foundY: number | null = null
+      for (const ey of rowMap.keys()) {
+        if (Math.abs(ey - it.y) <= 3.5) {
+          foundY = ey
+          break
+        }
+      }
+      if (foundY === null) {
+        foundY = it.y
+        rowMap.set(foundY, [])
+      }
+      rowMap.get(foundY)!.push(it)
+    }
+
+    const sortedYs = Array.from(rowMap.keys()).sort((a, b) => b - a)
+    // Identifica a linha de cabeçalhos das colunas e a linha de valores
+    let headerRowIdx = -1
+    for (let r = 0; r < sortedYs.length; r++) {
+      const rowText = (rowMap.get(sortedYs[r]) || []).map((it) => it.str).join(' ')
+      if (/PR[ÊE]MIO\s+L[ÍI]QUIDO/i.test(rowText) && /I\.?O\.?F\.?/i.test(rowText)) {
+        headerRowIdx = r
+        break
+      }
+    }
+
+    if (headerRowIdx !== -1) {
+      // Coleta colunas com suas posições X
+      const headerItems = (rowMap.get(sortedYs[headerRowIdx]) || []).sort((a, b) => a.x - b.x)
+      // Procura a linha de valores logo abaixo
+      for (let r = headerRowIdx + 1; r < Math.min(sortedYs.length, headerRowIdx + 3); r++) {
+        const valRowItems = (rowMap.get(sortedYs[r]) || []).sort((a, b) => a.x - b.x)
+        const rowStr = valRowItems.map((it) => it.str).join(' ')
+        const valMatches = rowStr.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
+        if (valMatches && valMatches.length >= 4) {
+          // No DEMONSTRATIVO GERAL completo são 6 colunas de valores:
+          // [0] PRÊMIO LÍQUIDO COBERTURAS
+          // [1] PRÊMIO LÍQUIDO CLÁUSULAS
+          // [2] PRÊMIO LÍQUIDO TOTAL
+          // [3] CUSTO DE APÓLICE
+          // [4] I.O.F.
+          // [5] PRÊMIO TOTAL
+          if (valMatches.length >= 6) {
+            premioLiquido = parsePtBrNumber(valMatches[2])
+            custoApolice = parsePtBrNumber(valMatches[3])
+            iof = parsePtBrNumber(valMatches[4])
+            premioTotal = parsePtBrNumber(valMatches[5])
+          } else if (valMatches.length === 5) {
+            // Caso falte cláusulas: [coberturas, líquido total, custo, iof, total]
+            premioLiquido = parsePtBrNumber(valMatches[1])
+            custoApolice = parsePtBrNumber(valMatches[2])
+            iof = parsePtBrNumber(valMatches[3])
+            premioTotal = parsePtBrNumber(valMatches[4])
+          } else if (valMatches.length === 4) {
+            // [líquido total, custo, iof, total]
+            premioLiquido = parsePtBrNumber(valMatches[0])
+            custoApolice = parsePtBrNumber(valMatches[1])
+            iof = parsePtBrNumber(valMatches[2])
+            premioTotal = parsePtBrNumber(valMatches[3])
+          }
+          break
+        }
+      }
     }
   }
 
-  // Extração estrita do Prêmio Total:
-  // "PRÊMIO TOTAL" (e NÃO "PRÊMIO LÍQUIDO TOTAL")
-  const prTotRegexes = [
-    /(?<!L[ÍI]QUIDO\s+)PR[ÊE]MIO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    /\bTOTAL\s+(?:A\s+PAGAR|DO\s+SEGURO|GERAL)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-  ]
-  for (const rgx of prTotRegexes) {
-    const m = demonstrativoText.match(rgx)
-    if (m) {
-      premioTotal = parsePtBrNumber(m[1])
-      break
-    }
-  }
-
-  // Extração estrita do IOF:
-  const iofRegexes = [/(?:I\.?O\.?F\.?|IOF)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i]
-  for (const rgx of iofRegexes) {
-    const m = demonstrativoText.match(rgx)
-    if (m) {
-      iof = parsePtBrNumber(m[1])
-      break
-    }
-  }
-
-  // Extração estrita do Custo de Apólice:
-  const custoRegexes = [
-    /CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-  ]
-  for (const rgx of custoRegexes) {
-    const m = demonstrativoText.match(rgx)
-    if (m) {
-      custoApolice = parsePtBrNumber(m[1])
-      break
-    }
-  }
-  if (custoApolice === null && /CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE/i.test(demonstrativoText)) {
-    custoApolice = 0
-  }
-
-  // Se o demonstrativo tiver estrutura em 2 linhas (cabeçalho de colunas seguido de linha de valores numéricos)
-  // Exemplo:
-  // "PRÊMIO LÍQUIDO TOTAL   CUSTO DE APÓLICE   I.O.F.   PRÊMIO TOTAL"
-  // "82.296,90              0,00               6.073,51 88.370,41"
+  // Abordagem 2: Fallback por regex dentro do demonstrativoText (isolado a partir de DEMONSTRATIVO DE PRÊMIO GERAL)
   if (premioLiquido === null || premioTotal === null || iof === null) {
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i]
+    // 1) Linhas textuais dentro de demonstrativoText
+    const linesGeral = demonstrativoText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    for (let i = 0; i < linesGeral.length; i++) {
+      const l = linesGeral[i]
       if (
         /PR[ÊE]MIO\s+L[ÍI]QUIDO/i.test(l) &&
         /PR[ÊE]MIO\s+TOTAL/i.test(l) &&
         /IOF|I\.O\.F\./i.test(l)
       ) {
-        // A linha seguinte (ou seguintes) tem os 4 valores
-        for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
-          const vals = lines[j].match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
-          if (vals && vals.length >= 3) {
-            // Se tiver 4 valores: [premioLiquido, custoApolice, iof, premioTotal]
-            if (vals.length >= 4) {
+        for (let j = i + 1; j < Math.min(linesGeral.length, i + 5); j++) {
+          const vals = linesGeral[j].match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
+          if (vals && vals.length >= 4) {
+            if (vals.length >= 6) {
+              if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[2])
+              if (custoApolice === null) custoApolice = parsePtBrNumber(vals[3])
+              if (iof === null) iof = parsePtBrNumber(vals[4])
+              if (premioTotal === null) premioTotal = parsePtBrNumber(vals[5])
+            } else if (vals.length === 5) {
+              if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[1])
+              if (custoApolice === null) custoApolice = parsePtBrNumber(vals[2])
+              if (iof === null) iof = parsePtBrNumber(vals[3])
+              if (premioTotal === null) premioTotal = parsePtBrNumber(vals[4])
+            } else if (vals.length === 4) {
               if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[0])
               if (custoApolice === null) custoApolice = parsePtBrNumber(vals[1])
               if (iof === null) iof = parsePtBrNumber(vals[2])
               if (premioTotal === null) premioTotal = parsePtBrNumber(vals[3])
-            } else if (vals.length === 3) {
-              // 3 valores: [premioLiquido, iof, premioTotal]
-              if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[0])
-              if (iof === null) iof = parsePtBrNumber(vals[1])
-              if (premioTotal === null) premioTotal = parsePtBrNumber(vals[2])
             }
             break
           }
         }
       }
     }
+
+    // 2) Extração por rótulos individuais no demonstrativoText
+    if (premioLiquido === null) {
+      const m =
+        demonstrativoText.match(
+          /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+        ) ||
+        demonstrativoText.match(
+          /PR[ÊE]MIO\s+L[ÍI]QUIDO[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+        )
+      if (m) premioLiquido = parsePtBrNumber(m[1])
+    }
+
+    if (iof === null) {
+      const m = demonstrativoText.match(
+        /(?:I\.?O\.?F\.?|IOF)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+      )
+      if (m) iof = parsePtBrNumber(m[1])
+    }
+
+    if (premioTotal === null) {
+      const m =
+        demonstrativoText.match(
+          /(?<!L[ÍI]QUIDO\s+)PR[ÊE]MIO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+        ) ||
+        demonstrativoText.match(
+          /\bTOTAL\s+(?:A\s+PAGAR|DO\s+SEGURO|GERAL)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+        )
+      if (m) premioTotal = parsePtBrNumber(m[1])
+    }
+
+    if (custoApolice === null) {
+      const m = demonstrativoText.match(
+        /CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+      )
+      if (m) custoApolice = parsePtBrNumber(m[1])
+      else if (/CUSTO\s+(?:DE|DA)\s+AP[ÓO]LICE/i.test(demonstrativoText)) custoApolice = 0
+    }
   }
 
-  // Fallbacks no fullText mas com casamento estrito
-  if (premioLiquido === null) {
-    const fallbackLiq = fullText.match(
-      /PR[ÊE]MIO\s+L[ÍI]QUIDO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    )
-    if (fallbackLiq) premioLiquido = parsePtBrNumber(fallbackLiq[1])
-  }
-  if (premioTotal === null) {
-    const fallbackTot = fullText.match(
-      /(?<!L[ÍI]QUIDO\s+)PR[ÊE]MIO\s+TOTAL[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    )
-    if (fallbackTot) premioTotal = parsePtBrNumber(fallbackTot[1])
-  }
-  if (iof === null) {
-    const fallbackIof = fullText.match(
-      /(?:I\.?O\.?F\.?|IOF)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    )
-    if (fallbackIof) iof = parsePtBrNumber(fallbackIof[1])
+  // 3) Fallback em qualquer bloco "DEMONSTRATIVO" com IOF presente em linhas
+  if (iof === null || premioTotal === null || premioLiquido === null) {
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i]
+      if (/DEMONSTRATIVO\s+DE\s+PR[ÊE]MIO\s+GERAL/i.test(l)) {
+        for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
+          const lSub = lines[j]
+          const vals = lSub.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g)
+          if (vals && vals.length >= 4) {
+            if (vals.length >= 6) {
+              if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[2])
+              if (custoApolice === null) custoApolice = parsePtBrNumber(vals[3])
+              if (iof === null) iof = parsePtBrNumber(vals[4])
+              if (premioTotal === null) premioTotal = parsePtBrNumber(vals[5])
+            } else {
+              if (premioLiquido === null) premioLiquido = parsePtBrNumber(vals[0])
+              if (custoApolice === null) custoApolice = parsePtBrNumber(vals[1])
+              if (iof === null) iof = parsePtBrNumber(vals[vals.length - 2])
+              if (premioTotal === null) premioTotal = parsePtBrNumber(vals[vals.length - 1])
+            }
+            break
+          }
+        }
+      }
+    }
   }
 
   // Consistência matemática de salvaguarda:
@@ -2046,8 +2139,6 @@ export function extractPortoDetails(
     premioTotal !== null &&
     Math.abs(premioTotal - premioLiquido) < 0.01
   ) {
-    // Prêmio Total NÃO pode ser igual ao Prêmio Líquido se IOF > 0!
-    // Procuramos o valor que seja aproximadamente premioLiquido + (custoApolice || 0) + iof
     const expectedTotal = premioLiquido + (custoApolice || 0) + iof
     const allTotals = fullText.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/g) || []
     let foundExpected = false
@@ -2060,21 +2151,45 @@ export function extractPortoDetails(
       }
     }
     if (!foundExpected) {
-      // Deixa null ou recalcula estritamente
       premioTotal = Number(expectedTotal.toFixed(2))
     }
   }
 
-  // 5. Formas de Pagamento: "6 x ADC" ou "6 x BOLETO BANCARIO" com 1ª parcela
+  // 5. Formas de Pagamento: "6 x BOLETO BANCARIO" ou "6 x ADC" com valor de parcela
+  // Exemplo no PDF (pág 5):
+  // 6 x BOLETO BANCARIO R$ 14.728,41 R$ 14.728,40 ...
+  // Preferir Boleto Bancário se disponível, ou primeira linha encontrada.
   let formaPagamento = ''
   let numeroParcelas: number | null = null
-  const formaMatch = fullText.match(/(\d+)\s*x\s*(BOLETO\s+BANCARIO|ADC[A-Z\s,]*)/i)
-  if (formaMatch) {
-    numeroParcelas = parseInt(formaMatch[1], 10)
-    formaPagamento = `${numeroParcelas}x ${formaMatch[2].trim()}`
+  let primeiraParcelaValor: number | null = null
+  let demaisParcelasValor: number | null = null
+
+  const formasSectionMatch = fullText.match(
+    /FORMAS?\s+DE\s+PAGAMENTO([\s\S]+?)(?:OBSERVA[ÇC][ÕO]ES|$)/i,
+  )
+  const formasSectionText = formasSectionMatch ? formasSectionMatch[1] : fullText
+
+  // Busca preferencialmente "6 x BOLETO BANCARIO" ou "X x ..."
+  const boletoLineMatch = formasSectionText.match(
+    /(\d+)\s*x\s*(BOLETO\s+BANC[AÁ]RIO)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  const genericFormaMatch = formasSectionText.match(
+    /(\d+)\s*x\s*([A-Za-zÀ-ÿ\s,]+?)[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})[^\d\n]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+
+  const chosenFormaMatch = boletoLineMatch || genericFormaMatch
+  if (chosenFormaMatch) {
+    numeroParcelas = parseInt(chosenFormaMatch[1], 10)
+    const desc = chosenFormaMatch[2].replace(/\s{2,}/g, ' ').trim()
+    formaPagamento = `${numeroParcelas}x ${desc}`
+    primeiraParcelaValor = parsePtBrNumber(chosenFormaMatch[3])
+    demaisParcelasValor = parsePtBrNumber(chosenFormaMatch[4])
   } else {
-    // Se não constar explicitamente no documento, não inventar
-    formaPagamento = ''
+    const simpleFormaMatch = fullText.match(/(\d+)\s*x\s*(BOLETO\s+BANC[AÁ]RIO|ADC[A-Z\s,]*)/i)
+    if (simpleFormaMatch) {
+      numeroParcelas = parseInt(simpleFormaMatch[1], 10)
+      formaPagamento = `${numeroParcelas}x ${simpleFormaMatch[2].trim()}`
+    }
   }
 
   // 6. Dados do Proponente e Questionário
@@ -2321,14 +2436,26 @@ export function extractPortoDetails(
       const items = page.items
 
       // Acha os limites verticais da tabela de coberturas na página
-      // Topo: "COBERTURA L.M.I. PRÊMIO P.O.S." ou "COBERTURAS"
-      // Base: "COBERTURA DE LUCROS CESSANTES DECORRENTES DE:", "CLÁUSULA DE SERVIÇOS", "DEMONSTRATIVO DE PRÊMIO", "CLÁUSULAS PARTICULARES"
+      // Topo: linha de cabeçalho "COBERTURA L.M.I. PRÊMIO P.O.S." ou "COBERTURAS"
+      // BUG 2 FIX: Reconhecer a linha exata dos cabeçalhos de coluna (COBERTURA, L.M.I., PRÊMIO, P.O.S.)
+      // para descartar estritamente qualquer fragmento de cabeçalho, garantindo que "COBERTURA L.M.I. PRÊMIO"
+      // JAMAIS seja capturado como prefixo do nome da primeira cobertura!
       let tableTopY: number | null = null
       let tableBottomY: number | null = null
+      let headerBandY: number | null = null
 
       for (const it of items) {
         const text = it.str.trim()
         if (/COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO\s+P\.?O\.?S\.?/i.test(text)) {
+          headerBandY = it.y
+          if (tableTopY === null || it.y < tableTopY) {
+            tableTopY = it.y
+          }
+        } else if (
+          /^COBERTURA\s+L\.?M\.?I\.?/i.test(text) ||
+          /^L\.?M\.?I\.?\s+PR[ÊE]MIO/i.test(text)
+        ) {
+          headerBandY = it.y
           if (tableTopY === null || it.y < tableTopY) {
             tableTopY = it.y
           }
@@ -2351,8 +2478,9 @@ export function extractPortoDetails(
       // Se a página não contém tabela de coberturas, passa para a próxima
       if (tableTopY === null) continue
 
+      // Se encontramos os fragmentos do cabeçalho da coluna em headerBandY, effectiveTopY deve ficar abaixo dele
       const effectiveBottomY = tableBottomY !== null ? tableBottomY + 5 : 40
-      const effectiveTopY = tableTopY - 5 // abaixo dos rótulos de coluna
+      const effectiveTopY = headerBandY !== null ? headerBandY - 2 : tableTopY - 5
 
       diagPaginasAnalisadas.push(page.pageNumber)
 
@@ -2373,11 +2501,17 @@ export function extractPortoDetails(
       }
 
       // Filtra fragmentos dentro da tabela de coberturas
+      // BUG 2 FIX: Descartar explicitamente palavras soltas ou combinadas do cabeçalho da tabela
+      // (ex.: "COBERTURA", "L.M.I.", "PRÊMIO", "P.O.S.") que estejam na faixa superior
       const tableItems = items.filter((it) => {
         if (it.y > effectiveTopY || it.y < effectiveBottomY) return false
         const t = it.str.trim()
         if (!t) return false
-        if (/^COBERTURA\s+L\.?M\.?I\.?/i.test(t)) return false
+        if (/^COBERTURAS?(\s+L\.?M\.?I\.?)?/i.test(t)) return false
+        if (/^L\.?M\.?I\.?$/i.test(t)) return false
+        if (/^PR[ÊE]MIO$/i.test(t)) return false
+        if (/^P\.?O\.?S\.?$/i.test(t)) return false
+        if (/^COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO/i.test(t)) return false
         if (/^9H095J\s+-/i.test(t) || /^P[ÁA]GINA\s+\d+\s+de/i.test(t)) return false
         if (/^COBERTURA\s+DE\s+LUCROS\s+CESSANTES\s+DECORRENTES\s+DE/i.test(t)) return false
         return true
@@ -2605,7 +2739,7 @@ export function extractPortoDetails(
       for (let rIdx = 0; rIdx < sortedRows.length; rIdx++) {
         const r = sortedRows[rIdx]
         // Ordena itens de cada coluna por X antes de juntar
-        const col1Str = r.col1
+        let col1Str = r.col1
           .sort((a, b) => a.x - b.x)
           .map((it) => it.str)
           .join(' ')
@@ -2626,6 +2760,13 @@ export function extractPortoDetails(
           .join(' ')
           .trim()
 
+        // BUG 2 FIX: Limpeza preventiva de qualquer fragmento de cabeçalho da tabela que possa ter vazado em col1
+        col1Str = col1Str
+          .replace(/^COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO\s+(?:P\.?O\.?S\.?)?\s*/i, '')
+          .replace(/^COBERTURAS?\s+L\.?M\.?I\.?\s*/i, '')
+          .replace(/^COBERTURAS?\s*/i, '')
+          .trim()
+
         // Ignora expressamente o VRD no quadro de coberturas
         if (
           col1Str.toUpperCase().includes('VALOR EM RISCO DECLARADO') ||
@@ -2640,7 +2781,19 @@ export function extractPortoDetails(
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col3Str)
 
         if (hasValues) {
-          // Linha com valores: fecha a cobertura que recebe esses valores
+          // Linha com valores: fecha a cobertura que recebe esses valores!
+          // BUG 1 REGRA DE OURO: "uma cobertura = TODAS as linhas de nome consecutivas que a precedem
+          // + os valores da banda seguinte; a continuação fecha a cobertura anterior, NUNCA abre a seguinte."
+          // Quando a linha com valores é processada, ela consome todos os pendingNomePrefixes que a precederam
+          // MAIS o col1Str de sua própria linha (se houver).
+          // Exemplo 1:
+          //   Linha 1 (sem valores): pendingNomePrefixes = ["INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE"]
+          //   Linha 2 (com valores): col1Str = "AERONAVE", col2 = "80.000.000,00", col3 = "12.012,60", col4 = "10%..."
+          //   -> newAcc.nomeParts = ["INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE", "AERONAVE"]
+          //   -> pendingNomePrefixes fica vazio!
+          //   Linha 3 (com valores): col1Str = "REFORMAS", col2 = "300.000,00", col3 = "2.662,42"
+          //   -> newAcc.nomeParts = ["REFORMAS"]
+          //   "AERONAVE" NUNCA encosta em "REFORMAS"!
           const currentNomeParts: string[] = []
           if (pendingNomePrefixes.length > 0) {
             currentNomeParts.push(...pendingNomePrefixes)
@@ -2669,10 +2822,13 @@ export function extractPortoDetails(
           accRows.push(newAcc)
         } else {
           // Linha SEM valores (sem LMI nem Prêmio monetário em col2 ou col3):
-          // Trata texto de nome em QUALQUER coluna (col1, col2, col3) como prefixo da próxima cobertura.
+          // Trata texto de nome em QUALQUER coluna (col1, col2, col3) como linha que precede a próxima linha com valores.
           // NUNCA descartar texto em silêncio!
-          // Exemplo 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" que transbordou para col2/col3
+          // Exemplo 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE"
           // Exemplo 2: "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE"
+          // Exemplo 3: "CONTAMINAÇÃO E DETERIORAÇÃO DE MERCADORIAS EM"
+          // Exemplo 4: "VENDAVAL, FURACAO, CICLONE, TORNADO E QUEDA DE"
+          // Exemplo 5: "RESPONSABILIDADE CIVIL GUARDA DE VEÍCULOS DE"
           const anyNomeCandidate = [col1Str, col2Str, col3Str]
             .filter(Boolean)
             .join(' ')
@@ -2768,15 +2924,10 @@ export function extractPortoDetails(
           posText = 'Não há.'
         }
 
-        // Se for a cobertura de Lucros Cessantes e tivermos capturado as causas decorrentes:
-        if (
-          (nomeCompleto.toUpperCase().includes('LUCROS CESSANTES') ||
-            nomeCompleto.toUpperCase().includes('LUCRO BRUTO')) &&
-          lucrosCessantesCausas &&
-          !posText.includes('Decorrente de:')
-        ) {
-          posText = `${posText} (Decorrente de: ${lucrosCessantesCausas})`
-        }
+        // Se for a cobertura de Lucros Cessantes:
+        // O gabarito oficial define: "5 dias de paralisação do estabelecimento." (ou "5 dias de paralisação")
+        // O texto extraído em lucrosCessantesCausas ("Incêndio (X)...") fica em dadosComplementares.lucrosCessantesCausas
+        // e não deve poluir a franquia / P.O.S. da cobertura.
 
         extractedList.push({
           nome: nomeCompleto,
@@ -2802,7 +2953,7 @@ export function extractPortoDetails(
     let pendingTextPosPrefixes: string[] = []
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim()
+      let line = lines[i].trim()
 
       if (
         line === 'COBERTURAS' ||
@@ -2825,14 +2976,23 @@ export function extractPortoDetails(
 
       if (!insideCoberturas) continue
 
+      // Limpeza de cabeçalho no fallback textual
       if (
         line.includes('COBERTURA L.M.I.') ||
+        /^COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO/i.test(line) ||
         line.includes('VALOR EM RISCO DECLARADO') ||
         line.startsWith('9H095J - BYCOR') ||
         line.startsWith('PÁGINA ')
       ) {
         continue
       }
+
+      line = line
+        .replace(/^COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO\s+(?:P\.?O\.?S\.?)?\s*/i, '')
+        .replace(/^COBERTURAS?\s+L\.?M\.?I\.?\s*/i, '')
+        .trim()
+
+      if (!line) continue
 
       // Linha com R$ (LMI e/ou Prêmio)
       const m = line.match(
@@ -3041,6 +3201,8 @@ export function extractPortoDetails(
       respostasQuestionario,
       valorEmRiscoDeclarado,
       lucrosCessantesCausas,
+      primeiraParcelaValor,
+      demaisParcelasValor,
     },
   }
 }
