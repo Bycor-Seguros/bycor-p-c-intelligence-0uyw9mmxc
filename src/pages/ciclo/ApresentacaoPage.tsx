@@ -32,9 +32,42 @@ interface PropostaOption {
   premio_bruto: number
   lmi_lmg: number
   coberturas: any[]
+  status?: string
   expand?: {
     seguradora?: { nome: string }
   }
+}
+
+// Helpers para extração consistente dos campos de cobertura
+function getCoverageName(c: any): string {
+  if (!c) return 'Cobertura'
+  if (typeof c === 'string') return c.trim() || 'Cobertura'
+  const nome =
+    c.cobertura ||
+    c.nome ||
+    c.nome_cobertura ||
+    c.nomeOriginal ||
+    c.descricao ||
+    c.categoriaNormalizada ||
+    c.categoria_normalizada ||
+    c.categoria ||
+    ''
+  return typeof nome === 'string' && nome.trim().length > 0 ? nome.trim() : 'Cobertura'
+}
+
+function getCoverageLmi(c: any): number | null {
+  if (!c || typeof c !== 'object') return null
+  if (c.lmi !== undefined && c.lmi !== null && c.lmi !== '') return Number(c.lmi)
+  if (c.is !== undefined && c.is !== null && c.is !== '') return Number(c.is)
+  if (c.limite !== undefined && c.limite !== null && c.limite !== '') return Number(c.limite)
+  return null
+}
+
+function getCoverageFranquia(c: any): string {
+  if (!c || typeof c !== 'object') return 'Padrão'
+  const f = c.franquia || c.pos || c.franquia_pos || c.posFranquia
+  if (typeof f === 'string' && f.trim().length > 0) return f.trim()
+  return 'Padrão'
 }
 
 export default function ApresentacaoPage() {
@@ -63,7 +96,10 @@ export default function ApresentacaoPage() {
         setEmpreendimentos(emps)
         setPropostas(props)
         if (emps.length > 0) setSelectedEmpId(emps[0].id)
-        if (props.length > 0) setSelectedPropId(props[0].id)
+        if (props.length > 0) {
+          const vencedora = props.find((p: any) => p.status === 'Selecionada')
+          setSelectedPropId(vencedora ? vencedora.id : props[0].id)
+        }
       } catch (e) {
         console.error(e)
       } finally {
@@ -170,6 +206,7 @@ ${recomendacao}
               <option key={prop.id} value={prop.id}>
                 {prop.expand?.seguradora?.nome || 'Seguradora'} —{' '}
                 {formatCurrency(prop.premio_bruto)}
+                {prop.status === 'Selecionada' ? ' (Selecionada em C3)' : ''}
               </option>
             ))}
           </select>
@@ -273,26 +310,29 @@ ${recomendacao}
               <thead className="bg-gray-100 text-gray-700 font-semibold border-b">
                 <tr>
                   <th className="py-2.5 px-3">Garantia / Cobertura</th>
-                  <th className="py-2.5 px-3">Categoria Normalizada</th>
                   <th className="py-2.5 px-3 text-right">Limite (LMI)</th>
                   <th className="py-2.5 px-3">Franquia / POS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {selectedProp?.coberturas && selectedProp.coberturas.length > 0 ? (
-                  selectedProp.coberturas.map((c, i) => (
-                    <tr key={i}>
-                      <td className="py-2 px-3 font-semibold text-gray-900">{c.nome}</td>
-                      <td className="py-2 px-3 text-gray-600">{c.categoria_normalizada}</td>
-                      <td className="py-2 px-3 text-right font-bold text-gray-900 tabular-nums">
-                        {formatCurrency(c.lmi)}
-                      </td>
-                      <td className="py-2 px-3 text-gray-500">{c.franquia || 'Padrão'}</td>
-                    </tr>
-                  ))
+                  selectedProp.coberturas.map((c, i) => {
+                    const nome = getCoverageName(c)
+                    const lmi = getCoverageLmi(c)
+                    const franquia = getCoverageFranquia(c)
+                    return (
+                      <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="py-2 px-3 font-semibold text-gray-900">{nome}</td>
+                        <td className="py-2 px-3 text-right font-bold text-gray-900 tabular-nums">
+                          {formatCurrency(lmi)}
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">{franquia}</td>
+                      </tr>
+                    )
+                  })
                 ) : (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-gray-400">
+                    <td colSpan={3} className="py-4 text-center text-gray-400">
                       Coberturas padrão conforme edital de cotação.
                     </td>
                   </tr>
