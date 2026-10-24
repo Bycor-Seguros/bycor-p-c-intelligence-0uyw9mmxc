@@ -4,6 +4,7 @@ import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   ArrowLeft,
+  ArrowRight,
   Building,
   Shield,
   FileText,
@@ -33,6 +34,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate, formatCnpj, getStatusBadgeInfo } from '@/lib/formatters'
+import {
+  ApoliceMinima,
+  buildMapaSucessao,
+  RelacaoSucessao,
+  getStatusDerivadoBadgeInfo,
+  getHojeMs,
+} from '@/services/apoliceStatusService'
 
 interface ApoliceDetail {
   id: string
@@ -54,6 +62,7 @@ interface ApoliceDetail {
   lmi_incendio_basica: number
   razao_lmi_vr_dm: number
   status: string
+  status_manual?: 'Perdida' | 'Em Emissão' | string | null
   comissao: number
   iof: number
   endossos: string
@@ -124,6 +133,8 @@ export default function FichaApolicePage() {
     'dados' | 'documentos' | 'historico' | 'coberturas' | 'sinistros'
   >('dados')
   const [loading, setLoading] = useState(true)
+  const [relacaoSucessao, setRelacaoSucessao] = useState<RelacaoSucessao | null>(null)
+  const [savingStatusManual, setSavingStatusManual] = useState(false)
 
   // Renovation cycle modal
   const [renovacaoModalOpen, setRenovacaoModalOpen] = useState(false)
@@ -149,6 +160,34 @@ export default function FichaApolicePage() {
         expand: 'id_empreendimento',
       })
       setApolice(ap)
+
+      // Fetch all policies for this empreendimento or CNPJ to build succession tree
+      const empId = ap.id_empreendimento
+      const cnpj = ap.cnpj_segurado
+      let filterExp = ''
+      if (empId && cnpj) {
+        filterExp = `id_empreendimento="${empId}" || cnpj_segurado="${cnpj}"`
+      } else if (empId) {
+        filterExp = `id_empreendimento="${empId}"`
+      } else if (cnpj) {
+        filterExp = `cnpj_segurado="${cnpj}"`
+      }
+
+      const allSisterApolices = await pb.collection('apolices').getFullList<ApoliceMinima>({
+        filter: filterExp || undefined,
+        expand: 'id_empreendimento',
+      })
+
+      // Include current apolice if not present
+      if (!allSisterApolices.some((x) => x.id === ap.id)) {
+        allSisterApolices.push(ap)
+      }
+
+      const mapa = buildMapaSucessao(allSisterApolices)
+      const rel = mapa.get(ap.id)
+      if (rel) {
+        setRelacaoSucessao(rel)
+      }
 
       // Fetch coberturas
       const cobs = await pb.collection('coberturas').getFullList<CoberturaItem>({
@@ -211,6 +250,22 @@ export default function FichaApolicePage() {
       alert('Erro ao salvar histórico: ' + (err as Error).message)
     } finally {
       setAddingHist(false)
+    }
+  }
+
+  // Atualizar status manual ("Perdida", "Em Emissão" ou reverter para null)
+  const handleSetStatusManual = async (novoStatus: 'Perdida' | 'Em Emissão' | null) => {
+    if (!apolice) return
+    try {
+      setSavingStatusManual(true)
+      await pb.collection('apolices').update(apolice.id, {
+        status_manual: novoStatus || '',
+      })
+      await fetchApoliceFull()
+    } catch (err: unknown) {
+      alert('Erro ao atualizar classificação da apólice: ' + (err as Error).message)
+    } finally {
+      setSavingStatusManual(false)
     }
   }
 
@@ -280,8 +335,15 @@ export default function FichaApolicePage() {
     )
   }
 
-  const badge = getStatusBadgeInfo(apolice.status)
+  const statusEfetivo = relacaoSucessao?.statusDerivado || apolice.status
+  const badge = getStatusDerivadoBadgeInfo(statusEfetivo)
   const razao = apolice.razao_lmi_vr_dm
+  const fimMs = apolice.data_fim
+    ? new Date(apolice.data_fim.slice(0, 10) + 'T00:00:00').getTime()
+    : null
+  const hojeMs = getHojeMs()
+  const isVencidaPelaData = fimMs !== null && fimMs < hojeMs
+  const semSucessora = isVencidaPelaData && !relacaoSucessao?.sucessora
 
   // Mailto builder for Renovation cycle
   const mailSubject = encodeURIComponent(
@@ -332,9 +394,102 @@ export default function FichaApolicePage() {
                 <span
                   className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badge.bg}`}
                 >
-                  {badge.label}
+                  {badge.label.toUpperCase()}
                 </span>
               </div>
+
+              {/* Relação de Sucessão / Antecessão */}
+              {relacaoSucessao?.sucessora && (
+                <div className="mt-1 text-xs text-[#16578B] flex items-center gap-1.5 font-medium">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span>Sucedida pela apólice</span>
+                  <Link
+                    to={`/carteira/apolice/${relacaoSucessao.sucessora.id}`}
+                    className="font-bold underline hover:text-[#0F2B46]"
+                  >
+                    {relacaoSucessao.sucessora.numero_apolice ||
+                      relacaoSucessao.sucessora.id_apolice ||
+                      'Ficha da Sucessora'}
+                  </Link>
+                  <span className="text-[11px] text-gray-400">
+                    ({formatDate(relacaoSucessao.sucessora.data_inicio)} até{' '}
+                    {formatDate(relacaoSucessao.sucessora.data_fim)})
+                  </span>
+                </div>
+              )}
+
+              {relacaoSucessao?.antecessora && (
+                <div className="mt-1 text-xs text-gray-600 flex items-center gap-1.5 font-medium">
+                  <Clock className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Renova a apólice</span>
+                  <Link
+                    to={`/carteira/apolice/${relacaoSucessao.antecessora.id}`}
+                    className="font-bold underline text-[#16578B] hover:text-[#0F2B46]"
+                  >
+                    {relacaoSucessao.antecessora.numero_apolice ||
+                      relacaoSucessao.antecessora.id_apolice ||
+                      'Ficha da Anterior'}
+                  </Link>
+                  <span className="text-[11px] text-gray-400">
+                    ({formatDate(relacaoSucessao.antecessora.data_inicio)} até{' '}
+                    {formatDate(relacaoSucessao.antecessora.data_fim)})
+                  </span>
+                </div>
+              )}
+
+              {/* Ações de classificação manual para apólice vencida sem sucessora */}
+              {semSucessora && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100">
+                  <span className="text-[11px] text-gray-500 font-semibold">
+                    Classificar apólice vencida sem sucessora:
+                  </span>
+                  <Button
+                    size="sm"
+                    variant={statusEfetivo === 'PERDIDA' ? 'default' : 'outline'}
+                    disabled={savingStatusManual}
+                    onClick={() =>
+                      handleSetStatusManual(statusEfetivo === 'PERDIDA' ? null : 'Perdida')
+                    }
+                    className={`h-6 text-[11px] px-2.5 ${
+                      statusEfetivo === 'PERDIDA'
+                        ? 'bg-gray-700 hover:bg-gray-800 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {statusEfetivo === 'PERDIDA'
+                      ? '✓ Perdida (Cliente saiu)'
+                      : 'Marcar como Perdida'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusEfetivo === 'EM EMISSÃO' ? 'default' : 'outline'}
+                    disabled={savingStatusManual}
+                    onClick={() =>
+                      handleSetStatusManual(statusEfetivo === 'EM EMISSÃO' ? null : 'Em Emissão')
+                    }
+                    className={`h-6 text-[11px] px-2.5 ${
+                      statusEfetivo === 'EM EMISSÃO'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                    }`}
+                  >
+                    {statusEfetivo === 'EM EMISSÃO'
+                      ? '✓ Em Emissão (Renovação em andamento)'
+                      : 'Marcar como Em Emissão'}
+                  </Button>
+                  {(statusEfetivo === 'PERDIDA' || statusEfetivo === 'EM EMISSÃO') && (
+                    <button
+                      type="button"
+                      disabled={savingStatusManual}
+                      onClick={() => handleSetStatusManual(null)}
+                      className="text-[10px] text-gray-400 hover:text-red-600 underline ml-1"
+                    >
+                      Reverter para Vencida
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>
                   <strong>CNPJ:</strong> {formatCnpj(apolice.cnpj_segurado)}

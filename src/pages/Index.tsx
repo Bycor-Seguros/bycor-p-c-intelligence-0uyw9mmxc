@@ -20,6 +20,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate, getDaysRemaining, getStatusBadgeInfo } from '@/lib/formatters'
 import {
+  ApoliceMinima,
+  buildMapaSucessao,
+  getStatusDerivadoBadgeInfo,
+} from '@/services/apoliceStatusService'
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -34,6 +39,7 @@ import {
 interface ApoliceItem {
   id: string
   id_apolice: string
+  id_empreendimento?: string
   segurado_na_apolice: string
   cnpj_segurado: string
   seguradora: string
@@ -45,10 +51,13 @@ interface ApoliceItem {
   premio_total: number
   lmga: number
   status: string
+  status_manual?: 'Perdida' | 'Em Emissão' | string | null
   prospect_retorno?: string
   razao_lmi_vr_dm?: number
   expand?: {
     id_empreendimento?: {
+      id?: string
+      id_empreendimento?: string
       nome_empreendimento: string
       uf: string
       segmento: string
@@ -120,6 +129,11 @@ export default function DashboardHome() {
     }
   }, [])
 
+  // Mapa de status derivado e sucessão
+  const mapaSucessao = useMemo(() => {
+    return buildMapaSucessao(apolices as ApoliceMinima[])
+  }, [apolices])
+
   // Calculate Buckets
   const { bucket60, bucket30, bucket15, bucketVencidas, bucketNaoRenovadas } = useMemo(() => {
     const b60: ApoliceItem[] = []
@@ -129,8 +143,15 @@ export default function DashboardHome() {
     const bNaoRen: ApoliceItem[] = []
 
     apolices.forEach((ap) => {
-      const statusNorm = (ap.status || '').toLowerCase()
-      if (statusNorm === 'não renovada' || statusNorm === 'nao renovada') {
+      const rel = mapaSucessao.get(ap.id)
+      const stDerivado = (rel?.statusDerivado || ap.status || '').toUpperCase()
+
+      // Apólices já sucedidas ("RENOVADA") não devem lotar buckets de urgência de renovação
+      if (stDerivado === 'RENOVADA' || stDerivado === 'PERDIDA') {
+        return
+      }
+
+      if (stDerivado === 'NÃO RENOVADA') {
         bNaoRen.push(ap)
         return
       }
@@ -138,7 +159,7 @@ export default function DashboardHome() {
       const days = getDaysRemaining(ap.data_fim)
       if (days === null) return
 
-      if (days < 0 || statusNorm === 'vencida') {
+      if (days < 0 || stDerivado === 'VENCIDA' || stDerivado === 'EM EMISSÃO') {
         bVenc.push(ap)
       } else if (days <= 7) {
         // 15 days bucket: 7 a 1 dias (alta urgência)
@@ -159,7 +180,7 @@ export default function DashboardHome() {
       bucketVencidas: bVenc,
       bucketNaoRenovadas: bNaoRen,
     }
-  }, [apolices])
+  }, [apolices, mapaSucessao])
 
   // Filtered renewal list
   const filteredList = useMemo(() => {
@@ -612,7 +633,9 @@ export default function DashboardHome() {
               <tbody className="divide-y divide-gray-100">
                 {filteredList.map((ap) => {
                   const days = getDaysRemaining(ap.data_fim)
-                  const badge = getStatusBadgeInfo(ap.status)
+                  const rel = mapaSucessao.get(ap.id)
+                  const statusEfetivo = rel?.statusDerivado || ap.status
+                  const badge = getStatusDerivadoBadgeInfo(statusEfetivo)
                   const nomeEmp =
                     ap.expand?.id_empreendimento?.nome_empreendimento || ap.segurado_na_apolice
 
@@ -682,7 +705,7 @@ export default function DashboardHome() {
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badge.bg}`}
                         >
-                          {badge.label}
+                          {badge.label.toUpperCase()}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">

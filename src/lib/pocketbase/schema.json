@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-24T03:45:00.428Z",
+  "generatedAt": "2026-10-24T23:52:13.129Z",
   "collections": [
     {
       "name": "users",
@@ -703,6 +703,13 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "status_manual",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Perdida", "Em Emissão"]
         }
       ],
       "indexes": [

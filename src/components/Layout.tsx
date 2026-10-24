@@ -35,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { getDaysRemaining } from '@/lib/formatters'
+import { ApoliceMinima, buildMapaSucessao } from '@/services/apoliceStatusService'
 
 interface NavGroup {
   title?: string
@@ -59,18 +60,25 @@ export default function Layout() {
     let active = true
     const fetchRenewalsCount = async () => {
       try {
-        const records = await pb
-          .collection('apolices')
-          .getFullList<{ data_fim: string; status: string }>({
-            fields: 'data_fim,status',
-          })
+        const records = await pb.collection('apolices').getFullList<ApoliceMinima>({
+          fields:
+            'id,id_apolice,numero_apolice,id_empreendimento,segurado_na_apolice,cnpj_segurado,ramo,data_inicio,data_fim,status,status_manual',
+        })
         if (!active) return
+        const mapa = buildMapaSucessao(records)
         let urgent = 0
         records.forEach((ap) => {
+          const rel = mapa.get(ap.id)
+          const statusEfetivo = rel?.statusDerivado || ap.status || ''
           const days = getDaysRemaining(ap.data_fim)
-          if (days !== null && days <= 60 && ap.status !== 'renovada') {
+
+          // Renovada não é urgente (já foi sucedida)
+          if (statusEfetivo === 'RENOVADA' || statusEfetivo === 'PERDIDA') {
+            return
+          }
+          if (statusEfetivo === 'VENCIDA' || statusEfetivo === 'EM EMISSÃO') {
             urgent++
-          } else if (ap.status === 'vencida') {
+          } else if (days !== null && days <= 60) {
             urgent++
           }
         })

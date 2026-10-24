@@ -16,10 +16,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate, formatCnpj, getStatusBadgeInfo } from '@/lib/formatters'
+import {
+  ApoliceMinima,
+  buildMapaSucessao,
+  getStatusDerivadoBadgeInfo,
+  StatusDerivado,
+} from '@/services/apoliceStatusService'
 
 interface ApolicePortfolioItem {
   id: string
   id_apolice: string
+  id_empreendimento?: string
   segurado_na_apolice: string
   cnpj_segurado: string
   seguradora: string
@@ -34,8 +41,11 @@ interface ApolicePortfolioItem {
   valor_em_risco_dm: number
   razao_lmi_vr_dm: number
   status: string
+  status_manual?: 'Perdida' | 'Em Emissão' | string | null
   expand?: {
     id_empreendimento?: {
+      id?: string
+      id_empreendimento?: string
       nome_empreendimento: string
       uf: string
       segmento: string
@@ -91,6 +101,35 @@ export default function CarteiraPage() {
     return Array.from(set).sort()
   }, [apolices])
 
+  // Mapa de status derivados e sucessão calculado sobre toda a carteira
+  const mapaSucessao = useMemo(() => {
+    return buildMapaSucessao(apolices as ApoliceMinima[])
+  }, [apolices])
+
+  // Contadores analíticos por status derivado
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      todos: apolices.length,
+      ativa: 0,
+      'a vencer': 0,
+      vencida: 0,
+      renovada: 0,
+      perdida: 0,
+      'em emissão': 0,
+      prospect: 0,
+    }
+    apolices.forEach((ap) => {
+      const rel = mapaSucessao.get(ap.id)
+      const st = (rel?.statusDerivado || ap.status || '').toLowerCase().trim()
+      if (st === 'em emissao') {
+        counts['em emissão'] = (counts['em emissão'] || 0) + 1
+      } else if (counts[st] !== undefined) {
+        counts[st]++
+      }
+    })
+    return counts
+  }, [apolices, mapaSucessao])
+
   // Filtered list
   const filteredRows = useMemo(() => {
     return apolices.filter((item) => {
@@ -114,12 +153,16 @@ export default function CarteiraPage() {
         return false
       }
 
-      // Status
-      if (
-        filterStatus !== 'todos' &&
-        (item.status || '').toLowerCase() !== filterStatus.toLowerCase()
-      ) {
-        return false
+      // Status derivado da vigência + sucessão + status manual
+      if (filterStatus !== 'todos') {
+        const rel = mapaSucessao.get(item.id)
+        const statusEfetivo = (rel?.statusDerivado || item.status || '').toLowerCase().trim()
+        const target = filterStatus.toLowerCase().trim()
+        if (target === 'em emissão' || target === 'em emissao') {
+          if (statusEfetivo !== 'em emissão' && statusEfetivo !== 'em emissao') return false
+        } else if (statusEfetivo !== target) {
+          return false
+        }
       }
 
       // Segmento
@@ -130,7 +173,7 @@ export default function CarteiraPage() {
 
       return true
     })
-  }, [apolices, search, filterSeguradora, filterStatus, filterSegmento])
+  }, [apolices, search, filterSeguradora, filterStatus, filterSegmento, mapaSucessao])
 
   // Sorted list
   const sortedRows = useMemo(() => {
@@ -188,6 +231,8 @@ export default function CarteiraPage() {
     const csvLines = [headers.join(';')]
 
     filteredRows.forEach((r) => {
+      const rel = mapaSucessao.get(r.id)
+      const statusEfetivo = rel?.statusDerivado || r.status || ''
       const line = [
         `"${r.segurado_na_apolice || ''}"`,
         `"${r.expand?.id_empreendimento?.nome_empreendimento || ''}"`,
@@ -200,12 +245,11 @@ export default function CarteiraPage() {
         r.lmga || 0,
         r.premio_liquido || 0,
         r.premio_total || 0,
-        `"${r.status || ''}"`,
+        `"${statusEfetivo}"`,
         `"${r.corretor || ''}"`,
       ]
       csvLines.push(line.join(';'))
     })
-
     const blob = new Blob(['\uFEFF' + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -294,13 +338,14 @@ export default function CarteiraPage() {
             }}
             className="h-9 text-xs rounded-md border border-gray-200 bg-white px-3 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
           >
-            <option value="todos">Todos os Status</option>
-            <option value="ativa">Ativa</option>
-            <option value="a vencer">A Vencer</option>
-            <option value="vencida">Vencida</option>
-            <option value="renovada">Renovada</option>
-            <option value="não renovada">Não Renovada</option>
-            <option value="prospect">Prospect</option>
+            <option value="todos">Todos os Status ({statusCounts.todos})</option>
+            <option value="ativa">Ativa ({statusCounts.ativa})</option>
+            <option value="a vencer">A Vencer ({statusCounts['a vencer']})</option>
+            <option value="renovada">Renovada ({statusCounts.renovada})</option>
+            <option value="vencida">Vencida ({statusCounts.vencida})</option>
+            <option value="perdida">Perdida ({statusCounts.perdida})</option>
+            <option value="em emissão">Em Emissão ({statusCounts['em emissão']})</option>
+            <option value="prospect">Prospect ({statusCounts.prospect})</option>
           </select>
 
           {/* Segmento Filter */}
@@ -385,7 +430,9 @@ export default function CarteiraPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {paginatedRows.map((row) => {
-                    const badge = getStatusBadgeInfo(row.status)
+                    const rel = mapaSucessao.get(row.id)
+                    const statusEfetivo = rel?.statusDerivado || row.status
+                    const badge = getStatusDerivadoBadgeInfo(statusEfetivo)
                     const nomeEmp =
                       row.expand?.id_empreendimento?.nome_empreendimento || row.segurado_na_apolice
 
@@ -431,8 +478,18 @@ export default function CarteiraPage() {
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badge.bg}`}
                           >
-                            {badge.label}
+                            {badge.label.toUpperCase()}
                           </span>
+                          {rel?.sucessora && (
+                            <div className="text-[10px] text-[#16578B] mt-0.5 font-medium whitespace-nowrap">
+                              ↳ Sucedida
+                            </div>
+                          )}
+                          {rel?.antecessora && (
+                            <div className="text-[10px] text-gray-500 mt-0.5 font-medium whitespace-nowrap">
+                              ↳ Renova
+                            </div>
+                          )}
                         </td>
                         <td
                           className="py-3 px-4 text-gray-500 max-w-[120px] truncate"

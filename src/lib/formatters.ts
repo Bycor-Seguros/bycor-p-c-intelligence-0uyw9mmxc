@@ -165,6 +165,19 @@ export function getStatusBadgeInfo(status: string | null | undefined) {
         bg: 'bg-[#DBEAFE] text-[#1E40AF] border-[#93C5FD]',
         color: '#1E40AF',
       }
+    case 'perdida':
+      return {
+        label: 'Perdida',
+        bg: 'bg-gray-100 text-gray-700 border-gray-300',
+        color: '#4B5563',
+      }
+    case 'em emissão':
+    case 'em emissao':
+      return {
+        label: 'Em Emissão',
+        bg: 'bg-blue-50 text-blue-700 border-blue-200',
+        color: '#1D4ED8',
+      }
     case 'não renovada':
     case 'nao renovada':
       return {
