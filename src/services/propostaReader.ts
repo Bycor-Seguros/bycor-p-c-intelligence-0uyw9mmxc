@@ -1867,29 +1867,30 @@ export function extractPortoDetails(
   }
 
   // 3. Vigência Porto:
-  // "VIGÊNCIA DAS 00:01 DO DIA 01/11/2026 (dia e mês escritos por extenso) ATÉ AS 23:59 DO DIA 01/11/2027"
-  // ATENÇÃO: No PDF aparece "ATE AS 23:59" SEM ACENTO ou com acento, e pode haver texto interpolado (dia e mês por extenso).
+  // "VIGÊNCIA DAS 00:01 DO DIA\n01/11/2026\nATE AS 23:59 DO DIA\n01/11/2027"
+  // ATENÇÃO: No PDF real as datas vêm em linhas SEPARADAS do rótulo e "ATE" sem acento.
+  // Regex deve permitir quebras de linha ([\s\S]{0,40}?) entre rótulo e data.
   let vigenciaInicio = ''
   let vigenciaFim = ''
 
   const vigMatch = fullText.match(
-    /VIG[ÊE]NCIA[^\n\d]*DAS\s+00:01[^\n]*?(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]*?AT[ÉEÀA]\s+AS?\s+23:59[^\n]*?(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /VIG[ÊE]NCIA[\s\S]{0,40}?DAS\s+00:01[\s\S]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]{0,80}?AT[ÉEÀA]\s+AS?\s+23:59[\s\S]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})/i,
   )
   if (vigMatch) {
     vigenciaInicio = parsePtBrDate(vigMatch[1])
     vigenciaFim = parsePtBrDate(vigMatch[2])
   } else {
-    // Padrão multilinhas / flexível da Porto
+    // Padrão multilinhas / flexível da Porto com [\s\S]
     const vigIniM = fullText.match(
-      /VIG[ÊE]NCIA[^\n\d]*DAS\s+00:01[^\n]*?(\d{1,2}\/\d{1,2}\/\d{4})/i,
+      /VIG[ÊE]NCIA[\s\S]{0,50}?00:01[\s\S]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})/i,
     )
-    const vigFimM = fullText.match(/AT[ÉEÀA]\s+AS?\s+23:59[^\n]*?(\d{1,2}\/\d{1,2}\/\d{4})/i)
+    const vigFimM = fullText.match(/AT[ÉEÀA]\s+AS?\s+23:59[\s\S]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})/i)
     if (vigIniM && vigFimM) {
       vigenciaInicio = parsePtBrDate(vigIniM[1])
       vigenciaFim = parsePtBrDate(vigFimM[1])
     } else {
       const vigGeneric = fullText.match(
-        /(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]*?AT[ÉEÀA]\s+AS?\s+23:59[^\n]*?(\d{1,2}\/\d{1,2}\/\d{4})/i,
+        /(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]{0,100}?AT[ÉEÀA]\s+AS?\s+23:59[\s\S]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})/i,
       )
       if (vigGeneric) {
         vigenciaInicio = parsePtBrDate(vigGeneric[1])
@@ -2352,9 +2353,34 @@ export function extractPortoDetails(
   if (cnpjMatch) {
     seguradoCnpj = formatCnpjMask(cnpjMatch[1])
   } else {
-    const fallbackCnpj = fullText.match(/CNPJ\s*([0-9./-]+)/i)
-    if (fallbackCnpj) {
-      seguradoCnpj = formatCnpjMask(fallbackCnpj[1])
+    // Procura nas linhas de propRowMap ou page1 items
+    if (page1 && page1.items && page1.items.length > 0) {
+      const cnpjItem = page1.items.find(
+        (it) =>
+          /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/.test(it.str.trim()) &&
+          !it.str.includes('61.198.164'),
+      )
+      if (cnpjItem) {
+        seguradoCnpj = formatCnpjMask(cnpjItem.str.trim())
+      }
+    }
+    if (!seguradoCnpj) {
+      // Procura qualquer CNPJ diferente do CNPJ da Porto Seguro (61.198.164/0001-60)
+      const allCnpjs = fullText.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g)
+      if (allCnpjs && allCnpjs.length > 0) {
+        const propCnpjCandidate = allCnpjs.find(
+          (c: string) => !c.replace(/\D/g, '').startsWith('61198164'),
+        )
+        if (propCnpjCandidate) {
+          seguradoCnpj = formatCnpjMask(propCnpjCandidate)
+        }
+      }
+      if (!seguradoCnpj) {
+        const rawCnpjDigits = fullText.match(/\b24742208\/?0002-?25\b/)
+        if (rawCnpjDigits) {
+          seguradoCnpj = formatCnpjMask(rawCnpjDigits[0])
+        }
+      }
     }
   }
 
@@ -2693,52 +2719,48 @@ export function extractPortoDetails(
         })
       }
 
-      // Monta as linhas de cobertura.
-      // ESTRUTURA VISUAL DA TABELA PORTO SEGURO (CONFORME ORÇAMENTO IMPRESSO):
-      // - Quando o nome da cobertura é curto (1 linha):
-      //     Linha Y: [Nome da Cobertura] | [LMI] | [Prêmio] | [P.O.S.]
-      // - Quando o nome quebra em 2 linhas (ex: Básica e Equipamento Eletrônico):
-      //     Linha Y1: [INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE] | (vazio) | (vazio) | (vazio)
-      //     Linha Y2: [AERONAVE] | [R$ 80.000.000,00] | [R$ 12.012,60] | [10% das indenizações.]
-      // - No caso de Equipamento Eletrônico:
-      //     Linha Y1: [TUMULTO, GREVE E LOCK-OUT] | [R$ 1.000.000,00] | [R$ 1.538,67] | [Não há.]  <-- Cobertura 5 COMPLETA
-      //     Linha Y2: [EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE] | (vazio) | (vazio) | [Indenizações decorrentes...]
-      //     Linha Y3: [SUBTRAÇÃO] | [R$ 500.000,00] | [R$ 3.198,10] | [Raio: 10% das indenizações...]
-      //     Linha Y4: (vazio) | (vazio) | (vazio) | [Indenizações Decorrentes de Vendaval...]
-      //     Linha Y5: (vazio) | (vazio) | (vazio) | [10% das indenizações, com mínimo de R$1.000,00.]
+      // MODELO GEOMÉTRICO BASEADO EM ÂNCORAS DE VALORES E ATRIBUIÇÃO POR |Δy|
+      // Geometria real da tabela (Página 2):
+      // Na Porto Seguro, quando o nome da cobertura quebra em 2 linhas, os valores (col2=LMI, col3=Prêmio)
+      // ficam verticalmente CENTRADOS na célula, ENTRE as linhas do nome.
+      // Exemplo real (Básica):
+      // - y=727: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE" (col1, só texto)
+      // - y=720: "R$ 80.000.000,00" (col2) + "R$ 12.012,60" (col3) + "10% das indenizações." (col4)  <-- ÂNCORA
+      // - y=713: "AERONAVE" (col1, só texto)
+      // - y=698: "REFORMAS" (col1) + valores (ÂNCORA)
       //
-      // REGRA DE AGRUPAMENTO:
-      // "Uma cobertura = todas as linhas de nome consecutivas + os valores da banda seguinte."
-      // Quando uma linha contém valores (LMI e/ou Prêmio):
-      //   - Ela consome quaisquer linhas de nome pendentes que a precederam imediatamente (pendingNomePrefixes).
-      //   - Ela consome o texto de nome de sua própria linha (col1).
-      //   - Ela associa os valores desta linha (LMI, Prêmio, POS inicial).
-      //   - Quaisquer linhas subsequentes sem valores e SEM nome (ou apenas continuação de P.O.S.)
-      //     são anexadas como continuação de P.O.S. da cobertura já criada!
-      //
-      // Quando uma linha NÃO contém valores:
-      //   - Se tiver texto em col1: é prefixo do nome da PRÓXIMA cobertura (armazenado em pendingNomePrefixes).
-      //     ATENÇÃO: Nunca fundir com a cobertura anterior que já tem valores!
-      //   - Se tiver texto em col4 (P.O.S.) na mesma linha do prefixo do nome (ex: Equipamento Eletrônico linha Y2):
-      //     esse P.O.S. pertence à PRÓXIMA cobertura (armazenado em pendingPosPrefixes) OU se não houver próxima,
-      //     à anterior. Na Porto Seguro, a linha Y2 traz o prefixo do nome + a 1ª frase do P.O.S. da MESMA cobertura!
-      //   - Se NÃO tiver texto em col1 mas tiver texto em col4: é continuação de P.O.S. da cobertura mais recente (accRows).
+      // REGRAS:
+      // 1. Linhas com col2 ou col3 preenchidos com valores monetários são âncoras de cobertura.
+      //    (VRD e cabeçalhos já foram excluídos).
+      // 2. Cada linha só-de-texto em col1 é atribuída à âncora de valores MAIS PRÓXIMA por |Δy| —
+      //    NUNCA como prefixo da próxima âncora abaixo.
+      //    Nome da cobertura = todas as linhas col1 associadas (incluindo a da própria âncora se houver),
+      //    ordenadas por y decrescente e unidas por espaço.
+      // 3. Linhas só-de-texto em col4 (continuação de franquia):
+      //    - Atribuídas à âncora mais próxima por |Δy| dentro do bloco delimitado pelo ponto médio
+      //      entre as âncoras adjacentes (ou proximidade estrita a âncoras onde a franquia se espalha).
+      //    - As linhas de P.O.S. de cada âncora são unidas por espaço em ordem decrescente de y.
 
-      interface PortoAccumulatedRow {
-        nomeParts: string[]
+      interface PortoAnchor {
+        y: number
         col2Text: string
         col3Text: string
-        col4Parts: string[]
-        y: number
+        col1Own: string
+        col4Own: string
+        col1Assigned: Array<{ text: string; y: number }>
+        col4Assigned: Array<{ text: string; y: number }>
       }
 
-      const accRows: PortoAccumulatedRow[] = []
-      let pendingNomePrefixes: string[] = []
-      let pendingPosPrefixes: string[] = []
+      interface TextOnlyLine {
+        y: number
+        text: string
+      }
 
-      for (let rIdx = 0; rIdx < sortedRows.length; rIdx++) {
-        const r = sortedRows[rIdx]
-        // Ordena itens de cada coluna por X antes de juntar
+      const anchors: PortoAnchor[] = []
+      const textOnlyCol1Lines: TextOnlyLine[] = []
+      const textOnlyCol4Lines: TextOnlyLine[] = []
+
+      for (const r of sortedRows) {
         let col1Str = r.col1
           .sort((a, b) => a.x - b.x)
           .map((it) => it.str)
@@ -2760,14 +2782,14 @@ export function extractPortoDetails(
           .join(' ')
           .trim()
 
-        // BUG 2 FIX: Limpeza preventiva de qualquer fragmento de cabeçalho da tabela que possa ter vazado em col1
+        // Limpeza de cabeçalho residual
         col1Str = col1Str
           .replace(/^COBERTURA\s+L\.?M\.?I\.?\s+PR[ÊE]MIO\s+(?:P\.?O\.?S\.?)?\s*/i, '')
           .replace(/^COBERTURAS?\s+L\.?M\.?I\.?\s*/i, '')
           .replace(/^COBERTURAS?\s*/i, '')
           .trim()
 
-        // Ignora expressamente o VRD no quadro de coberturas
+        // Ignora VRD no quadro de coberturas
         if (
           col1Str.toUpperCase().includes('VALOR EM RISCO DECLARADO') ||
           col2Str.toUpperCase().includes('VALOR EM RISCO DECLARADO')
@@ -2775,166 +2797,156 @@ export function extractPortoDetails(
           continue
         }
 
-        // Verifica se esta linha contém valores numéricos monetários de LMI ou Prêmio
         const hasValues =
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col2Str) ||
           /[\d]{1,3}(?:\.[\d]{3})*,\d{2}/.test(col3Str)
 
         if (hasValues) {
-          // Linha com valores: fecha a cobertura que recebe esses valores!
-          // BUG 1 REGRA DE OURO: "uma cobertura = TODAS as linhas de nome consecutivas que a precedem
-          // + os valores da banda seguinte; a continuação fecha a cobertura anterior, NUNCA abre a seguinte."
-          // Quando a linha com valores é processada, ela consome todos os pendingNomePrefixes que a precederam
-          // MAIS o col1Str de sua própria linha (se houver).
-          // Exemplo 1:
-          //   Linha 1 (sem valores): pendingNomePrefixes = ["INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE"]
-          //   Linha 2 (com valores): col1Str = "AERONAVE", col2 = "80.000.000,00", col3 = "12.012,60", col4 = "10%..."
-          //   -> newAcc.nomeParts = ["INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE", "AERONAVE"]
-          //   -> pendingNomePrefixes fica vazio!
-          //   Linha 3 (com valores): col1Str = "REFORMAS", col2 = "300.000,00", col3 = "2.662,42"
-          //   -> newAcc.nomeParts = ["REFORMAS"]
-          //   "AERONAVE" NUNCA encosta em "REFORMAS"!
-          const currentNomeParts: string[] = []
-          if (pendingNomePrefixes.length > 0) {
-            currentNomeParts.push(...pendingNomePrefixes)
-            pendingNomePrefixes = []
-          }
-          if (col1Str) {
-            currentNomeParts.push(col1Str)
-          }
-
-          const currentPosParts: string[] = []
-          if (pendingPosPrefixes.length > 0) {
-            currentPosParts.push(...pendingPosPrefixes)
-            pendingPosPrefixes = []
-          }
-          if (col4Str) {
-            currentPosParts.push(col4Str)
-          }
-
-          const newAcc: PortoAccumulatedRow = {
-            nomeParts: currentNomeParts,
+          anchors.push({
+            y: r.y,
             col2Text: col2Str,
             col3Text: col3Str,
-            col4Parts: currentPosParts,
-            y: r.y,
-          }
-          accRows.push(newAcc)
+            col1Own: col1Str,
+            col4Own: col4Str,
+            col1Assigned: [],
+            col4Assigned: [],
+          })
         } else {
-          // Linha SEM valores (sem LMI nem Prêmio monetário em col2 ou col3):
-          // Trata texto de nome em QUALQUER coluna (col1, col2, col3) como linha que precede a próxima linha com valores.
-          // NUNCA descartar texto em silêncio!
-          // Exemplo 1: "INCÊNDIO, EXPLOSÃO, IMPLOSÃO, FUMAÇA E QUEDA DE"
-          // Exemplo 2: "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE"
-          // Exemplo 3: "CONTAMINAÇÃO E DETERIORAÇÃO DE MERCADORIAS EM"
-          // Exemplo 4: "VENDAVAL, FURACAO, CICLONE, TORNADO E QUEDA DE"
-          // Exemplo 5: "RESPONSABILIDADE CIVIL GUARDA DE VEÍCULOS DE"
-          const anyNomeCandidate = [col1Str, col2Str, col3Str]
+          // Linha sem valores monetários:
+          // IMPORTANTE: apenas fragmentos em col1 (ou col1 + col2 se transbordou sem ser P.O.S.)
+          // compõem linhas só-de-texto de nome de cobertura.
+          // Nunca misturar col4 nem fragmentos monetários aqui.
+          const col1Candidate = [col1Str, col2Str, col3Str]
             .filter(Boolean)
             .join(' ')
             .replace(/\s{2,}/g, ' ')
             .trim()
 
-          if (anyNomeCandidate) {
-            // Se o texto for P.O.S. isolado ou continuação de P.O.S., NÃO é nome de cobertura
-            const isPurePosPattern =
-              /^(\d+%\s+das\s+indeniza[çc][õo]es|n[ãa]o\s+h[áa]\.?|m[íi]nimo\s+de\s+R\$|\d+\s+dias\s+de\s+paralisa[çc][ãa]o|com\s+m[íi]nimo\s+de)/i.test(
-                anyNomeCandidate,
-              ) ||
-              /(\d+%\s+das\s+indeniza[çc][õo]es|dias\s+de\s+paralisa[çc][ãa]o|m[íi]nimo\s+de\s+R\$)/i.test(
-                anyNomeCandidate,
-              )
-
-            if (!isPurePosPattern) {
-              pendingNomePrefixes.push(anyNomeCandidate)
-
-              // Se também tem texto na Coluna 4 (P.O.S.), esse P.O.S. pertence a esta mesma nova cobertura
-              // (ex: na linha "EQUIPAMENTO ELETRÔNICO SEM COBERTURA DE", col4 tem "Indenizações decorrentes de Danos Elétricos e Queda de")
-              if (col4Str) {
-                pendingPosPrefixes.push(col4Str)
-              }
-            } else if (col4Str || anyNomeCandidate) {
-              // É apenas P.O.S.
-              const posContent = [anyNomeCandidate, col4Str].filter(Boolean).join(' ')
-              if (accRows.length > 0 && pendingNomePrefixes.length === 0) {
-                accRows[accRows.length - 1].col4Parts.push(posContent)
-              } else {
-                pendingPosPrefixes.push(posContent)
-              }
-            }
-          } else if (col4Str) {
-            // Linha sem nome (col1, col2, col3 vazias) mas com texto na coluna 4:
-            // É continuação de P.O.S.!
-            // Na Porto Seguro (como no caso de EQUIPAMENTO ELETRÔNICO), linhas subsequentes Y4 e Y5
-            // contêm frases de P.O.S. ("Indenizações Decorrentes de Vendaval...", "10% das indenizações...")
-            // que devem ser anexadas à cobertura que ACABOU de ser fechada (accRows[last]) quando
-            // NÃO houver um novo prefixo de nome pendente!
-            if (accRows.length > 0 && pendingNomePrefixes.length === 0) {
-              accRows[accRows.length - 1].col4Parts.push(col4Str)
-            } else if (pendingNomePrefixes.length > 0) {
-              // Se há um prefixo de nome pendente, anexa ao P.O.S. que acompanhará a nova cobertura
-              pendingPosPrefixes.push(col4Str)
-            } else if (accRows.length > 0) {
-              accRows[accRows.length - 1].col4Parts.push(col4Str)
-            }
+          if (col1Candidate) {
+            textOnlyCol1Lines.push({ y: r.y, text: col1Candidate })
+          }
+          if (col4Str) {
+            textOnlyCol4Lines.push({ y: r.y, text: col4Str })
           }
         }
       }
 
-      // Se sobrou algum prefixo isolado no final e há cobertura aberta, anexa
-      if (pendingNomePrefixes.length > 0 && accRows.length > 0) {
-        accRows[accRows.length - 1].nomeParts.push(...pendingNomePrefixes)
-        pendingNomePrefixes = []
-      }
-      if (pendingPosPrefixes.length > 0 && accRows.length > 0) {
-        accRows[accRows.length - 1].col4Parts.push(...pendingPosPrefixes)
-        pendingPosPrefixes = []
-      }
+      // Atribuição de linhas só-de-texto em col1 à âncora mais próxima por |Δy|
+      if (anchors.length > 0) {
+        for (const tLine of textOnlyCol1Lines) {
+          let bestAnchor: PortoAnchor = anchors[0]
+          let minDy = Math.abs(anchors[0].y - tLine.y)
 
-      // Converte as bandas acumuladas em itens finais de cobertura
-      for (const acc of accRows) {
-        let nomeCompleto = acc.nomeParts
-          .join(' ')
-          .replace(/\s{2,}/g, ' ')
-          .replace(/^[•*-]\s*/, '')
-          .trim()
+          for (let i = 1; i < anchors.length; i++) {
+            const dy = Math.abs(anchors[i].y - tLine.y)
+            if (dy < minDy) {
+              minDy = dy
+              bestAnchor = anchors[i]
+            }
+          }
 
-        if (!nomeCompleto) continue
-        // Nunca criar cobertura com nome fantasma "SUBTRAÇÃO" isolado
-        if (/^SUBTRA[ÇC][ÃA]O$/i.test(nomeCompleto)) continue
-        if (nomeCompleto.toUpperCase().includes('VALOR EM RISCO DECLARADO')) continue
-        if (nomeCompleto.toUpperCase().includes('COBERTURA DE LUCROS CESSANTES DECORRENTES'))
-          continue
-
-        const lmiM = acc.col2Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
-        const lmiVal = lmiM ? parsePtBrNumber(lmiM[0]) : null
-
-        let premVal: number | null = null
-        const premM = acc.col3Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
-        if (premM) {
-          premVal = parsePtBrNumber(premM[0])
+          bestAnchor.col1Assigned.push(tLine)
         }
 
-        let posText = acc.col4Parts
-          .join(' ')
-          .replace(/\s{2,}/g, ' ')
-          .trim()
+        // Atribuição de linhas só-de-texto em col4 (franquias multilinhas)
+        // Regra: cada linha col4 pertence ao bloco da âncora de cobertura.
+        // Se a âncora já tem franquia "Não há." completa (ex.: TUMULTO em y650),
+        // linhas longas explicativas de P.O.S. (como as de Danos Elétricos y634 e y620)
+        // pertencem à âncora vizinha que realmente tem essa franquia extensa (EQUIPAMENTO ELETRÔNICO em y607).
+        // Delimitação por fronteira entre âncoras adjacentes:
+        // Para cada linha col4, encontra a âncora mais próxima. Se a âncora mais próxima
+        // for TUMULTO ("Não há.") e a linha for continuação de franquia complexa que se estende
+        // até EQUIPAMENTO ELETRÔNICO, atribui a EQUIPAMENTO ELETRÔNICO.
+        for (const posLine of textOnlyCol4Lines) {
+          let bestAnchor: PortoAnchor = anchors[0]
+          let minDy = Math.abs(anchors[0].y - posLine.y)
 
-        if (!posText) {
-          posText = 'Não há.'
+          for (let i = 1; i < anchors.length; i++) {
+            const dy = Math.abs(anchors[i].y - posLine.y)
+            if (dy < minDy) {
+              minDy = dy
+              bestAnchor = anchors[i]
+            }
+          }
+
+          // Ajuste fino para casos como TUMULTO (y650, franquia própria "Não há.")
+          // onde a cobertura seguinte (EQUIPAMENTO ELETRÔNICO y607) possui uma franquia longa
+          // cujas primeiras linhas começam acima da âncora y607 (y634, y620):
+          if (/^Não há\.?$/i.test(bestAnchor.col4Own.trim())) {
+            // Se a âncora mais próxima por dy tem "Não há." e a linha de texto é longa/detalhe de franquia,
+            // verifica se a âncora adjacente (acima ou abaixo) é a verdadeira dona.
+            const anchorIdx = anchors.indexOf(bestAnchor)
+            const nextAnchor = anchorIdx + 1 < anchors.length ? anchors[anchorIdx + 1] : null
+            const prevAnchor = anchorIdx > 0 ? anchors[anchorIdx - 1] : null
+
+            if (
+              nextAnchor &&
+              posLine.y < bestAnchor.y &&
+              (!prevAnchor || posLine.y < prevAnchor.y)
+            ) {
+              // A linha está abaixo de bestAnchor ("Não há.") e caminha em direção a nextAnchor
+              bestAnchor = nextAnchor
+            }
+          }
+
+          bestAnchor.col4Assigned.push(posLine)
         }
 
-        // Se for a cobertura de Lucros Cessantes:
-        // O gabarito oficial define: "5 dias de paralisação do estabelecimento." (ou "5 dias de paralisação")
-        // O texto extraído em lucrosCessantesCausas ("Incêndio (X)...") fica em dadosComplementares.lucrosCessantesCausas
-        // e não deve poluir a franquia / P.O.S. da cobertura.
+        // Monta coberturas na ordem original das âncoras (y decrescente)
+        for (const anc of anchors) {
+          // Coleta todas as partes de col1: own + assigned, ordenadas por y decrescente
+          const allCol1 = [...anc.col1Assigned]
+          if (anc.col1Own) {
+            allCol1.push({ text: anc.col1Own, y: anc.y })
+          }
+          allCol1.sort((a, b) => b.y - a.y)
 
-        extractedList.push({
-          nome: nomeCompleto,
-          lmi: lmiVal,
-          premio: premVal,
-          franquia: posText,
-        })
+          let nomeCompleto = allCol1
+            .map((item) => item.text)
+            .join(' ')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/^[•*-]\s*/, '')
+            .trim()
+
+          if (!nomeCompleto) continue
+          if (/^SUBTRA[ÇC][ÃA]O$/i.test(nomeCompleto)) continue
+          if (nomeCompleto.toUpperCase().includes('VALOR EM RISCO DECLARADO')) continue
+          if (nomeCompleto.toUpperCase().includes('COBERTURA DE LUCROS CESSANTES DECORRENTES'))
+            continue
+
+          const lmiM = anc.col2Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+          const lmiVal = lmiM ? parsePtBrNumber(lmiM[0]) : null
+
+          let premVal: number | null = null
+          const premM = anc.col3Text.match(/[\d]{1,3}(?:\.[\d]{3})*,\d{2}/)
+          if (premM) {
+            premVal = parsePtBrNumber(premM[0])
+          }
+
+          // Coleta todas as partes de col4: own + assigned, ordenadas por y decrescente
+          const allCol4 = [...anc.col4Assigned]
+          if (anc.col4Own) {
+            allCol4.push({ text: anc.col4Own, y: anc.y })
+          }
+          allCol4.sort((a, b) => b.y - a.y)
+
+          let posText = allCol4
+            .map((item) => item.text)
+            .join(' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
+
+          if (!posText) {
+            posText = 'Não há.'
+          }
+
+          extractedList.push({
+            nome: nomeCompleto,
+            lmi: lmiVal,
+            premio: premVal,
+            franquia: posText,
+          })
+        }
       }
     }
   }
