@@ -48,6 +48,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { formatDate, formatCurrency } from '@/lib/formatters'
+import { ApoliceUploadModal } from '@/components/ApoliceUploadModal'
 
 interface DocumentRecord {
   id: string
@@ -99,6 +100,9 @@ export default function RecebimentoPage() {
     user?.role === 'admin' ||
     user?.email === 'admin@bycor.com.br' ||
     user?.email === 'marcos@bycor.com.br'
+
+  // Apolice PDF Upload Modal state
+  const [apoliceModalOpen, setApoliceModalOpen] = useState(false)
 
   // Manual upload state
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -334,6 +338,15 @@ export default function RecebimentoPage() {
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span>Importar Base Hotéis e Resorts (XLSX)</span>
+          </Button>
+
+          {/* BOTÃO LEITOR DE APÓLICE EMITIDA (PDF) */}
+          <Button
+            onClick={() => setApoliceModalOpen(true)}
+            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+          >
+            <FileText className="w-4 h-4 text-blue-300" />
+            <span>Subir Apólice (PDF)</span>
           </Button>
 
           <Button
@@ -1743,6 +1756,15 @@ export default function RecebimentoPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* MODAL: Leitor de Apólice Emitida em PDF */}
+      <ApoliceUploadModal
+        open={apoliceModalOpen}
+        onOpenChange={setApoliceModalOpen}
+        onSuccess={() => {
+          fetchDocuments()
+        }}
+      />
     </div>
   )
 }
