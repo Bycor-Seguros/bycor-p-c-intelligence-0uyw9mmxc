@@ -1143,6 +1143,7 @@ function extractAxaCoberturasGeometric(pages4to6: PdfPageText[]): ExtractedApoli
       }
 
       // Observação de condôminos: "Incluino bens de condôminos" (sic)
+      // Vai para o campo observacao dessa cobertura, NÃO para o nome nem para nova cobertura
       if (
         /incluino bens de/i.test(fullRowText) ||
         /bens de condôminos/i.test(fullRowText) ||
@@ -1185,6 +1186,7 @@ function extractAxaCoberturasGeometric(pages4to6: PdfPageText[]): ExtractedApoli
           continue
         }
       }
+
       // Linha sem valor monetário (apenas texto):
       // Linha em col1 é parte do nome da cobertura
       if (col1Str && !isAxaBoilerplateText(col1Str)) {
@@ -1206,6 +1208,9 @@ function extractAxaCoberturasGeometric(pages4to6: PdfPageText[]): ExtractedApoli
     }
 
     // 5. Atribuição de linhas só-de-texto col1 à âncora MAIS PRÓXIMA por |Δy| estritamente dentro da mesma página
+    // REGRA: linha de texto em col1 logo ABAIXO da âncora de valores (a linha que contém o LMI em col2),
+    // dentro da mesma banda vertical (mais próxima desta âncora por |Δy| do que de qualquer outra âncora),
+    // é CONTINUAÇÃO do nome dessa cobertura — nunca descartada, nunca criada como cobertura separada.
     if (pageAnchors.length > 0) {
       for (const tLine of textOnlyCol1) {
         // Encontra a âncora com menor distância vertical |Δy|
@@ -1369,22 +1374,67 @@ function extractAxaCoberturasTextFallback(pages4to6: PdfPageText[]): ExtractedAp
       const lmiVal = parsePtBrNumber(lmiRawClean)
       let franquiaStr = m[2]?.trim() || ''
 
-      // Verificar sufixos nas próximas linhas
+      // Verificar continuações do nome, franquia e observações nas próximas linhas
       let nextIdx = i + 1
       while (nextIdx < allLines.length) {
-        const nextL = allLines[nextIdx]
+        const nextL = allLines[nextIdx]?.trim() || ''
+        if (!nextL || isAxaBoilerplateText(nextL)) {
+          nextIdx++
+          i++
+          continue
+        }
+
+        if (
+          nextL.startsWith('Danos Materiais') ||
+          nextL.startsWith('Responsabilidade Civil') ||
+          nextL.startsWith('Lucros Cessantes') ||
+          nextL.startsWith('Legenda:') ||
+          nextL.startsWith('P.O.S:') ||
+          nextL.startsWith('Observações')
+        ) {
+          break
+        }
+
+        // Se a próxima linha contiver LMI/valor monetário, pertence à próxima cobertura
+        if (moneyPattern.test(nextL)) {
+          break
+        }
+
+        // Observação de condôminos
+        if (/incluino bens de/i.test(nextL) || /condôminos/i.test(nextL)) {
+          i++
+          nextIdx++
+          continue
+        }
+
+        // Continuação de franquia
         if (
           /^corridos$/i.test(nextL) ||
           /^por\s+(?:reclamante|ve[íi]culo)$/i.test(nextL) ||
           /^a\s+cobertura\s+acionada$/i.test(nextL) ||
-          /^PI:\s*\d+\s*meses/i.test(nextL)
+          /^PI:\s*\d+\s*meses/i.test(nextL) ||
+          /^reclamante$/i.test(nextL) ||
+          /^ve[íi]culo$/i.test(nextL)
         ) {
           franquiaStr = `${franquiaStr} ${nextL}`.trim()
           i++
           nextIdx++
-        } else {
-          break
+          continue
         }
+
+        // Continuação do nome da cobertura (ex: "Hóspedes", "Hospedagem, Restaurantes, Boates E Similares")
+        if (
+          /^H[oó]spedes$/i.test(nextL) ||
+          /Hospedagem,\s*Restaurantes/i.test(nextL) ||
+          /Boates\s*E\s*Similares/i.test(nextL)
+        ) {
+          nameBuffer.push(nextL)
+          i++
+          nextIdx++
+          continue
+        }
+
+        break
       }
 
       const fullName = cleanAxaCoberturaNome(nameBuffer.join(' ').trim())
@@ -1602,14 +1652,22 @@ function postProcessAxaCoberturas(
     }
 
     // 15. Roubo de Bens (Segurado)
-    if (c.nome === 'Roubo E/Ou Furto Qualificado De Bens') {
+    if (
+      c.nome === 'Roubo E/Ou Furto Qualificado De Bens' ||
+      c.nome.trim().toLowerCase() === 'roubo e/ou furto qualificado de bens'
+    ) {
+      c.nome = 'Roubo E/Ou Furto Qualificado De Bens'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Bens do Segurado'
       c.franquiaPos = '(**) 5.000,00'
     }
 
     // 16. Roubo de Bens dos Hóspedes
-    if (c.nome.includes('Hóspedes')) {
+    if (
+      c.nome.includes('Hóspedes') ||
+      c.nome.includes('Hospedes') ||
+      c.nome.startsWith('Roubo E/Ou Furto Qualificado De Bens Dos')
+    ) {
       c.nome = 'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Bens/Valores de Hóspedes'
@@ -1671,7 +1729,8 @@ function postProcessAxaCoberturas(
     // 22. RC Hospedagem
     if (
       c.nome.includes('Estabelecimentos De Hospedagem') ||
-      c.nome.includes('Restaurantes, Boates')
+      c.nome.includes('Restaurantes, Boates') ||
+      c.nome.includes('Estabelecimentos De')
     ) {
       c.nome =
         'Responsabilidade Civil Estabelecimentos De Hospedagem, Restaurantes, Boates E Similares'
@@ -1844,6 +1903,16 @@ function postProcessAxaCoberturas(
     if (idxB !== -1) return 1
     return 0
   })
+
+  // Garantir que resíduos parciais ou truncados sem LMI válido ou duplicados não passem se a lista tiver mais de 27
+  // Se contiver as versões oficiais completas, remover qualquer sobra espúria
+  const nomesOficiaisSet = new Set(ordemGabarito)
+  if (deduped.length > 27) {
+    const apenasOficiais = deduped.filter((c) => nomesOficiaisSet.has(c.nome))
+    if (apenasOficiais.length === 27) {
+      return apenasOficiais
+    }
+  }
 
   return deduped
 }
