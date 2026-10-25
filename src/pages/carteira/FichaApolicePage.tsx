@@ -607,12 +607,18 @@ export default function FichaApolicePage() {
                   {formatCurrency(apolice.valor_em_risco_dm)}
                 </div>
               </div>
-              <div className="space-y-1">
-                <span className="text-gray-400 font-medium">Valor em Risco (Lucros Cessantes)</span>
-                <div className="text-sm font-semibold text-gray-900 tabular-nums">
-                  {formatCurrency(apolice.valor_em_risco_lc)}
-                </div>
-              </div>
+              {apolice.valor_em_risco_lc !== null &&
+                apolice.valor_em_risco_lc !== undefined &&
+                apolice.valor_em_risco_lc > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-gray-400 font-medium">
+                      Valor em Risco (Lucros Cessantes)
+                    </span>
+                    <div className="text-sm font-semibold text-gray-900 tabular-nums">
+                      {formatCurrency(apolice.valor_em_risco_lc)}
+                    </div>
+                  </div>
+                )}
               <div className="space-y-1">
                 <span className="text-gray-400 font-medium">LMGA (Garantia Máxima da Apólice)</span>
                 <div className="text-sm font-semibold text-gray-900 tabular-nums">

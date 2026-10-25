@@ -1149,18 +1149,21 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     className="h-8 text-xs font-mono"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    VRD Lucros Cessantes (R$)
-                  </Label>
-                  <Input
-                    type="text"
-                    value={vrdTotalLc}
-                    onChange={(e) => setVrdTotalLc(e.target.value)}
-                    placeholder="21.400.000,00"
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
+                {/* VRD Lucros Cessantes só é exibido se contratado / existente (null não exibe) */}
+                {(vrdTotalLc || extractionResult?.vrdTotalLc !== null) && (
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      VRD Lucros Cessantes (R$)
+                    </Label>
+                    <Input
+                      type="text"
+                      value={vrdTotalLc}
+                      onChange={(e) => setVrdTotalLc(e.target.value)}
+                      placeholder="21.400.000,00"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

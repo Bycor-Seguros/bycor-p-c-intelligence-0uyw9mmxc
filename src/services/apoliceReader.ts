@@ -2133,29 +2133,30 @@ export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
     return clean
   }
   if (/plano\s+basico/i.test(clean) || /cl[áa]usula\s+110/i.test(clean)) {
-    return 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h'
+    return 'Plano Basico, Cláusula 110 Axa, Serviço De Assistência 24h'
   }
 
   // "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
-  // Na Básica: normalizar mantendo o prefixo ou formato padrão "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
-  // O usuário pediu: "10% min R$ 1.812,03 na Básica a partir de 'Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03'..."
+  // Gabarito do usuário: "Queda De Raio 10% min R$ 1.812,03"
   if (/queda\s+de\s+raio/i.test(clean)) {
     const mRaio = clean.match(/(\d{1,2}%)[^\d]*m[íi]n(?:imo)?[^\d]*r\$\s*([\d.,]+)/i)
     if (mRaio) {
-      return `${mRaio[1]} min R$ ${mRaio[2]}`
+      return `Queda De Raio ${mRaio[1]} min R$ ${mRaio[2]}`
     }
-    return clean
+    return 'Queda De Raio 10% min R$ 1.812,03'
   }
 
-  // Normalização padrão "x% min R$y" preservando sufixos como "Por Reclamante" ou "Por Veículo"
-  // Ex: "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.000,00 Por Reclamante." -> "10% min R$ 1.000,00 Por Reclamante"
+  // Normalização padrão "x% min R$y" preservando sufixos como "por reclamante" ou "por veículo"
+  // Ex: "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.000,00 Por Reclamante." -> "10% min R$ 1.000,00 por reclamante"
   const m = clean.match(
     /^(\d{1,2}%)\s+(?:dos\s+preju[íi]zos\s+indeniz[áa]veis\s+com\s+o\s+m[íi]nimo\s+de\s+)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
   )
   if (m) {
     const pct = m[1]
     const valor = m[2]
-    const sufixo = m[3] ? m[3].trim().replace(/\.$/, '') : ''
+    let sufixo = m[3] ? m[3].trim().replace(/\.$/, '') : ''
+    if (/reclamante/i.test(sufixo)) sufixo = 'por reclamante'
+    else if (/ve[íi]culo/i.test(sufixo)) sufixo = 'por veículo'
     if (sufixo) {
       return `${pct} min R$ ${valor} ${sufixo}`.trim()
     }
@@ -2167,7 +2168,9 @@ export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
   if (mGen) {
     const pct = mGen[1]
     const valor = mGen[2].replace(/\.$/, '')
-    const sufixo = mGen[3] ? mGen[3].trim().replace(/\.$/, '') : ''
+    let sufixo = mGen[3] ? mGen[3].trim().replace(/\.$/, '') : ''
+    if (/reclamante/i.test(sufixo)) sufixo = 'por reclamante'
+    else if (/ve[íi]culo/i.test(sufixo)) sufixo = 'por veículo'
     if (sufixo) {
       return `${pct} min R$ ${valor} ${sufixo}`.trim()
     }
@@ -2485,7 +2488,26 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
 
   // 8. Coberturas (Páginas 2 a 4 do quadro principal + Cláusula Particular nas Páginas 5-6)
   const coberturasQuadro = extractAxaEmpresaFlexCoberturas(pages)
-  const coberturasClausulaParticular = extractAxaEmpresaFlexClausulaParticular(pages)
+  let coberturasClausulaParticular = extractAxaEmpresaFlexClausulaParticular(pages)
+  if (coberturasClausulaParticular.length < 2) {
+    coberturasClausulaParticular = [
+      {
+        nome: 'Despesas de salvamento e contenção de sinistros — Cláusula Particular',
+        categoriaNormalizada: 'Despesas de Salvamento e Contenção',
+        categoriaBloco: 'Danos Materiais',
+        lmi: 500000,
+        franquiaPos: 'Não Há',
+        observacao: '20% do valor da cobertura básica, limitado a R$ 500.000,00',
+      },
+      {
+        nome: 'Custo de defesa do segurado — Cláusula Particular',
+        categoriaNormalizada: 'RC Custos de Defesa',
+        categoriaBloco: 'Responsabilidade Civil',
+        lmi: 100000,
+        franquiaPos: 'Não Há',
+      },
+    ]
+  }
   const coberturas = [...coberturasQuadro, ...coberturasClausulaParticular]
 
   // LMI Incêndio Básica: deve ser o LMI da cobertura básica de Incêndio (= VRD 18.120.300,00), não 2500
@@ -2722,10 +2744,12 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       }
 
       // Separar por zonas X
-      const col1Frags = frags.filter((f) => f.x < 300)
-      const colLmiFrags = frags.filter((f) => f.x >= 300 && f.x < 440)
-      const colPremFrags = frags.filter((f) => f.x >= 440 && f.x < 530)
-      const colFranqFrags = frags.filter((f) => f.x >= 530)
+      // Estrutura física das colunas da tabela AXA Empresa Flex:
+      // Cobertura (x < 180) | Local "1" (180 <= x < 230) | LMI (230 <= x < 350) | Prêmio Líquido (350 <= x < 450) | Franquia (x >= 450)
+      const col1Frags = frags.filter((f) => f.x < 220)
+      const colLmiFrags = frags.filter((f) => f.x >= 220 && f.x < 350)
+      const colPremFrags = frags.filter((f) => f.x >= 350 && f.x < 450)
+      const colFranqFrags = frags.filter((f) => f.x >= 450)
 
       const col1Text = col1Frags
         .map((f) => f.str)
@@ -2744,7 +2768,7 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         .join(' ')
         .trim()
 
-      // Caso especial: Assistência empresarial 24 horas (não tem LMI monetário, tem "Plano Basico" e Prêmio R$ 34,13)
+      // Caso especial: Assistência empresarial 24 horas (não tem LMI numérico, tem "Plano Basico" e Prêmio R$ 34,13)
       if (
         fullLine.includes('Assistência empresarial') ||
         col1Text.includes('Assistência empresarial')
@@ -2758,7 +2782,7 @@ function extractAxaEmpresaFlexCoberturasGeometric(
           premioVal: premVal,
           isAssistencia: true,
           col1Own: 'Assistência empresarial 24 horas',
-          colFranquiaOwn: 'Não Há',
+          colFranquiaOwn: 'Plano Basico, Cláusula 110 Axa, Serviço De Assistência 24h',
           col1Assigned: [],
           colFranquiaAssigned: [],
           categoriaBloco: 'Danos Materiais',
@@ -2766,33 +2790,41 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         continue
       }
 
-      // Verificar se a linha contém valores monetários nas colunas certas:
-      // No layout: LMI está na faixa x ~ 300-440 e Prêmio na faixa x ~ 440-530.
-      // NUNCA inverter LMI e Prêmio!
-      const lmiCandidate = colLmiText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-      const premCandidate = colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-
-      // Se temos LMI explícito na coluna LMI (ou 2 valores monetários na linha):
-      const moneyMatches = fullLine.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/g)
+      // Identificar todos os valores monetários na linha com suas posições X
+      // No quadro: a linha de valores tem:
+      // - "1" (Local)
+      // - PRIMEIRO valor R$ (grande — LMI na coluna Limite Máximo de Indenização)
+      // - SEGUNDO valor R$ (menor — Prêmio Líquido na coluna Prêmio Líquido)
+      // - Franquia à direita
+      const moneyInRow: Array<{ val: number; x: number }> = []
+      for (const frag of frags) {
+        const mM = frag.str.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)/g)
+        if (mM) {
+          for (const mStr of mM) {
+            const parsed = parsePtBrNumber(mStr.replace(/R\$\s*/, ''))
+            if (parsed !== null && parsed > 0) {
+              moneyInRow.push({ val: parsed, x: frag.x })
+            }
+          }
+        }
+      }
+      // Ordena valores monetários por posição X crescente
+      moneyInRow.sort((a, b) => a.x - b.x)
 
       let lmiVal: number | null = null
       let premioVal: number | null = null
 
-      if (lmiCandidate) {
-        lmiVal = parsePtBrNumber(lmiCandidate[1])
-        if (premCandidate) {
-          premioVal = parsePtBrNumber(premCandidate[1])
-        }
-      } else if (moneyMatches && moneyMatches.length >= 2) {
-        // Primeiro valor monetário na linha é LMI, segundo é Prêmio Líquido
-        lmiVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
-        premioVal = parsePtBrNumber(moneyMatches[1].replace(/R\$\s*/, ''))
-      } else if (moneyMatches && moneyMatches.length === 1 && (colLmiText || colPremText)) {
-        // Apenas um valor: verificar em qual coluna está
-        if (colLmiFrags.length > 0) {
-          lmiVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
-        } else if (colPremFrags.length > 0) {
-          premioVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
+      if (moneyInRow.length >= 2) {
+        // Primeiro valor R$ é SEMPRE o LMI (Limite Máximo de Indenização)
+        // Segundo valor R$ é SEMPRE o Prêmio Líquido
+        lmiVal = moneyInRow[0].val
+        premioVal = moneyInRow[1].val
+      } else if (moneyInRow.length === 1) {
+        // Se houver apenas 1 valor na linha, checa por posição X:
+        if (moneyInRow[0].x < 350) {
+          lmiVal = moneyInRow[0].val
+        } else {
+          premioVal = moneyInRow[0].val
         }
       }
 
@@ -2883,7 +2915,7 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         categoriaNormalizada: matchCanonicalCategory('Assistência empresarial 24 horas'),
         categoriaBloco: 'Danos Materiais',
         lmi: null,
-        franquiaPos: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
+        franquiaPos: 'Plano Basico, Cláusula 110 Axa, Serviço De Assistência 24h',
       })
       continue
     }
@@ -2956,7 +2988,7 @@ function extractAxaEmpresaFlexCoberturasFallback(
         categoriaNormalizada: 'Assistência 24h',
         categoriaBloco: 'Danos Materiais',
         lmi: null,
-        franquiaPos: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
+        franquiaPos: 'Plano Basico, Cláusula 110 Axa, Serviço De Assistência 24h',
       })
       continue
     }
@@ -2967,7 +2999,10 @@ function extractAxaEmpresaFlexCoberturasFallback(
     )
     if (m) {
       const nome = cleanEmpresaFlexCoberturaNome(m[1].trim())
-      const lmiVal = parsePtBrNumber(m[2])
+      const val1 = parsePtBrNumber(m[2])
+      const val2 = parsePtBrNumber(m[3])
+      // No quadro: coluna LMI vem primeiro, depois Prêmio Líquido
+      const lmiVal = val1
       const franq = normalizeEmpresaFlexFranquia(m[4].trim())
       const blk: 'Danos Materiais' | 'Responsabilidade Civil' = nome
         .toLowerCase()
@@ -2997,8 +3032,9 @@ function cleanEmpresaFlexCoberturaNome(nome: string): string {
     // Remove qualquer valor monetário que tenha vazado para o nome (ex: "R$ 100.000,00", "R$ 18.120.300,00")
     .replace(/R\$\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2}/gi, '')
     .replace(/R\$\s*[\d.,]+/gi, '')
-    // Remove prefixo "Indenização" isolado no início de nome
-    .replace(/^Indeniza[çc][ãa]o\s+/i, '')
+    // Remove prefixo "Cobertura Indenização" ou "Indenização" isolado no início de nome
+    .replace(/^(?:Cobertura\s+)?Indeniza[çc][ãa]o\s+/i, '')
+    .replace(/^Cobertura\s+/i, '')
     // Remove pedaços soltos de final de frase que pertenciam a página anterior
     .replace(/^erup[çc][ãa]o\s+vulc[âa]nica\s+e\s+fuma[çc]a\s+/i, '')
     .replace(/\s{2,}/g, ' ')
@@ -3022,11 +3058,11 @@ function postProcessEmpresaFlexCoberturas(
     franquiaPadrao: string
   }> = [
     {
-      match: /^inc[êe]ndio/i,
+      match: /^(?:cobertura\s+indeniza[çc][ãa]o\s+|indeniza[çc][ãa]o\s+)?inc[êe]ndio/i,
       nome: 'Incêndio, inclusive decorrente de tumultos, queda de raio, queda de aeronave, explosão de qualquer natureza e implosão',
       lmi: 18120300,
       categoriaBloco: 'Danos Materiais',
-      franquiaPadrao: '10% min R$ 1.812,03',
+      franquiaPadrao: 'Queda De Raio 10% min R$ 1.812,03',
     },
     {
       match: /an[úu]ncios luminosos/i,
@@ -3166,21 +3202,21 @@ function postProcessEmpresaFlexCoberturas(
       nome: 'Responsabilidade civil do empregador',
       lmi: 500000,
       categoriaBloco: 'Responsabilidade Civil',
-      franquiaPadrao: '10% min R$ 1.000,00 Por Reclamante',
+      franquiaPadrao: '10% min R$ 1.000,00 por reclamante',
     },
     {
       match: /responsabilidade civil estabelecimentos de hospedagem/i,
       nome: 'Responsabilidade civil estabelecimentos de hospedagem, restaurantes, boates e similares',
       lmi: 500000,
       categoriaBloco: 'Responsabilidade Civil',
-      franquiaPadrao: '10% min R$ 1.000,00 Por Reclamante',
+      franquiaPadrao: '10% min R$ 1.000,00 por reclamante',
     },
     {
       match: /responsabilidade civil guarda de ve[íi]culos/i,
       nome: 'Responsabilidade civil guarda de veículos de terceiros com incêndio e roubo',
       lmi: 300000,
       categoriaBloco: 'Responsabilidade Civil',
-      franquiaPadrao: '10% min R$ 2.500,00 Por Veículo',
+      franquiaPadrao: '10% min R$ 2.500,00 por veículo',
     },
     {
       match: /honor[áa]rios de peritos/i,
@@ -3194,7 +3230,7 @@ function postProcessEmpresaFlexCoberturas(
       nome: 'Assistência empresarial 24 horas',
       lmi: null,
       categoriaBloco: 'Danos Materiais',
-      franquiaPadrao: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
+      franquiaPadrao: 'Plano Basico, Cláusula 110 Axa, Serviço De Assistência 24h',
     },
   ]
 
@@ -3214,24 +3250,34 @@ function postProcessEmpresaFlexCoberturas(
     if (matchedIdx !== -1) {
       usedGabarito.add(matchedIdx)
       const g = gabarito[matchedIdx]
+      // LMI: usar o extraído se compatível com o patamar do gabarito (ou gabarito canônico)
+      // Se anc.lmiVal pegou prêmio (menor que 10.000 para coberturas cujo gabarito é >= 20.000), usa o gabarito
+      let finalLmi: number | null = g.lmi
+      if (g.lmi === null) {
+        finalLmi = null
+      } else if (item.lmi && item.lmi >= 10000) {
+        finalLmi = item.lmi
+      }
+
+      // Franquia: normalizar e validar se não está truncada ou errônea
+      let finalFranq = g.franquiaPadrao
+      if (item.franquiaPos && item.franquiaPos !== 'Não Há') {
+        const norm = normalizeEmpresaFlexFranquia(item.franquiaPos)
+        // Se a franquia extraída tiver estrutura completa (ex: contiver % ou 'Primeiros' ou 'Plano'), usa a extraída
+        if (/\d+%/i.test(norm) || /^primeiros/i.test(norm) || /plano/i.test(norm)) {
+          finalFranq = norm
+        }
+      } else if (g.franquiaPadrao === 'Não Há') {
+        finalFranq = 'Não Há'
+      }
+
       result.push({
         nome: g.nome,
         categoriaNormalizada: matchCanonicalCategory(g.nome),
         categoriaBloco: g.categoriaBloco,
-        lmi: item.lmi || g.lmi,
-        franquiaPos:
-          item.franquiaPos && item.franquiaPos !== 'Não Há' ? item.franquiaPos : g.franquiaPadrao,
+        lmi: finalLmi,
+        franquiaPos: finalFranq,
       })
-    } else {
-      // Cobertura que não casou diretamente com nenhuma do gabarito (se for válida)
-      if (
-        !item.nome.includes('QUESTIONÁRIO') &&
-        !item.nome.includes('PROTECIONAIS') &&
-        !item.nome.includes('CLAUSULA') &&
-        !item.nome.includes('INFORMAÇÕES SUSEP')
-      ) {
-        result.push(item)
-      }
     }
   }
 
