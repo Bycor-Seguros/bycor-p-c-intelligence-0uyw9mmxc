@@ -44,7 +44,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import {
+  formatCurrency,
+  formatCurrencyNumber,
+  parseCurrencyValue,
+  formatDate,
+  formatCnpj,
+} from '@/lib/formatters'
 import {
   parseApolicePdf,
   ApoliceExtracaoResultado,
@@ -192,17 +198,19 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
       setSeguradoCnpj(res.seguradoCnpj || '')
       setCorretorNome(res.corretorNome || 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA')
 
-      setPremioLiquido(res.premioLiquido !== null ? String(res.premioLiquido) : '')
-      setCustoApolice(res.custoApolice !== null ? String(res.custoApolice) : '')
-      setIof(res.iof !== null ? String(res.iof) : '')
-      setPremioTotal(res.premioTotal !== null ? String(res.premioTotal) : '')
+      setPremioLiquido(res.premioLiquido !== null ? formatCurrencyNumber(res.premioLiquido) : '')
+      setCustoApolice(res.custoApolice !== null ? formatCurrencyNumber(res.custoApolice) : '0,00')
+      setIof(res.iof !== null ? formatCurrencyNumber(res.iof) : '')
+      setPremioTotal(res.premioTotal !== null ? formatCurrencyNumber(res.premioTotal) : '')
       setCondicoesPagamento(res.condicoesPagamento || '')
       setFormaPagamento(res.formaPagamento || '')
 
-      setLmga(res.lmga !== null ? String(res.lmga) : '')
-      setVrdTotalDm(res.vrdTotalDm !== null ? String(res.vrdTotalDm) : '')
-      setVrdTotalLc(res.vrdTotalLc !== null ? String(res.vrdTotalLc) : '')
-      setLmiIncendioBasica(res.lmiIncendioBasica !== null ? String(res.lmiIncendioBasica) : '')
+      setLmga(res.lmga !== null ? formatCurrencyNumber(res.lmga) : '')
+      setVrdTotalDm(res.vrdTotalDm !== null ? formatCurrencyNumber(res.vrdTotalDm) : '')
+      setVrdTotalLc(res.vrdTotalLc !== null ? formatCurrencyNumber(res.vrdTotalLc) : '')
+      setLmiIncendioBasica(
+        res.lmiIncendioBasica !== null ? formatCurrencyNumber(res.lmiIncendioBasica) : '',
+      )
       setFormaContratacao(res.formaContratacao || '')
 
       setCoberturas(res.coberturas || [])
@@ -382,14 +390,14 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
     setErrorMessage(null)
 
     try {
-      const pLiq = premioLiquido ? parseFloat(premioLiquido) : null
-      const pTot = premioTotal ? parseFloat(premioTotal) : null
-      const pIof = iof ? parseFloat(iof) : null
-      const pCusto = custoApolice ? parseFloat(custoApolice) : 0
-      const vrdDm = vrdTotalDm ? parseFloat(vrdTotalDm) : null
-      const vrdLc = vrdTotalLc ? parseFloat(vrdTotalLc) : null
-      const valLmga = lmga ? parseFloat(lmga) : null
-      const valLmiBasica = lmiIncendioBasica ? parseFloat(lmiIncendioBasica) : null
+      const pLiq = parseCurrencyValue(premioLiquido)
+      const pTot = parseCurrencyValue(premioTotal)
+      const pIof = parseCurrencyValue(iof)
+      const pCusto = parseCurrencyValue(custoApolice) ?? 0
+      const vrdDm = parseCurrencyValue(vrdTotalDm)
+      const vrdLc = parseCurrencyValue(vrdTotalLc)
+      const valLmga = parseCurrencyValue(lmga)
+      const valLmiBasica = parseCurrencyValue(lmiIncendioBasica)
 
       let razaoLmiVr: number | null = null
       if (valLmiBasica !== null && vrdDm !== null && vrdDm > 0) {
@@ -934,12 +942,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     Prêmio Líquido (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={premioLiquido}
                     onChange={(e) => setPremioLiquido(e.target.value)}
                     placeholder="66.428,46"
-                    className="h-8 text-xs font-semibold"
+                    className="h-8 text-xs font-semibold font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -947,23 +954,21 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     Custo Apólice (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={custoApolice}
                     onChange={(e) => setCustoApolice(e.target.value)}
                     placeholder="0,00"
-                    className="h-8 text-xs"
+                    className="h-8 text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold text-gray-700">IOF (R$)</Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={iof}
                     onChange={(e) => setIof(e.target.value)}
                     placeholder="4.902,44"
-                    className="h-8 text-xs"
+                    className="h-8 text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -971,12 +976,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     PRÊMIO TOTAL (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={premioTotal}
                     onChange={(e) => setPremioTotal(e.target.value)}
                     placeholder="71.330,90"
-                    className="h-8 text-xs font-bold text-emerald-800"
+                    className="h-8 text-xs font-bold text-emerald-800 font-mono"
                     required
                   />
                 </div>
@@ -1050,12 +1054,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     LMGA da Apólice (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={lmga}
                     onChange={(e) => setLmga(e.target.value)}
                     placeholder="184.500.000,00"
-                    className="h-8 text-xs font-bold text-blue-900"
+                    className="h-8 text-xs font-bold text-blue-900 font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1063,12 +1066,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     LMI Básica Incêndio (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={lmiIncendioBasica}
                     onChange={(e) => setLmiIncendioBasica(e.target.value)}
                     placeholder="163.000.000,00"
-                    className="h-8 text-xs font-semibold"
+                    className="h-8 text-xs font-semibold font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1076,12 +1078,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     VRD Danos Materiais (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={vrdTotalDm}
                     onChange={(e) => setVrdTotalDm(e.target.value)}
                     placeholder="163.000.000,00"
-                    className="h-8 text-xs"
+                    className="h-8 text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1089,12 +1090,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                     VRD Lucros Cessantes (R$)
                   </Label>
                   <Input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     value={vrdTotalLc}
                     onChange={(e) => setVrdTotalLc(e.target.value)}
                     placeholder="21.400.000,00"
-                    className="h-8 text-xs"
+                    className="h-8 text-xs font-mono"
                   />
                 </div>
               </div>
