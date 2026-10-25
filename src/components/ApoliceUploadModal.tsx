@@ -1142,9 +1142,12 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                           {cob.lmi ? formatCurrency(cob.lmi) : '—'}
                         </strong>
                       </div>
-                      <div className="min-w-[140px] text-right">
+                      <div className="min-w-[180px] text-right">
                         <span className="text-[10px] text-gray-400 block">Franquia / P.O.S.</span>
-                        <span className="text-gray-700 truncate max-w-[150px] inline-block">
+                        <span
+                          className="text-gray-700 truncate max-w-[220px] inline-block font-medium"
+                          title={cob.franquiaPos || 'Não informada'}
+                        >
                           {cob.franquiaPos || 'Não informada'}
                         </span>
                       </div>

@@ -811,13 +811,15 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   // Passa todas as páginas a partir da página 4 (índice 3 em diante)
   // para garantir que a página 6 nunca seja omitida
   // ----------------------------------------------------
-  // Páginas do quadro de coberturas (páginas 4, 5 e 6 da apólice AXA):
-  const coberturas = extractAxaCoberturas(pages.slice(3, Math.min(pages.length, 7)))
+  // Páginas do quadro de coberturas (páginas 4, 5, 6 e 7 da apólice AXA):
+  // Passa as páginas 4 a 7 para capturar a legenda completa que se estende pelas páginas 6 e 7.
+  const coberturas = extractAxaCoberturas(pages.slice(3, Math.min(pages.length, 7)), fullText)
   // LMI Incêndio Básica: cobertura com categoria canônica "Incêndio Básica (Danos Materiais)"
   let lmiIncendioBasica: number | null = null
   const basica = coberturas.find(
     (c) =>
       c.categoriaBloco === 'Danos Materiais' &&
+      !c.nome.includes('Lucros Cessantes') &&
       (c.categoriaNormalizada.includes('Incêndio Básica') ||
         c.nome.startsWith('Incêndio, Inclusive Decorrente')),
   )
@@ -934,16 +936,135 @@ interface AxaAnchor {
  * - Cabeçalhos institucionais repetidos e rodapés de página são totalmente expurgados.
  * - Cabeçalhos de bloco ("Danos Materiais", "Responsabilidade Civil", "Lucros Cessantes") definem o bloco.
  */
-export function extractAxaCoberturas(pages4to6: PdfPageText[]): ExtractedApoliceCobertura[] {
+export function extractAxaCoberturas(
+  pages4to6: PdfPageText[],
+  fullDocText?: string,
+): ExtractedApoliceCobertura[] {
+  // Extrai o mapa de legendas P.O.S. (ex.: '*' -> '10%', '**' -> '15%', '***' -> '20%')
+  const combinedText = [fullDocText || '', ...pages4to6.map((p) => p.text)].join('\n')
+  const posMap = parseAxaPosLegenda(combinedText)
+
   // Se as páginas contiverem items geométricos (PdfTextFragment[]), usamos o modelo de âncoras por coordenadas.
   // Caso contrário, usamos o fallback de máquina de estados por linhas.
   const hasGeometricItems = pages4to6.some((p) => p.items && p.items.length > 0)
 
   if (hasGeometricItems) {
-    return extractAxaCoberturasGeometric(pages4to6)
+    return extractAxaCoberturasGeometric(pages4to6, posMap)
   }
 
-  return extractAxaCoberturasTextFallback(pages4to6)
+  return extractAxaCoberturasTextFallback(pages4to6, posMap)
+}
+
+/**
+ * Faz o parse da legenda de Participação Obrigatória do Segurado (P.O.S.) da AXA a partir do texto do PDF.
+ * Exemplo real do PDF AXA:
+ *   Legenda:
+ *   P.O.S: Participação obrigatória do segurado
+ *   (*) = P.O.S. 10% prejuízos indenizáveis com mínimo de (valor informado acima)
+ *   (**) = P.O.S. 15% prejuízos indenizáveis com mínimo de (valor informado acima)
+ *   (***) = P.O.S. 20% prejuízos indenizáveis com mínimo de (valor informado acima)
+ * Retorna um Record onde as chaves são os marcadores limpos de asteriscos (ex: '*', '**', '***')
+ * e os valores são as porcentagens encontradas (ex: '10%', '15%', '20%').
+ */
+export function parseAxaPosLegenda(text: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (!text) return result
+
+  // Expressão regular para casar:
+  // "(*) = P.O.S. 10% prejuízos indenizáveis..."
+  // "(*) = P.O.S. 10%..."
+  // e também aceitar eventuais variações com espaços entre asteriscos: "(* * *)"
+  const regex =
+    /\(([*]+|\*\s+\*|\*\s+\*\s+\*)\)\s*=\s*(?:P\.?\s*O\.?\s*S\.?[:\s]*)?\s*(\d{1,3}(?:[.,]\d+)?%)/gi
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(text)) !== null) {
+    const stars = match[1].replace(/\s+/g, '')
+    const pct = match[2].trim()
+    if (stars && pct) {
+      result[stars] = pct
+    }
+  }
+
+  // Fallback regex mais tolerante caso haja quebras de linha ou caracteres intermediários
+  const looseRegex = /\(([*]+|\*\s+\*|\*\s+\*\s+\*)\)\s*=[^%\n\r]{0,40}?\b(\d{1,3}(?:[.,]\d+)?%)/gi
+  while ((match = looseRegex.exec(text)) !== null) {
+    const stars = match[1].replace(/\s+/g, '')
+    const pct = match[2].trim()
+    if (stars && pct && !result[stars]) {
+      result[stars] = pct
+    }
+  }
+
+  return result
+}
+
+/**
+ * Resolve marcadores de asteriscos em franquias da AXA com base no mapa extraído da legenda.
+ * Transforma:
+ *   "(*) 10.000,00" -> "10% min R$ 10.000,00"
+ *   "(**) 5.000,00 por reclamante" -> "15% min R$ 5.000,00 por reclamante"
+ *   "(*) 3.000,00 por veículo" -> "10% min R$ 3.000,00 por veículo"
+ *   "(***) 10.000,00" -> "20% min R$ 10.000,00"
+ * Se não houver asteriscos ou se a legenda não contiver a chave, preserva o texto original.
+ */
+export function resolveAxaPosFranquia(franquia: string, posMap: Record<string, string>): string {
+  if (!franquia) return franquia
+
+  const trimmed = franquia.trim()
+
+  // Procura padrão de asteriscos no início ou formato "(*) valor [sufixo]"
+  // Ex: "(*) 10.000,00", "(**) 5.000,00 por reclamante", "(***) 10.000,00"
+  // Também aceita se vier com "R$" ou espaços: "(*) R$ 10.000,00"
+  const m = trimmed.match(
+    /^\s*\(([*]+|\*\s+\*|\*\s+\*\s+\*)\)\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
+  )
+
+  if (!m) {
+    // Casos sem asterisco (ex.: "Não Há", "Os primeiros 07 dias...", "Prejuízos somados...")
+    return trimmed
+  }
+
+  const rawStars = m[1].replace(/\s+/g, '')
+  const valor = m[2].trim()
+  const sufixo = m[3]?.trim() || ''
+
+  // Se temos a porcentagem correspondente no posMap (ex: '10%')
+  const pct = posMap[rawStars]
+  if (pct) {
+    const prefix = `${pct} min R$ ${valor}`
+    return sufixo ? `${prefix} ${sufixo}`.trim() : prefix
+  }
+
+  // Se a legenda não foi encontrada no PDF, preserva o texto original com asteriscos (nunca inventar)
+  return trimmed
+}
+
+/**
+ * Refinamento 2: Período Indenitário no nome da cobertura.
+ * Coberturas cuja franquia contém "PI: N meses" (ex.: "PI: 12 meses") devem ter o descritivo do nome
+ * finalizado com " PI = N meses" (onde N meses é extraído dinamicamente da franquia).
+ * Casos do gabarito:
+ *   "Perda Ou Pagamento De Aluguel" -> "Perda Ou Pagamento De Aluguel PI = 12 meses"
+ *   "Lucros Cessantes [Líquido] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza E Implosão" -> "... Implosão PI = 12 meses"
+ * O "PI: N meses" permanece também na franquia.
+ */
+export function applyPeriodoIndenitarioAoNome(nome: string, franquia: string): string {
+  if (!nome || !franquia) return nome
+
+  // Detecta "PI: N meses" ou "PI : N meses"
+  const piMatch = franquia.match(/\bPI\s*:\s*(\d+\s*meses)\b/i)
+  if (!piMatch) return nome
+
+  const piValor = piMatch[1].trim()
+  const suffixToAppend = `PI = ${piValor}`
+
+  // Evita duplicar se o nome já contiver exatamente esse sufixo
+  if (nome.includes(`PI = ${piValor}`) || nome.endsWith(`PI = ${piValor}`)) {
+    return nome
+  }
+
+  return `${nome.trim()} ${suffixToAppend}`
 }
 
 function isAxaBoilerplateText(text: string): boolean {
@@ -977,7 +1098,10 @@ function isAxaBoilerplateText(text: string): boolean {
   )
 }
 
-function extractAxaCoberturasGeometric(pages4to6: PdfPageText[]): ExtractedApoliceCobertura[] {
+function extractAxaCoberturasGeometric(
+  pages4to6: PdfPageText[],
+  posMap: Record<string, string> = {},
+): ExtractedApoliceCobertura[] {
   const allAnchors: AxaAnchor[] = []
   let currentBloco: 'Danos Materiais' | 'Responsabilidade Civil' | 'Lucros Cessantes' =
     'Danos Materiais'
@@ -1303,13 +1427,16 @@ function extractAxaCoberturasGeometric(pages4to6: PdfPageText[]): ExtractedApoli
   }
 
   // Refinamentos finos específicos do gabarito oficial AXA
-  return postProcessAxaCoberturas(finalCoberturas)
+  return postProcessAxaCoberturas(finalCoberturas, posMap)
 }
 
 /**
  * Fallback baseado em linhas de texto caso não existam coordenadas de bounding box.
  */
-function extractAxaCoberturasTextFallback(pages4to6: PdfPageText[]): ExtractedApoliceCobertura[] {
+function extractAxaCoberturasTextFallback(
+  pages4to6: PdfPageText[],
+  posMap: Record<string, string> = {},
+): ExtractedApoliceCobertura[] {
   const allLines: string[] = []
   pages4to6.forEach((p) => {
     p.lines.forEach((l) => allLines.push(l.trim()))
@@ -1455,7 +1582,7 @@ function extractAxaCoberturasTextFallback(pages4to6: PdfPageText[]): ExtractedAp
     nameBuffer.push(rawLine)
   }
 
-  return postProcessAxaCoberturas(coberturas)
+  return postProcessAxaCoberturas(coberturas, posMap)
 }
 
 /**
@@ -1526,6 +1653,7 @@ function cleanAxaFranquia(franquia: string, nomeCobertura: string): string {
  */
 function postProcessAxaCoberturas(
   coberturas: ExtractedApoliceCobertura[],
+  posMap: Record<string, string> = {},
 ): ExtractedApoliceCobertura[] {
   // Ajuste dos 27 nomes e blocos oficiais
   coberturas.forEach((c) => {
@@ -1907,14 +2035,32 @@ function postProcessAxaCoberturas(
   // Garantir que resíduos parciais ou truncados sem LMI válido ou duplicados não passem se a lista tiver mais de 27
   // Se contiver as versões oficiais completas, remover qualquer sobra espúria
   const nomesOficiaisSet = new Set(ordemGabarito)
+  let resultList = deduped
   if (deduped.length > 27) {
     const apenasOficiais = deduped.filter((c) => nomesOficiaisSet.has(c.nome))
     if (apenasOficiais.length === 27) {
-      return apenasOficiais
+      resultList = apenasOficiais
     }
   }
 
-  return deduped
+  // APLICAÇÃO DOS REFINAMENTOS 1 E 2 AXA:
+  // REFINAMENTO 1: Resolver asteriscos de P.O.S. pela legenda e compor "x% min R$y [sufixo]"
+  // Se houver legendas no posMap, resolve os asteriscos; caso contrário mantém o formato original.
+  // REFINAMENTO 2: Período Indenitário no nome da cobertura
+  // Se a franquia contiver "PI: N meses", o nome passa a terminar com " PI = N meses".
+  resultList.forEach((c) => {
+    // 1. Resolver franquia se posMap tiver chaves
+    if (c.franquiaPos && Object.keys(posMap).length > 0) {
+      c.franquiaPos = resolveAxaPosFranquia(c.franquiaPos, posMap)
+    }
+
+    // 2. Refinamento de Período Indenitário no nome da cobertura
+    if (c.franquiaPos) {
+      c.nome = applyPeriodoIndenitarioAoNome(c.nome, c.franquiaPos)
+    }
+  })
+
+  return resultList
 }
 
 // ==========================================
