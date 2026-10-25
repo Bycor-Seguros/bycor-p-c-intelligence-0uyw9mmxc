@@ -513,9 +513,7 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
       cosseguradoCnpj = '22.417.104/0001-39'
     }
   }
-  if (!cosseguradoNome && p1.text.includes('BT MORUMBI HOTEIS LTDA')) {
-    cosseguradoNome = 'BT MORUMBI HOTEIS LTDA'
-  }
+  // Co-segurado: somente o que vier do texto do PDF (sem literais de gabarito)
 
   // ----------------------------------------------------
   // 5. Corretor (Pág 2)
@@ -790,9 +788,7 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   const lmgaMatch =
     p3.text.match(
       /1\.3\s*Limite\s+M[áa]ximo\s+de\s+Garantia[\s\S]*?LMGA:[\s\S]*?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    ) ||
-    p3.text.match(/LMGA:[\s\S]*?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i) ||
-    fullText.match(/\b184\.500\.000,00\b/)
+    ) || p3.text.match(/LMGA:[\s\S]*?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
   if (lmgaMatch) {
     lmga = parsePtBrNumber(lmgaMatch[1] || lmgaMatch[0])
   }
@@ -832,7 +828,7 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   if (basica && basica.lmi) {
     lmiIncendioBasica = basica.lmi
   } else if (vrdTotalDm) {
-    // Se não encontrou explicitamente, no gabarito é 163.000.000,00
+    // Deriva do VRD Danos Materiais extraído do texto (sem literais)
     lmiIncendioBasica = vrdTotalDm
   }
 
@@ -1630,18 +1626,9 @@ function cleanAxaCoberturaNome(nome: string): string {
 function cleanAxaFranquia(franquia: string, nomeCobertura: string): string {
   let f = franquia.replace(/\s+/g, ' ').trim()
 
-  if (nomeCobertura.includes('Perda Ou Pagamento De Aluguel')) {
-    return 'Os primeiros 07 dias corridos / PI: 12 meses'
-  }
-  if (nomeCobertura.includes('Lucros Cessantes')) {
-    return 'Os primeiros 10 dias corridos / PI: 12 meses'
-  }
-  if (nomeCobertura.includes('Danos Morais')) {
-    return 'Prejuízos somados a cobertura acionada'
-  }
-  if (nomeCobertura.includes('Despesas De Salvamento')) {
-    return 'Não Há'
-  }
+  // Franquia vem SEMPRE do texto do PDF — sem valores padrão por cobertura.
+  // nomeCobertura é mantido apenas por compatibilidade de chamada.
+  void nomeCobertura
 
   // Normalização de sufixos
   if (f.includes('por reclamante') && !f.endsWith('por reclamante')) {
@@ -1676,21 +1663,18 @@ function postProcessAxaCoberturas(
         'Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza, Implosão E Queda De Aeronave E/Ou Outros Engenhos Espaciais'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Incêndio Básica (Danos Materiais)'
-      if (!c.franquiaPos || c.franquiaPos === 'Não Há') c.franquiaPos = '(*) 10.000,00'
     }
     // 2. Anúncios
     if (c.nome.includes('Anúncios E Letreiros Luminosos')) {
       c.nome = 'Anúncios E Letreiros Luminosos'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Anúncios/Letreiros Luminosos'
-      c.franquiaPos = '(*) 2.000,00'
     }
 
     // 3. Danos Elétricos
     if (c.nome === 'Danos Elétricos') {
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Danos Elétricos'
-      c.franquiaPos = '(**) 10.000,00'
     }
 
     // 4. Sprinklers
@@ -1703,7 +1687,6 @@ function postProcessAxaCoberturas(
         "Derrame D'Água Ou Outra Substância Líquida De Instalações De Chuveiros Automáticos (Sprinklers)"
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Danos por Água / Sprinklers'
-      c.franquiaPos = '(*) 5.000,00'
     }
 
     // 5. Desmoronamento
@@ -1711,7 +1694,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Desmoronamento'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Desmoronamento'
-      c.franquiaPos = '(**) 10.000,00'
     }
 
     // 6. Registros e Documentos
@@ -1719,7 +1701,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Despesas Com Recomposição De Registros E Documentos'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Recomposição de Registros/Documentos'
-      c.franquiaPos = '(*) 1.000,00'
     }
 
     // 7. Salvamento e Contenção
@@ -1727,7 +1708,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Despesas De Salvamento E Contenção De Sinistros'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Despesas de Salvamento e Contenção'
-      c.franquiaPos = 'Não Há'
     }
 
     // 8. Equipamentos Estacionários
@@ -1735,14 +1715,12 @@ function postProcessAxaCoberturas(
       c.nome = 'Equipamentos Estacionários'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Equipamentos Estacionários'
-      c.franquiaPos = '(*) 5.000,00'
     }
 
     // 9. Fidelidade
     if (c.nome === 'Fidelidade') {
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Fidelidade de Funcionários'
-      c.franquiaPos = '(*) 2.000,00'
     }
 
     // 10. Aluguel
@@ -1750,7 +1728,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Perda Ou Pagamento De Aluguel'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Perda/Pagamento de Aluguel'
-      c.franquiaPos = 'Os primeiros 07 dias corridos / PI: 12 meses'
     }
 
     // 11. Quebra de Máquinas
@@ -1758,7 +1735,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Quebra De Maquinas'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Quebra de Máquinas'
-      c.franquiaPos = '(**) 5.000,00'
     }
 
     // 12. Vidros
@@ -1766,7 +1742,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Quebra De Vidros, Espelhos, Mármores E Granitos'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Quebra de Vidros/Espelhos/Mármores'
-      c.franquiaPos = '(*) 2.000,00'
     }
 
     // 13. Roubo em Trânsito / Portadores
@@ -1774,7 +1749,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Roubo De Valores Em Trânsito Em Mãos De Portadores'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Valores (Interior/Trânsito)'
-      c.franquiaPos = '(**) 2.500,00'
     }
 
     // 14. Roubo no Interior
@@ -1782,7 +1756,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Roubo De Valores No Interior Do Estabelecimento'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Valores (Interior/Trânsito)'
-      c.franquiaPos = '(**) 2.500,00'
     }
 
     // 15. Roubo de Bens (Segurado)
@@ -1793,7 +1766,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Roubo E/Ou Furto Qualificado De Bens'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Bens do Segurado'
-      c.franquiaPos = '(**) 5.000,00'
     }
 
     // 16. Roubo de Bens dos Hóspedes
@@ -1805,7 +1777,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Roubo/Furto de Bens/Valores de Hóspedes'
-      c.franquiaPos = '(**) 5.000,00'
       c.observacao = 'Incluino bens de condôminos'
     }
 
@@ -1814,7 +1785,6 @@ function postProcessAxaCoberturas(
       c.nome = 'RC - Custos de Defesa'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'RC Custos de Defesa'
-      c.franquiaPos = '(**) 10.000,00'
     }
 
     // 18. Tumultos
@@ -1829,17 +1799,12 @@ function postProcessAxaCoberturas(
       c.nome = 'Tumulto, Greves, "Lock-Out", Atos Dolosos, Vandalismo E Comoção Civil'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Tumultos/Greves/Lock-out/Vandalismo'
-      if (c.lmi === 163000000 || !c.lmi) {
-        c.lmi = 200000
-      }
-      c.franquiaPos = '(**) 5.000,00'
     }
     // 19. Vazamento de Tanques
     if (c.nome.includes('Vazamento De Tanques')) {
       c.nome = 'Vazamento De Tanques E Tubulações'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Vazamento/Rompimento de Tanques e Tubulações'
-      c.franquiaPos = '(**) 10.000,00'
     }
 
     // 20. Vendaval
@@ -1848,7 +1813,6 @@ function postProcessAxaCoberturas(
         'Vendaval, Furacão, Ciclone, Tornado, Granizo, Tsunami, Erupção Vulcânica, Impacto De Veículos Terrestres E Fumaça'
       c.categoriaBloco = 'Danos Materiais'
       c.categoriaNormalizada = 'Vendaval/Granizo/Ciclone/Fumaça'
-      c.franquiaPos = '(***) 10.000,00'
     }
 
     // BLOCO RESPONSABILIDADE CIVIL (6)
@@ -1857,7 +1821,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Responsabilidade Civil Condomínio Empresarial'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Condomínio'
-      c.franquiaPos = '(**) 5.000,00 por reclamante'
     }
 
     // 22. RC Hospedagem
@@ -1870,7 +1833,6 @@ function postProcessAxaCoberturas(
         'Responsabilidade Civil Estabelecimentos De Hospedagem, Restaurantes, Boates E Similares'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Hospedagem/Restaurantes/Bares'
-      c.franquiaPos = '(**) 5.000,00 por reclamante'
     }
 
     // 23. RC Danos Morais
@@ -1881,7 +1843,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Responsabilidade Civil Danos Morais'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Danos Morais'
-      c.franquiaPos = 'Prejuízos somados a cobertura acionada'
     }
 
     // 24. RC Empregador
@@ -1889,7 +1850,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Responsabilidade Civil Do Empregador'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Empregador'
-      c.franquiaPos = '(*) 3.000,00 por reclamante'
     }
 
     // 25. RC Guarda de Veículos
@@ -1897,7 +1857,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Responsabilidade Civil Guarda De Veículos De Terceiros – Incêndio E Roubo'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Guarda de Veículos de Terceiros'
-      c.franquiaPos = '(*) 3.000,00 por veículo'
     }
 
     // 26. RC Síndico
@@ -1905,7 +1864,6 @@ function postProcessAxaCoberturas(
       c.nome = 'Responsabilidade Civil Síndico'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Síndico'
-      c.franquiaPos = '(**) 3.000,00 por reclamante'
     }
 
     // BLOCO LUCROS CESSANTES (1)
@@ -1918,7 +1876,6 @@ function postProcessAxaCoberturas(
         'Lucros Cessantes [Líquido] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza E Implosão'
       c.categoriaBloco = 'Lucros Cessantes'
       c.categoriaNormalizada = 'Lucros Cessantes / Perda de Receita'
-      c.franquiaPos = 'Os primeiros 10 dias corridos / PI: 12 meses'
     }
   })
 
@@ -1931,123 +1888,10 @@ function postProcessAxaCoberturas(
     deduped.push(c)
   }
 
-  // Ordenação das 27 coberturas para refletir rigorosamente o gabarito e a ordem de páginas/blocos do PDF da AXA
-  // Gabarito oficial:
-  // Bloco Danos Materiais (1-20):
-  // 1. Incêndio Básica
-  // 2. Anúncios
-  // 3. Danos Elétricos
-  // 4. Sprinklers
-  // 5. Desmoronamento
-  // 6. Recomposição de Documentos
-  // 7. Salvamento e Contenção
-  // 8. Equipamentos Estacionários
-  // 9. Fidelidade
-  // 10. Aluguel
-  // 11. Quebra de Máquinas
-  // 12. Vidros
-  // 13. Roubo Valores Trânsito
-  // 14. Roubo Valores Interior
-  // 15. Roubo Bens
-  // 16. Roubo Bens Hóspedes
-  // 17. RC Custos de Defesa
-  // 18. Tumultos
-  // 19. Vazamento Tanques
-  // 20. Vendaval
-  // Bloco Responsabilidade Civil (21-26):
-  // 21. RC Condomínio Empresarial
-  // 22. RC Hospedagem
-  // 23. RC Danos Morais
-  // 24. RC Empregador
-  // 25. RC Guarda de Veículos
-  // 26. RC Síndico
-  // Bloco Lucros Cessantes (27):
-  // 27. Lucros Cessantes [Líquido]
-
-  const ordemGabarito: string[] = [
-    'Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza, Implosão E Queda De Aeronave E/Ou Outros Engenhos Espaciais',
-    'Anúncios E Letreiros Luminosos',
-    'Danos Elétricos',
-    "Derrame D'Água Ou Outra Substância Líquida De Instalações De Chuveiros Automáticos (Sprinklers)",
-    'Desmoronamento',
-    'Despesas Com Recomposição De Registros E Documentos',
-    'Despesas De Salvamento E Contenção De Sinistros',
-    'Equipamentos Estacionários',
-    'Fidelidade',
-    'Perda Ou Pagamento De Aluguel',
-    'Quebra De Maquinas',
-    'Quebra De Vidros, Espelhos, Mármores E Granitos',
-    'Roubo De Valores Em Trânsito Em Mãos De Portadores',
-    'Roubo De Valores No Interior Do Estabelecimento',
-    'Roubo E/Ou Furto Qualificado De Bens',
-    'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes',
-    'RC - Custos de Defesa',
-    'Tumulto, Greves, "Lock-Out", Atos Dolosos, Vandalismo E Comoção Civil',
-    'Vazamento De Tanques E Tubulações',
-    'Vendaval, Furacão, Ciclone, Tornado, Granizo, Tsunami, Erupção Vulcânica, Impacto De Veículos Terrestres E Fumaça',
-    'Responsabilidade Civil Condomínio Empresarial',
-    'Responsabilidade Civil Estabelecimentos De Hospedagem, Restaurantes, Boates E Similares',
-    'Responsabilidade Civil Danos Morais',
-    'Responsabilidade Civil Do Empregador',
-    'Responsabilidade Civil Guarda De Veículos De Terceiros – Incêndio E Roubo',
-    'Responsabilidade Civil Síndico',
-    'Lucros Cessantes [Líquido] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza E Implosão',
-  ]
-
-  // Se todas as 27 coberturas estiverem presentes ou puderem ser ordenadas pela ordem canônica:
-  deduped.sort((a, b) => {
-    const idxA = ordemGabarito.indexOf(a.nome)
-    const idxB = ordemGabarito.indexOf(b.nome)
-    if (idxA !== -1 && idxB !== -1) return idxA - idxB
-    if (idxA !== -1) return -1
-    if (idxB !== -1) return 1
-    return 0
-  })
-
-  // Garantir a presença da cobertura Básica em 1º lugar do bloco Danos Materiais
-  const temBasica = deduped.some((c) => c.nome.startsWith('Incêndio, Inclusive Decorrente'))
-  if (!temBasica) {
-    deduped.unshift({
-      nome: 'Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza, Implosão E Queda De Aeronave E/Ou Outros Engenhos Espaciais',
-      categoriaNormalizada: 'Incêndio Básica (Danos Materiais)',
-      categoriaBloco: 'Danos Materiais',
-      lmi: 163000000,
-      franquiaPos: '(*) 10.000,00',
-    })
-  }
-
-  // Se Tumultos estava em primeiro com LMI de 163M por confusão no pareamento com a Básica:
-  const basicaItem = deduped.find((c) => c.nome.startsWith('Incêndio, Inclusive Decorrente'))
-  if (basicaItem) {
-    basicaItem.lmi = 163000000
-    basicaItem.franquiaPos = '(*) 10.000,00'
-  }
-  const tumultoItem = deduped.find((c) => c.nome.startsWith('Tumulto, Greves'))
-  if (tumultoItem) {
-    tumultoItem.lmi = 200000
-    tumultoItem.franquiaPos = '(**) 5.000,00'
-  }
-
-  // Re-ordena estritamente segundo o gabarito
-  deduped.sort((a, b) => {
-    const idxA = ordemGabarito.indexOf(a.nome)
-    const idxB = ordemGabarito.indexOf(b.nome)
-    if (idxA !== -1 && idxB !== -1) return idxA - idxB
-    if (idxA !== -1) return -1
-    if (idxB !== -1) return 1
-    return 0
-  })
-
-  // Garantir que resíduos parciais ou truncados sem LMI válido ou duplicados não passem se a lista tiver mais de 27
-  // Se contiver as versões oficiais completas, remover qualquer sobra espúria
-  const nomesOficiaisSet = new Set(ordemGabarito)
+  // A ordem final é SEMPRE a ordem física do quadro no PDF (blocos Danos Materiais ->
+  // Responsabilidade Civil -> Lucros Cessantes), conforme montada pelo parser geométrico.
+  // Sem gabarito fixo de nomes/ordem/valores: tudo vem do texto extraído do PDF.
   let resultList = deduped
-  if (deduped.length > 27) {
-    const apenasOficiais = deduped.filter((c) => nomesOficiaisSet.has(c.nome))
-    if (apenasOficiais.length === 27) {
-      resultList = apenasOficiais
-    }
-  }
 
   // APLICAÇÃO DOS REFINAMENTOS 1 E 2 AXA:
   // REFINAMENTO 1: Resolver asteriscos de P.O.S. pela legenda e compor "x% min R$y [sufixo]"
@@ -2149,7 +1993,7 @@ export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
     if (mRaio) {
       return `Queda De Raio ${mRaio[1]} min R$ ${mRaio[2].replace(/\.$/, '')}`
     }
-    return 'Queda De Raio 10% min R$ 1.812,03'
+    return clean
   }
 
   // Normalização padrão "X% min R$ Y" com ou sem prefixo/sufixo
@@ -2345,10 +2189,7 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
       cosseguradoCnpj = extractCleanCnpj(cosegLineM[2])
     }
   }
-  if (!cosseguradoNome && p1.text.includes('BT SORRISO HOTEIS LTDA')) {
-    cosseguradoNome = 'BT SORRISO HOTEIS LTDA'
-    cosseguradoCnpj = '62.805.347/0001-69'
-  }
+  // Co-segurado: somente o que vier do texto do PDF (sem literais de gabarito)
 
   // Pagador:
   // "Pagador: Condominio Do Edifico Hotel Transamerica Fit Sorriso"
@@ -2393,10 +2234,9 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   // "Diferente da apólice de RN na apólice empresarial da Axa o segurado é o pagador,
   // não preencher com dados do co-segurado."
   // Segurado SEMPRE recebe os dados do pagador nesta modalidade:
-  const seguradoNome = pagadorNome || 'Condominio Do Edifico Hotel Transamerica Fit Sorriso'
-  const seguradoCnpj = pagadorCnpj || '40.801.267/0001-00'
-  const seguradoEndereco =
-    pagadorEndereco || 'Avenida Blumenau, 2235 - Bela Vista - Sorriso - MT - CEP: 78890-001'
+  const seguradoNome = pagadorNome
+  const seguradoCnpj = pagadorCnpj
+  const seguradoEndereco = pagadorEndereco
 
   // 5. Corretor
   let corretorNome = 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA'
@@ -2425,8 +2265,8 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   let adicionalFracionamento: number | null = 0
   let iof: number | null = null
   let premioTotal: number | null = null
-  let condicoesPagamento = '1 + 5 boleto'
-  let formaPagamento = 'Boleto'
+  let condicoesPagamento = ''
+  let formaPagamento = ''
   const parcelas: ExtractedApoliceParcela[] = []
 
   const prLiqM = p1.text.match(/Pr[êe]mio\s+L[íi]quido:\s*R\$\s*([\d.,]+)/i)
@@ -2467,10 +2307,10 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   parcelas.sort((a, b) => a.numero - b.numero)
 
   // 7. Local(is) em Risco (Página 2)
-  let localRiscoEndereco = 'Avenida Blumenau, 2235 - Bela Vista - Sorriso - MT - CEP: 78890-001'
-  let vrdTotalDm: number | null = 18120300
-  let localRiscoAtividade = 'Hotel'
-  let formaContratacao = 'PRÉDIO+CONTEÚDO'
+  let localRiscoEndereco = ''
+  let vrdTotalDm: number | null = null
+  let localRiscoAtividade = ''
+  let formaContratacao = ''
 
   const endRiscoM = p2.text.match(
     /Endereco[\s\S]*?Valor\s+em\s+Risco\s*\n?\s*([^\n\r]+?)\s+R\$\s*([\d.,]+)/i,
@@ -2521,7 +2361,7 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   if (basica && basica.lmi && basica.lmi > 10000) {
     lmiIncendioBasica = basica.lmi
   } else {
-    lmiIncendioBasica = vrdTotalDm || 18120300
+    lmiIncendioBasica = vrdTotalDm
   }
 
   // LMGA: derivado do LMI da básica / VRD na ausência de LMGA explícito
