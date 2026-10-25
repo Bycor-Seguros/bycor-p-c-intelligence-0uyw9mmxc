@@ -2120,6 +2120,10 @@ export function isAxaEmpresaFlexFormat(pages: PdfPageText[], fullTextParam?: str
 export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
   if (!rawFranquia) return 'Não Há'
   let clean = rawFranquia.replace(/\s+/g, ' ').trim()
+
+  // Remove fragmentos de cabeçalho vazados (ex: "Franquia Indenização Líquido")
+  clean = clean.replace(/^(?:cobertura|franquia|indeniza[çc][ãa]o|l[íi]quido|\s)+/i, '').trim()
+
   // Remove ponto final residual
   if (clean.endsWith('.')) {
     clean = clean.slice(0, -1).trim()
@@ -2139,38 +2143,39 @@ export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
   // "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
   // Gabarito do usuário: "Queda De Raio 10% min R$ 1.812,03"
   if (/queda\s+de\s+raio/i.test(clean)) {
-    const mRaio = clean.match(/(\d{1,2}%)[^\d]*m[íi]n(?:imo)?[^\d]*r\$\s*([\d.,]+)/i)
+    const mRaio = clean.match(
+      /(\d{1,2}%)[^\d]*(?:m[íi]n(?:imo)?[^\d]*)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)/i,
+    )
     if (mRaio) {
-      return `Queda De Raio ${mRaio[1]} min R$ ${mRaio[2]}`
+      return `Queda De Raio ${mRaio[1]} min R$ ${mRaio[2].replace(/\.$/, '')}`
     }
     return 'Queda De Raio 10% min R$ 1.812,03'
   }
 
-  // Normalização padrão "x% min R$y" preservando sufixos como "por reclamante" ou "por veículo"
+  // Normalização padrão "X% min R$ Y" com ou sem prefixo/sufixo
+  // Caso 1: Se começar diretamente com X% ou após prefixo contaminado
   // Ex: "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.000,00 Por Reclamante." -> "10% min R$ 1.000,00 por reclamante"
-  const m = clean.match(
-    /^(\d{1,2}%)\s+(?:dos\s+preju[íi]zos\s+indeniz[áa]veis\s+com\s+o\s+m[íi]nimo\s+de\s+)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
+  // Ex: "Reclamante. 10% Dos Prejuízos De R$ 1.000,00 Por" -> "10% min R$ 1.000,00 por reclamante"
+  // Ex: "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 2.500,00 Por Veículo." -> "10% min R$ 2.500,00 por veículo"
+  const mPct = clean.match(
+    /(\d{1,2}%)[^\d]*(?:m[íi]n(?:imo)?[^\d]*)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
   )
-  if (m) {
-    const pct = m[1]
-    const valor = m[2]
-    let sufixo = m[3] ? m[3].trim().replace(/\.$/, '') : ''
-    if (/reclamante/i.test(sufixo)) sufixo = 'por reclamante'
-    else if (/ve[íi]culo/i.test(sufixo)) sufixo = 'por veículo'
-    if (sufixo) {
-      return `${pct} min R$ ${valor} ${sufixo}`.trim()
+  if (mPct) {
+    const pct = mPct[1]
+    const valor = mPct[2].replace(/\.$/, '')
+    const tail = mPct[3] || ''
+    let sufixo = ''
+    if (
+      /reclamante/i.test(tail) ||
+      (/reclamante/i.test(clean) && !/reclamante/i.test(clean.slice(0, clean.indexOf(pct))))
+    ) {
+      sufixo = 'por reclamante'
+    } else if (/reclamante/i.test(clean)) {
+      sufixo = 'por reclamante'
+    } else if (/ve[íi]culo/i.test(tail) || /ve[íi]culo/i.test(clean)) {
+      sufixo = 'por veículo'
     }
-    return `${pct} min R$ ${valor}`
-  }
 
-  // Padrão genérico se contiver "X% ... Mínimo ... R$ Y"
-  const mGen = clean.match(/(\d{1,2}%)[^\d]*m[íi]n(?:imo)?[^\d]*r\$\s*([\d.,]+)(.*)/i)
-  if (mGen) {
-    const pct = mGen[1]
-    const valor = mGen[2].replace(/\.$/, '')
-    let sufixo = mGen[3] ? mGen[3].trim().replace(/\.$/, '') : ''
-    if (/reclamante/i.test(sufixo)) sufixo = 'por reclamante'
-    else if (/ve[íi]culo/i.test(sufixo)) sufixo = 'por veículo'
     if (sufixo) {
       return `${pct} min R$ ${valor} ${sufixo}`.trim()
     }
@@ -2658,12 +2663,12 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       return true
     })
 
-    // Agrupar por Y aproximado (tolerância de 4 pontos)
+    // Agrupar por Y aproximado (tolerância reduzida para 2.5 pontos para evitar fundir linhas consecutivas de coberturas densas)
     const rowMap = new Map<number, PdfTextFragment[]>()
     validItems.forEach((it) => {
       let foundY = it.y
       for (const existingY of rowMap.keys()) {
-        if (Math.abs(existingY - it.y) <= 4) {
+        if (Math.abs(existingY - it.y) <= 2.5) {
           foundY = existingY
           break
         }
@@ -2749,7 +2754,8 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       const col1Frags = frags.filter((f) => f.x < 220)
       const colLmiFrags = frags.filter((f) => f.x >= 220 && f.x < 350)
       const colPremFrags = frags.filter((f) => f.x >= 350 && f.x < 450)
-      const colFranqFrags = frags.filter((f) => f.x >= 450)
+      // A coluna Franquia começa em x >= 430 (evita perder fragmentos como "De R$ 300,00" ou "10% Dos Prejuízos")
+      const colFranqFrags = frags.filter((f) => f.x >= 430)
 
       const col1Text = col1Frags
         .map((f) => f.str)
@@ -2793,11 +2799,12 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       // Identificar todos os valores monetários na linha com suas posições X
       // No quadro: a linha de valores tem:
       // - "1" (Local)
-      // - PRIMEIRO valor R$ (grande — LMI na coluna Limite Máximo de Indenização)
-      // - SEGUNDO valor R$ (menor — Prêmio Líquido na coluna Prêmio Líquido)
-      // - Franquia à direita
+      // - PRIMEIRO valor R$ (grande — LMI na coluna Limite Máximo de Indenização, x < 350)
+      // - SEGUNDO valor R$ (menor — Prêmio Líquido na coluna Prêmio Líquido, 350 <= x < 450)
+      // - Valores na coluna Franquia (x >= 450) NÃO são LMI nem Prêmio!
       const moneyInRow: Array<{ val: number; x: number }> = []
       for (const frag of frags) {
+        if (frag.x >= 450) continue // Franquia nunca entra como LMI ou Prêmio Líquido
         const mM = frag.str.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)/g)
         if (mM) {
           for (const mStr of mM) {
@@ -2869,36 +2876,46 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       }
     }
 
-    // Atribui linhas só-de-texto à âncora mais próxima por |Δy| NA MESMA PÁGINA
+    // Delimitação estrita por banda vertical (Voronoi 1D / bandas verticais):
+    // As âncoras estão ordenadas por Y decrescente (topo para base).
+    // Cada âncora k é dona da banda vertical [y_bottom, y_top] onde as fronteiras são os pontos médios
+    // entre âncoras vizinhas. Linhas de continuação (nome e franquia) NUNCA cruzam essas fronteiras!
     if (pageAnchors.length > 0) {
-      for (const t1 of textOnlyCol1) {
-        // Ignora marcadores como "1" isolado ou cabeçalhos
-        const cleanT1 = t1.text.trim()
-        if (cleanT1 === '1' || /^local$/i.test(cleanT1)) continue
+      // Ordena pageAnchors por y decrescente
+      pageAnchors.sort((a, b) => b.y - a.y)
 
-        let best = pageAnchors[0]
-        let minDy = Math.abs(pageAnchors[0].y - t1.y)
-        for (let k = 1; k < pageAnchors.length; k++) {
-          const dy = Math.abs(pageAnchors[k].y - t1.y)
-          if (dy < minDy) {
-            minDy = dy
-            best = pageAnchors[k]
+      const getBandAnchor = (itemY: number): FlexAnchor => {
+        if (pageAnchors.length === 1) return pageAnchors[0]
+        // Para cada âncora k: fronteira superior e inferior
+        for (let k = 0; k < pageAnchors.length; k++) {
+          const upperBoundary = k === 0 ? Infinity : (pageAnchors[k - 1].y + pageAnchors[k].y) / 2
+          const lowerBoundary =
+            k === pageAnchors.length - 1 ? -Infinity : (pageAnchors[k].y + pageAnchors[k + 1].y) / 2
+
+          if (itemY <= upperBoundary && itemY > lowerBoundary) {
+            return pageAnchors[k]
           }
         }
-        best.col1Assigned.push(t1)
+        return pageAnchors[pageAnchors.length - 1]
+      }
+
+      for (const t1 of textOnlyCol1) {
+        const cleanT1 = t1.text.trim()
+        if (cleanT1 === '1' || /^local$/i.test(cleanT1)) continue
+        const owner = getBandAnchor(t1.y)
+        owner.col1Assigned.push(t1)
       }
 
       for (const tf of textOnlyFranquia) {
-        let best = pageAnchors[0]
-        let minDy = Math.abs(pageAnchors[0].y - tf.y)
-        for (let k = 1; k < pageAnchors.length; k++) {
-          const dy = Math.abs(pageAnchors[k].y - tf.y)
-          if (dy < minDy) {
-            minDy = dy
-            best = pageAnchors[k]
-          }
+        const cleanTf = tf.text.trim()
+        // Ignora ruídos de cabeçalho
+        if (/^(?:franquia|indeniza[çc][ãa]o|l[íi]quido)$/i.test(cleanTf)) continue
+        // Fragmentos que estejam acima da primeira âncora da página por mais de 25 pontos pertencem ao cabeçalho da página
+        if (pageAnchors[0] && tf.y > pageAnchors[0].y + 25) {
+          continue
         }
-        best.colFranquiaAssigned.push(tf)
+        const owner = getBandAnchor(tf.y)
+        owner.colFranquiaAssigned.push(tf)
       }
     }
 
@@ -2932,13 +2949,30 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       .trim()
 
     // Reunir partes da franquia por ordem Y decrescente
-    const allFranq = [...anc.colFranquiaAssigned, { text: anc.colFranquiaOwn, y: anc.y }]
-    allFranq.sort((a, b) => b.y - a.y)
-    let franquiaRaw = allFranq
+    // Filtra fragmentos vazados que pertençam geometricamente ou lexicalmente à coluna de LMI/Prêmio ou Cabeçalho
+    const validFranqParts = [
+      ...anc.colFranquiaAssigned,
+      { text: anc.colFranquiaOwn, y: anc.y },
+    ].filter((part) => {
+      const t = part.text.trim()
+      if (!t) return false
+      if (/^(?:cobertura|local|indeniza[çc][ãa]o|l[íi]quido|pr[êe]mio|franquia)$/i.test(t))
+        return false
+      return true
+    })
+    validFranqParts.sort((a, b) => b.y - a.y)
+    let franquiaRaw = validFranqParts
       .map((it) => it.text)
       .join(' ')
       .replace(/\s+/g, ' ')
       .trim()
+
+    // Se a cobertura for Perda ou Pagamento de Aluguel ou Danos Morais e o PDF tiver "Não Há", normaliza
+    if (/perda ou pagamento de aluguel/i.test(nome) || /danos morais/i.test(nome)) {
+      if (/n[ãa]o\s+h[áa]/i.test(franquiaRaw) || !franquiaRaw) {
+        franquiaRaw = 'Não Há'
+      }
+    }
 
     nome = cleanEmpresaFlexCoberturaNome(nome)
     const franquiaFinal = normalizeEmpresaFlexFranquia(franquiaRaw)
@@ -3264,7 +3298,10 @@ function postProcessEmpresaFlexCoberturas(
       if (item.franquiaPos && item.franquiaPos !== 'Não Há') {
         const norm = normalizeEmpresaFlexFranquia(item.franquiaPos)
         // Se a franquia extraída tiver estrutura completa (ex: contiver % ou 'Primeiros' ou 'Plano'), usa a extraída
-        if (/\d+%/i.test(norm) || /^primeiros/i.test(norm) || /plano/i.test(norm)) {
+        if (
+          (/\d+%\s+min\s+R\$/i.test(norm) || /^primeiros/i.test(norm) || /plano/i.test(norm)) &&
+          !/indeniza[çc][ãa]o/i.test(norm)
+        ) {
           finalFranq = norm
         }
       } else if (g.franquiaPadrao === 'Não Há') {

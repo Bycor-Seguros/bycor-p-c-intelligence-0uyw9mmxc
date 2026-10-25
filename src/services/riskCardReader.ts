@@ -233,6 +233,11 @@ export function matchCanonicalCategory(rawName: string): string {
   if (!norm) return rawName
 
   // Mapeamentos diretos conhecidos do Cartão de Risco
+  // Atenção: coberturas de Responsabilidade Civil com menção a incêndio (ex: "RC guarda de veículos com incêndio e roubo")
+  // NÃO devem ser classificadas como Incêndio Básica.
+  if (norm.includes('guarda de veiculos')) {
+    return 'RC Guarda de Veículos de Terceiros'
+  }
   if (norm.includes('incendio') || norm.includes('basica') || norm.includes('queda de raio')) {
     return 'Incêndio Básica (Danos Materiais)'
   }
@@ -376,6 +381,9 @@ export function matchCanonicalCategory(rawName: string): string {
   if (norm.includes('danos morais')) {
     return 'RC Danos Morais'
   }
+  if (norm.includes('impacto de veiculos')) {
+    return 'Impacto de Veículos'
+  }
   if (norm.includes('guarda de veiculos') || norm.includes('veiculo')) {
     return 'RC Guarda de Veículos de Terceiros'
   }
@@ -393,9 +401,6 @@ export function matchCanonicalCategory(rawName: string): string {
   }
   if (norm.includes('bens de terceiros')) {
     return 'Bens de Terceiros em Poder do Segurado'
-  }
-  if (norm.includes('impacto de veiculos')) {
-    return 'Impacto de Veículos'
   }
   if (norm.includes('exposicao')) {
     return 'Mercadorias em Exposição'

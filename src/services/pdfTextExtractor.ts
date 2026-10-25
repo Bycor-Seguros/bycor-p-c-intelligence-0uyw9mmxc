@@ -170,10 +170,10 @@ export async function extractTextFromPdf(
           isBold,
         })
 
-        // Achar chave Y mais próxima (tolerância de 4 pontos)
+        // Achar chave Y mais próxima (tolerância de 2.5 pontos para não fundir linhas consecutivas)
         let foundY = y
         for (const existingY of lineMap.keys()) {
-          if (Math.abs(existingY - y) <= 4) {
+          if (Math.abs(existingY - y) <= 2.5) {
             foundY = existingY
             break
           }
@@ -183,7 +183,6 @@ export async function extractTextFromPdf(
         }
         lineMap.get(foundY)!.push({ str: item.str, x })
       })
-
       // Ordena por Y decrescente (topo para base da folha)
       // e ordena cada linha por X crescente (esquerda para direita) para evitar palavras invertidas
       const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a)
