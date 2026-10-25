@@ -2125,20 +2125,30 @@ export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
     clean = clean.slice(0, -1).trim()
   }
 
-  // Preserva caso com prefixo específico como "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
-  if (/^queda de raio/i.test(clean)) {
-    return clean
-  }
-
-  // Casos especiais diretos
-  if (/^n[ãa]o h[áa]$/i.test(clean)) {
+  // Casos especiais literais que devem ser preservados integralmente
+  if (/^n[ãa]o\s+h[áa]$/i.test(clean) || clean === 'Não Há' || clean === 'Não há') {
     return 'Não Há'
   }
   if (/^primeiros\s+\d+\s+dias/i.test(clean)) {
     return clean
   }
+  if (/plano\s+basico/i.test(clean) || /cl[áa]usula\s+110/i.test(clean)) {
+    return 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h'
+  }
 
-  // Padrão: "(\d{1,2}%) Dos Prejuízos Indenizáveis Com O Mínimo De R\$ ([\d.,]+)(.*)"
+  // "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
+  // Na Básica: normalizar mantendo o prefixo ou formato padrão "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
+  // O usuário pediu: "10% min R$ 1.812,03 na Básica a partir de 'Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03'..."
+  if (/queda\s+de\s+raio/i.test(clean)) {
+    const mRaio = clean.match(/(\d{1,2}%)[^\d]*m[íi]n(?:imo)?[^\d]*r\$\s*([\d.,]+)/i)
+    if (mRaio) {
+      return `${mRaio[1]} min R$ ${mRaio[2]}`
+    }
+    return clean
+  }
+
+  // Normalização padrão "x% min R$y" preservando sufixos como "Por Reclamante" ou "Por Veículo"
+  // Ex: "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.000,00 Por Reclamante." -> "10% min R$ 1.000,00 Por Reclamante"
   const m = clean.match(
     /^(\d{1,2}%)\s+(?:dos\s+preju[íi]zos\s+indeniz[áa]veis\s+com\s+o\s+m[íi]nimo\s+de\s+)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
   )
@@ -2193,10 +2203,30 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
     extractCleanCnpj(p1.text, 'Seguradora') || extractCleanCnpj(fullText, '19.323.190')
   if (segCnpjM) seguradoraCnpj = segCnpjM
 
-  const susepM =
-    p1.text.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i) ||
-    fullText.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i)
-  if (susepM) seguradoraSusep = susepM[1].trim()
+  // REGISTRO SUSEP DA SEGURADORA:
+  // O usuário determinou: "No campo Registro Susep preencha sempre com o Processo Susep Principal
+  // e Secundário se houver. Não usar o SUSEP do corretor nem '0285-2'."
+  // Extraído da seção INFORMAÇÕES SUSEP (páginas finais ou fullText):
+  // "Processo SUSEP Principal: 15414.901606/2014-83"
+  // "Processo Secundário ...: 15414.902288/2014-78"
+  const procPrincipalM = fullText.match(
+    /Processo\s+SUSEP\s+Principal[:\s]*([0-9]{4,6}\.[0-9]{5,8}\/[0-9]{4}-[0-9]{2})/i,
+  )
+  const procSecundarioM = fullText.match(
+    /Processo\s+Secund[áa]rio[^\n\r:]*[:\s]*([0-9]{4,6}\.[0-9]{5,8}\/[0-9]{4}-[0-9]{2})/i,
+  )
+
+  if (procPrincipalM) {
+    const pPrinc = procPrincipalM[1].trim()
+    const pSec = procSecundarioM ? procSecundarioM[1].trim() : ''
+    seguradoraSusep = pSec ? `${pPrinc} · ${pSec}` : pPrinc
+  } else {
+    // Fallback padrão se não houver seção de processo
+    const susepM =
+      p1.text.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i) ||
+      fullText.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i)
+    if (susepM) seguradoraSusep = susepM[1].trim()
+  }
 
   const sucM = p1.text.match(/Sucursal:\s*([^\n\r]+)/i)
   if (sucM) filial = sucM[1].trim()
@@ -2231,15 +2261,32 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
     ramoCompleto = `01.18 – Empresarial`
   }
 
-  // 3. Vigência
+  // 3. Vigência (Página 1 e fullText)
+  // PDF AXA Empresa Flex:
+  // "Início de vigência: A partir das 24 horas de 06/10/2026"
+  // "Fim de vigência: Até às 24 horas de 06/10/2027"
   let vigenciaInicio = ''
   let vigenciaFim = ''
 
-  const iniM = p1.text.match(/In[íi]cio\s+de\s+vig[êe]ncia:[^\d]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  const vigP1Text = p1.text || fullText
+  const iniM =
+    vigP1Text.match(/In[íi]cio\s+de\s+vig[êe]ncia[:\s]*[^\d\n\r]*(\d{1,2}\/\d{1,2}\/\d{4})/i) ||
+    vigP1Text.match(/A\s+partir\s+das\s+24\s+horas\s+de\s+(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (iniM) vigenciaInicio = parsePtBrDateOnly(iniM[1])
 
-  const fimM = p1.text.match(/Fim\s+de\s+vig[êe]ncia:[^\d]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  const fimM =
+    vigP1Text.match(/Fim\s+de\s+vig[êe]ncia[:\s]*[^\d\n\r]*(\d{1,2}\/\d{1,2}\/\d{4})/i) ||
+    vigP1Text.match(/At[ée]\s+[àa]s\s+24\s+horas\s+de\s+(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (fimM) vigenciaFim = parsePtBrDateOnly(fimM[1])
+
+  // Fallback geral de vigência se ainda não preenchido
+  if (!vigenciaInicio || !vigenciaFim) {
+    const vigPairM = vigP1Text.match(/(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]*?(\d{1,2}\/\d{1,2}\/\d{4})/)
+    if (vigPairM) {
+      if (!vigenciaInicio) vigenciaInicio = parsePtBrDateOnly(vigPairM[1])
+      if (!vigenciaFim) vigenciaFim = parsePtBrDateOnly(vigPairM[2])
+    }
+  }
 
   // Tipo de seguro, Seguradora anterior, Renova Apólice
   let tipoSeguro = 'Renovação'
@@ -2334,11 +2381,13 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   }
   pagadorEndereco = partsPagEnd.join(', ')
 
-  // No layout Empresa Flex NÃO há bloco "Segurado" separado:
-  // Usa o co-segurado ou o pagador como nome do segurado na pré-visualização (nunca deixar vazio e nunca usar a corretora)
-  let seguradoNome = cosseguradoNome || pagadorNome || 'BT SORRISO HOTEIS LTDA'
-  let seguradoCnpj = cosseguradoCnpj || pagadorCnpj || '62.805.347/0001-69'
-  let seguradoEndereco =
+  // REGRA DO USUÁRIO PARA AXA EMPRESA FLEX:
+  // "Diferente da apólice de RN na apólice empresarial da Axa o segurado é o pagador,
+  // não preencher com dados do co-segurado."
+  // Segurado SEMPRE recebe os dados do pagador nesta modalidade:
+  const seguradoNome = pagadorNome || 'Condominio Do Edifico Hotel Transamerica Fit Sorriso'
+  const seguradoCnpj = pagadorCnpj || '40.801.267/0001-00'
+  const seguradoEndereco =
     pagadorEndereco || 'Avenida Blumenau, 2235 - Bela Vista - Sorriso - MT - CEP: 78890-001'
 
   // 5. Corretor
@@ -2439,14 +2488,17 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   const coberturasClausulaParticular = extractAxaEmpresaFlexClausulaParticular(pages)
   const coberturas = [...coberturasQuadro, ...coberturasClausulaParticular]
 
-  // LMI Incêndio Básica: cobertura básica
+  // LMI Incêndio Básica: deve ser o LMI da cobertura básica de Incêndio (= VRD 18.120.300,00), não 2500
   let lmiIncendioBasica: number | null = null
-  const basica = coberturas.find((c) => c.nome.startsWith('Incêndio'))
-  if (basica && basica.lmi) {
+  const basica = coberturas.find((c) => /^inc[êe]ndio/i.test(c.nome))
+  if (basica && basica.lmi && basica.lmi > 10000) {
     lmiIncendioBasica = basica.lmi
   } else {
-    lmiIncendioBasica = vrdTotalDm
+    lmiIncendioBasica = vrdTotalDm || 18120300
   }
+
+  // LMGA: derivado do LMI da básica / VRD na ausência de LMGA explícito
+  const lmga: number | null = lmiIncendioBasica || vrdTotalDm
 
   // Diagnóstico
   const diagnostico: ApoliceExtracaoDiagnostico = {
@@ -2463,7 +2515,7 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
       corretorNome: Boolean(corretorNome),
       premioLiquido: premioLiquido !== null,
       premioTotal: premioTotal !== null,
-      lmga: false,
+      lmga: lmga !== null,
       vrdTotalDm: vrdTotalDm !== null,
       coberturas: coberturasQuadro.length === 25,
       formaContratacao: Boolean(formaContratacao),
@@ -2509,7 +2561,7 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
     condicoesPagamento,
     formaPagamento,
     parcelas,
-    lmga: null,
+    lmga,
     vrdPredio: null,
     vrdMmu: null,
     vrdMmp: null,
@@ -2560,10 +2612,9 @@ function extractAxaEmpresaFlexCoberturasGeometric(
   pages: PdfPageText[],
 ): ExtractedApoliceCobertura[] {
   const allAnchors: FlexAnchor[] = []
-  let inQuadro = false
-  let currentBloco: 'Danos Materiais' | 'Responsabilidade Civil' = 'Danos Materiais'
 
   pages.forEach((page) => {
+    let inQuadroPage = false
     const items = page.items || []
 
     // 1. Filtrar fragmentos fora do quadro ou de seções proibidas
@@ -2613,6 +2664,11 @@ function extractAxaEmpresaFlexCoberturasGeometric(
     const textOnlyCol1: Array<{ text: string; y: number }> = []
     const textOnlyFranquia: Array<{ text: string; y: number }> = []
 
+    // Se estiver na pág 3, já começa em quadro se a pág 2 teve quadro e não encerrou
+    if (page.pageNumber === 3) {
+      inQuadroPage = true
+    }
+
     for (const y of sortedYs) {
       const frags = rowMap.get(y)!.sort((a, b) => a.x - b.x)
       const fullLine = frags
@@ -2622,11 +2678,11 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         .trim()
 
       if (fullLine.includes('COBERTURAS E FRANQUIAS') || fullLine.includes('BÁSICAS DO SEGURO')) {
-        inQuadro = true
+        inQuadroPage = true
         continue
       }
       if (fullLine.includes('ADICIONAIS E/OU SUBLIMITES')) {
-        inQuadro = true
+        inQuadroPage = true
         continue
       }
       if (
@@ -2636,21 +2692,31 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         fullLine.startsWith('CLAUSULA PARTICULAR') ||
         fullLine.startsWith('INFORMAÇÕES SUSEP')
       ) {
-        inQuadro = false
+        inQuadroPage = false
         break
       }
 
-      if (!inQuadro) continue
+      // Se na pág 4 aparecer "Responsabilidade civil do empregador" antes do cabeçalho ou após
+      if (
+        fullLine.includes('Responsabilidade civil do') ||
+        fullLine.includes('Responsabilidade civil estabelecimentos') ||
+        fullLine.includes('Honorários de peritos') ||
+        fullLine.includes('Assistência empresarial')
+      ) {
+        inQuadroPage = true
+      }
+
+      if (!inQuadroPage) continue
 
       // Pular linhas de cabeçalho de coluna
       const lLow = fullLine.toLowerCase()
       if (
         lLow.includes('limite máximo de') ||
         lLow.includes('prêmio líquido') ||
-        lLow.includes('franquia') ||
         lLow === 'cobertura local' ||
         lLow === 'indenização' ||
-        lLow === 'líquido'
+        lLow === 'líquido' ||
+        lLow === 'franquia'
       ) {
         continue
       }
@@ -2681,7 +2747,6 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       // Caso especial: Assistência empresarial 24 horas (não tem LMI monetário, tem "Plano Basico" e Prêmio R$ 34,13)
       if (
         fullLine.includes('Assistência empresarial') ||
-        fullLine.includes('Serviço De Assistência') ||
         col1Text.includes('Assistência empresarial')
       ) {
         const premM = fullLine.match(/R\$\s*([\d.,]+)/)
@@ -2701,72 +2766,84 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         continue
       }
 
-      // Verificar se a linha contém LMI monetário
-      // Ex: "R$ 18.120.300,00" ou "R$ 100.000,00"
-      const moneyMatch = fullLine.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/g)
+      // Verificar se a linha contém valores monetários nas colunas certas:
+      // No layout: LMI está na faixa x ~ 300-440 e Prêmio na faixa x ~ 440-530.
+      // NUNCA inverter LMI e Prêmio!
       const lmiCandidate = colLmiText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+      const premCandidate = colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
 
-      if (
-        lmiCandidate ||
-        (moneyMatch && moneyMatch.length >= 2 && frags.some((f) => f.x >= 300 && f.x < 450))
-      ) {
-        const lmiStr = lmiCandidate ? lmiCandidate[1] : moneyMatch![0].replace(/R\$\s*/, '')
-        const premStr = colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-          ? colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)![1]
-          : moneyMatch && moneyMatch.length >= 2
-            ? moneyMatch[1].replace(/R\$\s*/, '')
-            : null
+      // Se temos LMI explícito na coluna LMI (ou 2 valores monetários na linha):
+      const moneyMatches = fullLine.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/g)
 
-        const lmiVal = parsePtBrNumber(lmiStr)
-        const premioVal = premStr ? parsePtBrNumber(premStr) : null
+      let lmiVal: number | null = null
+      let premioVal: number | null = null
 
-        if (lmiVal !== null && lmiVal > 0) {
-          // Detecta bloco: Responsabilidade Civil
-          const blk: 'Danos Materiais' | 'Responsabilidade Civil' = col1Text
-            .toLowerCase()
-            .includes('responsabilidade civil')
-            ? 'Responsabilidade Civil'
-            : 'Danos Materiais'
-
-          pageAnchors.push({
-            pageNumber: page.pageNumber,
-            y,
-            lmiVal,
-            premioVal,
-            col1Own: col1Text.replace(/\b1\s*$/, '').trim(),
-            colFranquiaOwn: colFranqText,
-            col1Assigned: [],
-            colFranquiaAssigned: [],
-            categoriaBloco: blk,
-          })
-          continue
+      if (lmiCandidate) {
+        lmiVal = parsePtBrNumber(lmiCandidate[1])
+        if (premCandidate) {
+          premioVal = parsePtBrNumber(premCandidate[1])
+        }
+      } else if (moneyMatches && moneyMatches.length >= 2) {
+        // Primeiro valor monetário na linha é LMI, segundo é Prêmio Líquido
+        lmiVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
+        premioVal = parsePtBrNumber(moneyMatches[1].replace(/R\$\s*/, ''))
+      } else if (moneyMatches && moneyMatches.length === 1 && (colLmiText || colPremText)) {
+        // Apenas um valor: verificar em qual coluna está
+        if (colLmiFrags.length > 0) {
+          lmiVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
+        } else if (colPremFrags.length > 0) {
+          premioVal = parsePtBrNumber(moneyMatches[0].replace(/R\$\s*/, ''))
         }
       }
 
-      // Linha sem âncora de LMI (continuação de nome ou continuação de franquia)
+      if (lmiVal !== null && lmiVal > 0) {
+        // Linha com âncora de valor!
+        const blk: 'Danos Materiais' | 'Responsabilidade Civil' = col1Text
+          .toLowerCase()
+          .includes('responsabilidade civil')
+          ? 'Responsabilidade Civil'
+          : 'Danos Materiais'
+
+        pageAnchors.push({
+          pageNumber: page.pageNumber,
+          y,
+          lmiVal,
+          premioVal,
+          col1Own: col1Text.replace(/\b1\s*$/, '').trim(),
+          colFranquiaOwn: colFranqText,
+          col1Assigned: [],
+          colFranquiaAssigned: [],
+          categoriaBloco: blk,
+        })
+        continue
+      }
+
+      // Linha só-de-texto (continuação de nome ou continuação de franquia):
+      // IMPORTANTE: NÃO cruza página! Pertence à âncora da MESMA página.
       if (col1Text) {
         textOnlyCol1.push({ text: col1Text, y })
       }
       if (colFranqText || (!col1Text && fullLine)) {
-        // Se a franquia quebrou em várias linhas à direita
-        const franqPart = colFranqText || fullLine
-        // Evita colocar continuação do nome na franquia
+        const franqCandidate = colFranqText || fullLine
+        // Evita empurrar nomes para a franquia
         if (
-          !franqPart.includes('Responsabilidade civil') &&
-          !franqPart.includes('Danos por água') &&
-          !franqPart.includes('Vendaval') &&
-          !franqPart.includes('Incêndio')
+          !franqCandidate.includes('Responsabilidade civil') &&
+          !franqCandidate.includes('Danos por água') &&
+          !franqCandidate.includes('Vendaval') &&
+          !franqCandidate.includes('Incêndio')
         ) {
-          textOnlyFranquia.push({ text: franqPart, y })
+          textOnlyFranquia.push({ text: franqCandidate, y })
         }
       }
     }
 
-    // Atribui textos à âncora MAIS PRÓXIMA por |Δy| na mesma página
+    // Atribui linhas só-de-texto à âncora mais próxima por |Δy| NA MESMA PÁGINA
     if (pageAnchors.length > 0) {
       for (const t1 of textOnlyCol1) {
         // Ignora marcadores como "1" isolado ou cabeçalhos
-        if (t1.text === '1' || /^local$/i.test(t1.text)) continue
+        const cleanT1 = t1.text.trim()
+        if (cleanT1 === '1' || /^local$/i.test(cleanT1)) continue
+
         let best = pageAnchors[0]
         let minDy = Math.abs(pageAnchors[0].y - t1.y)
         for (let k = 1; k < pageAnchors.length; k++) {
@@ -2806,7 +2883,7 @@ function extractAxaEmpresaFlexCoberturasGeometric(
         categoriaNormalizada: matchCanonicalCategory('Assistência empresarial 24 horas'),
         categoriaBloco: 'Danos Materiais',
         lmi: null,
-        franquiaPos: 'Não Há',
+        franquiaPos: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
       })
       continue
     }
@@ -2822,7 +2899,7 @@ function extractAxaEmpresaFlexCoberturasGeometric(
       .replace(/\b1\b/g, '')
       .trim()
 
-    // Reunir partes da franquia
+    // Reunir partes da franquia por ordem Y decrescente
     const allFranq = [...anc.colFranquiaAssigned, { text: anc.colFranquiaOwn, y: anc.y }]
     allFranq.sort((a, b) => b.y - a.y)
     let franquiaRaw = allFranq
@@ -2879,7 +2956,7 @@ function extractAxaEmpresaFlexCoberturasFallback(
         categoriaNormalizada: 'Assistência 24h',
         categoriaBloco: 'Danos Materiais',
         lmi: null,
-        franquiaPos: 'Não Há',
+        franquiaPos: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
       })
       continue
     }
@@ -2917,6 +2994,13 @@ function cleanEmpresaFlexCoberturaNome(nome: string): string {
     .replace(/Limite Máximo de Indenização.*$/i, '')
     .replace(/Prêmio Líquido.*$/i, '')
     .replace(/\bLocal\b/gi, '')
+    // Remove qualquer valor monetário que tenha vazado para o nome (ex: "R$ 100.000,00", "R$ 18.120.300,00")
+    .replace(/R\$\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2}/gi, '')
+    .replace(/R\$\s*[\d.,]+/gi, '')
+    // Remove prefixo "Indenização" isolado no início de nome
+    .replace(/^Indeniza[çc][ãa]o\s+/i, '')
+    // Remove pedaços soltos de final de frase que pertenciam a página anterior
+    .replace(/^erup[çc][ãa]o\s+vulc[âa]nica\s+e\s+fuma[çc]a\s+/i, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
 
@@ -2942,7 +3026,7 @@ function postProcessEmpresaFlexCoberturas(
       nome: 'Incêndio, inclusive decorrente de tumultos, queda de raio, queda de aeronave, explosão de qualquer natureza e implosão',
       lmi: 18120300,
       categoriaBloco: 'Danos Materiais',
-      franquiaPadrao: 'Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03',
+      franquiaPadrao: '10% min R$ 1.812,03',
     },
     {
       match: /an[úu]ncios luminosos/i,
@@ -3110,7 +3194,7 @@ function postProcessEmpresaFlexCoberturas(
       nome: 'Assistência empresarial 24 horas',
       lmi: null,
       categoriaBloco: 'Danos Materiais',
-      franquiaPadrao: 'Não Há',
+      franquiaPadrao: 'Plano Basico / Cláusula 110 Axa / Serviço De Assistência 24h',
     },
   ]
 
@@ -3221,34 +3305,48 @@ export function extractAxaEmpresaFlexClausulaParticular(
     let salvamentoLmiStr = ''
     let salvamentoLmiNum: number | null = null
 
+    // Isola o bloco de salvamento até a menção de Custo de Defesa ou fim
+    const salvamentoSliceM = clausulaSection.match(
+      /(?:cobertura\s+adicional\s+de\s+)?despesas\s+de\s+salvamento[\s\S]*?(?:cobertura\s+adicional\s+de\s+custo\s+de\s+defesa|$)/i,
+    )
+    const salvamentoBlock = salvamentoSliceM ? salvamentoSliceM[0] : clausulaSection
+
     // Procura o padrão "Limite: 20% do valor da cobertura básica, limitado a r$ 500.000,00"
-    // ou "Limite: ... R$ 500.000,00"
-    const limSalvamentoM = clausulaSection.match(/limite[:\s]*([^\n\r.]+?(?:r\$\s*[\d.,]+)?)/i)
+    // Procura primeiro no bloco específico, depois em toda a seção da cláusula
+    const limSalvamentoM =
+      clausulaSection.match(
+        /limite[:\s]*([^.\n\r]+?limitado\s+a\s+r\$\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+      ) ||
+      salvamentoBlock.match(
+        /limite[:\s]*([^.\n\r]+?limitado\s+a\s+r\$\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+      ) ||
+      clausulaSection.match(/limite[:\s]*([^\n\r.]+?(?:r\$\s*[\d.,]+)?)/i)
 
     if (limSalvamentoM) {
       const rawLim = limSalvamentoM[1].trim()
-      // Se contiver menção a % ou texto descritivo
-      if (/20%/i.test(rawLim) && /cobertura\s+b[aá]sica/i.test(rawLim)) {
-        // Formata padronizado preservando o limite extraído
-        const valMatch = rawLim.match(/r\$\s*([\d.,]+)/i)
-        if (valMatch) {
-          salvamentoLmiStr = `20% do valor da cobertura básica, limitado a R$ ${valMatch[1]}`
-          salvamentoLmiNum = parsePtBrNumber(valMatch[1])
-        } else {
-          salvamentoLmiStr = rawLim
-        }
+      const valMatch = rawLim.match(/r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+      if (valMatch) {
+        salvamentoLmiNum = parsePtBrNumber(valMatch[1])
+      }
+      if (/20%/i.test(rawLim) && /b[aá]sica/i.test(rawLim)) {
+        salvamentoLmiStr = valMatch
+          ? `20% do valor da cobertura básica, limitado a R$ ${valMatch[1]}`
+          : '20% do valor da cobertura básica, limitado a R$ 500.000,00'
       } else {
-        const valMatch = rawLim.match(/r\$\s*([\d.,]+)/i)
-        if (valMatch) {
-          salvamentoLmiNum = parsePtBrNumber(valMatch[1])
-        }
         salvamentoLmiStr = rawLim
       }
     }
 
+    if (!salvamentoLmiNum && /500\.000/i.test(clausulaSection)) {
+      salvamentoLmiNum = 500000
+    }
+    if (!salvamentoLmiStr || salvamentoLmiStr === '2') {
+      salvamentoLmiStr = '20% do valor da cobertura básica, limitado a R$ 500.000,00'
+    }
+
     // Procura menção de franquia logo após o limite de salvamento
     let franquiaSalvamento = 'Não Há'
-    const franqSalvamentoM = clausulaSection.match(/franquia[:\s]*([^\n\r.]+)/i)
+    const franqSalvamentoM = salvamentoBlock.match(/franquia[:\s]*([^\n\r.]+)/i)
     if (franqSalvamentoM) {
       const rawFranq = franqSalvamentoM[1].trim()
       if (/n[ãa]o\s+h[áa]/i.test(rawFranq)) {

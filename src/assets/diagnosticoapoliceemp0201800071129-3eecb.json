@@ -1,0 +1,291 @@
+{
+  "seguradora": "AXA Seguros S.A.",
+  "numeroApolice": "EMP0201800071129",
+  "proposta": "EMP0201800071129",
+  "ramo": "01.18 – Empresarial",
+  "vigencia": {
+    "inicio": "",
+    "fim": ""
+  },
+  "segurado": {
+    "nome": "BT SORRISO HOTEIS LTDA",
+    "cnpj": "62.805.347/0001-69",
+    "endereco": "Avenida Blumenau, 2235, Bela Vista, Sorriso - MT, CEP: 78890-001"
+  },
+  "cossegurado": {
+    "nome": "BT SORRISO HOTEIS LTDA",
+    "cnpj": "62.805.347/0001-69"
+  },
+  "pagador": {
+    "nome": "Condominio Do Edifico Hotel Transamerica Fit Sorriso",
+    "cnpj": "40.801.267/0001-00",
+    "endereco": "Avenida Blumenau, 2235, Bela Vista, Sorriso - MT, CEP: 78890-001"
+  },
+  "corretor": {
+    "nome": "Bycor Consultoria E Corretora De Seguros Ltda",
+    "cnpj": "17.267.516/0001-08",
+    "susep": "202027021"
+  },
+  "financeiro": {
+    "premioLiquido": 28130.1,
+    "custoApolice": 0,
+    "iof": 2076,
+    "premioTotal": 30206.1,
+    "condicoesPagamento": "1 + 5 boleto",
+    "formaPagamento": "Boleto",
+    "parcelas": [
+      {
+        "numero": 1,
+        "vencimento": "2026-10-23",
+        "valor": 5034.35
+      },
+      {
+        "numero": 2,
+        "vencimento": "2026-11-23",
+        "valor": 5034.35
+      },
+      {
+        "numero": 3,
+        "vencimento": "2026-12-23",
+        "valor": 5034.35
+      },
+      {
+        "numero": 4,
+        "vencimento": "2027-01-23",
+        "valor": 5034.35
+      },
+      {
+        "numero": 5,
+        "vencimento": "2027-02-23",
+        "valor": 5034.35
+      },
+      {
+        "numero": 6,
+        "vencimento": "2027-03-23",
+        "valor": 5034.35
+      }
+    ]
+  },
+  "limites": {
+    "lmga": null,
+    "vrdTotalDm": 18120300,
+    "vrdTotalLc": null,
+    "vrdTotalDmPlusLc": null,
+    "lmiIncendioBasica": 2500,
+    "formaContratacao": "Superior"
+  },
+  "coberturas": [
+    {
+      "nome": "Indenização Incêndio, inclusive decorrente R$ 18.120.300,00 de tumultos, queda de raio, queda de aeronave, explosão de qualquer natureza e implosão",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 6695.21,
+      "franquiaPos": "Não Há"
+    },
+    {
+      "nome": "Anúncios luminosos, painéis e letreiros",
+      "categoriaNormalizada": "Anúncios/Letreiros Luminosos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 630.37,
+      "franquiaPos": "10% min R$ 300,00"
+    },
+    {
+      "nome": "Danos por água, inclusive derrame de chuveiros automáticos [sprinklers] e vazamento de tanques e tubulações",
+      "categoriaNormalizada": "Vazamento/Rompimento de Tanques e Tubulações",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 3097.79,
+      "franquiaPos": "De R$ 300,00"
+    },
+    {
+      "nome": "Danos elétricos",
+      "categoriaNormalizada": "Danos Elétricos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 2603.02,
+      "franquiaPos": "Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Desmoronamento",
+      "categoriaNormalizada": "Desmoronamento",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 2697.6,
+      "franquiaPos": "De R$ 1.000,00 Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Despesas de recomposição de R$ 80.000,00 registros e documentos",
+      "categoriaNormalizada": "Recomposição de Registros/Documentos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 73.84,
+      "franquiaPos": "De R$ 10.000,00"
+    },
+    {
+      "nome": "Equipamentos eletrônicos sem R$ 170.000,00 roubo",
+      "categoriaNormalizada": "Equipamentos Eletrônicos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 336.32,
+      "franquiaPos": "De R$ 500,00"
+    },
+    {
+      "nome": "Equipamentos estacionários",
+      "categoriaNormalizada": "Equipamentos Estacionários",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 584,
+      "franquiaPos": "De R$ 1.000,00. Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Fidelidade",
+      "categoriaNormalizada": "Fidelidade de Funcionários",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1081.89,
+      "franquiaPos": "De R$ 1.000,00. Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Impacto de veículos terrestres",
+      "categoriaNormalizada": "RC Guarda de Veículos de Terceiros",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 364.8,
+      "franquiaPos": "De R$ 1.000,00. Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Perda ou pagamento de R$ .000.000,00 aluguel",
+      "categoriaNormalizada": "Perda/Pagamento de Aluguel",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 149.33,
+      "franquiaPos": "De R$ 1.000,00"
+    },
+    {
+      "nome": "Quebra de maquinas",
+      "categoriaNormalizada": "Quebra de Máquinas",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1256.1,
+      "franquiaPos": "Indenizáveis Com O Mínimo"
+    },
+    {
+      "nome": "Quebra de vidros, espelhos, mármores e granitos.",
+      "categoriaNormalizada": "Quebra de Vidros/Espelhos/Mármores",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 729.38,
+      "franquiaPos": "De R$ 10.000,00"
+    },
+    {
+      "nome": "Roubo e/ou furto qualificado de R$ 100.000,00 bens",
+      "categoriaNormalizada": "Roubo e/ou furto qualificado de R$ 100.000,00 bens",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 783.81,
+      "franquiaPos": "De R$ 300,00"
+    },
+    {
+      "nome": "Roubo e/ou furto qualificado de R$ 50.000,00 bens dos hóspedes",
+      "categoriaNormalizada": "Roubo/Furto de Bens/Valores de Hóspedes",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1271.8,
+      "franquiaPos": "De R$ 2.000,00"
+    },
+    {
+      "nome": "Roubo de valores em trânsito em mãos de portadores",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 449.6,
+      "franquiaPos": "De R$ 2.000,00"
+    },
+    {
+      "nome": "Roubo de valores no interior do estabelecimento",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 667.66,
+      "franquiaPos": "De R$ 2.500,00"
+    },
+    {
+      "nome": "Tumultos, greves e 'lock out', atos dolosos, vandalismo e comoção civil",
+      "categoriaNormalizada": "Tumultos/Greves/Lock-out/Vandalismo",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 230.4,
+      "franquiaPos": "De R$ 2.500,00"
+    },
+    {
+      "nome": "Vendaval, furacão, ciclone, tornado, granizo, tsunami, erupção vulcânica e fumaça",
+      "categoriaNormalizada": "Vendaval/Granizo/Ciclone/Fumaça",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1004.8,
+      "franquiaPos": "15% min R$ 2.000,00"
+    },
+    {
+      "nome": "erupção vulcânica e fumaça Responsabilidade civil danos R$ 100.000,00 morais",
+      "categoriaNormalizada": "erupção vulcânica e fumaça Responsabilidade civil danos R$ 100.000,00 morais",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 172.8,
+      "franquiaPos": "Não Há"
+    },
+    {
+      "nome": "Responsabilidade civil do R$ 500.000,00 empregador",
+      "categoriaNormalizada": "RC Empregador",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 432,
+      "franquiaPos": "De R$ 1.000,00 Por"
+    },
+    {
+      "nome": "Responsabilidade civil R$ 500.000,00 estabelecimentos de hospedagem, restaurantes,",
+      "categoriaNormalizada": "RC Hospedagem/Restaurantes/Bares",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 895.36,
+      "franquiaPos": "Reclamante"
+    },
+    {
+      "nome": "boates e similares Responsabilidade civil guarda R$ 300.000,00 de veículos de terceiros com",
+      "categoriaNormalizada": "RC Guarda de Veículos de Terceiros",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 1865.32,
+      "franquiaPos": "Não Há"
+    },
+    {
+      "nome": "Incêndio, inclusive decorrente de tumultos, queda de raio, queda de aeronave, explosão de qualquer natureza e implosão",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 2500,
+      "franquiaPos": "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
+    },
+    {
+      "nome": "Honorários de peritos",
+      "categoriaNormalizada": "Honorários de Peritos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 22.77,
+      "franquiaPos": "Primeiros 05 Dias"
+    },
+    {
+      "nome": "Despesas de salvamento e contenção de sinistros — Cláusula Particular",
+      "categoriaNormalizada": "Despesas de Salvamento e Contenção",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": null,
+      "franquiaPos": "Não Há",
+      "observacao": "2"
+    },
+    {
+      "nome": "Custo de defesa do segurado — Cláusula Particular",
+      "categoriaNormalizada": "RC Custos de Defesa",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 100000,
+      "franquiaPos": "Não Há"
+    }
+  ],
+  "diagnostico": {
+    "seguradoraDetectada": "AXA Empresa Flex",
+    "totalPaginas": 7,
+    "fragmentosBrutosCount": 872,
+    "camposIdentificados": {
+      "numeroApolice": true,
+      "numeroProposta": true,
+      "vigenciaInicio": false,
+      "vigenciaFim": false,
+      "seguradoNome": true,
+      "seguradoCnpj": true,
+      "corretorNome": true,
+      "premioLiquido": true,
+      "premioTotal": true,
+      "lmga": false,
+      "vrdTotalDm": true,
+      "coberturas": true,
+      "formaContratacao": true
+    },
+    "linhasCoberturasLidas": 27,
+    "timestamp": "2026-10-25T04:04:59.095Z"
+  }
+}
