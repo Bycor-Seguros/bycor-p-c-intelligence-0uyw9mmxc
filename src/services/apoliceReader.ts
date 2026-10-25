@@ -2434,8 +2434,10 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
     formaContratacao = ativM[2].trim()
   }
 
-  // 8. Coberturas (Páginas 2, 3 e 4)
-  const coberturas = extractAxaEmpresaFlexCoberturas(pages)
+  // 8. Coberturas (Páginas 2 a 4 do quadro principal + Cláusula Particular nas Páginas 5-6)
+  const coberturasQuadro = extractAxaEmpresaFlexCoberturas(pages)
+  const coberturasClausulaParticular = extractAxaEmpresaFlexClausulaParticular(pages)
+  const coberturas = [...coberturasQuadro, ...coberturasClausulaParticular]
 
   // LMI Incêndio Básica: cobertura básica
   let lmiIncendioBasica: number | null = null
@@ -2463,7 +2465,7 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
       premioTotal: premioTotal !== null,
       lmga: false,
       vrdTotalDm: vrdTotalDm !== null,
-      coberturas: coberturas.length === 25,
+      coberturas: coberturasQuadro.length === 25,
       formaContratacao: Boolean(formaContratacao),
     },
     linhasCoberturasLidas: coberturas.length,
@@ -3175,6 +3177,138 @@ function postProcessEmpresaFlexCoberturas(
 
   // Assegura exatamente as 25 coberturas sem resíduos
   return result.slice(0, 25)
+}
+
+/**
+ * Extrai as coberturas da seção "CLAUSULA PARTICULAR" do PDF AXA Empresa Flex (Páginas 5–6).
+ * Parseia diretamente do texto (nunca hardcoded):
+ * 1. "Despesas de salvamento e contenção de sinistros — Cláusula Particular"
+ *    - Limite / LMI: ex: "20% do valor da cobertura básica, limitado a R$ 500.000,00"
+ *    - Franquia: "Não Há"
+ * 2. "Custo de defesa do segurado — Cláusula Particular"
+ *    - Limite / LMI: R$ 100.000,00
+ *    - Franquia: "Não Há"
+ *
+ * Assistência 24h já está no quadro principal e não é duplicada.
+ * Se a seção CLAUSULA PARTICULAR não existir no PDF, retorna array vazio.
+ */
+export function extractAxaEmpresaFlexClausulaParticular(
+  pages: PdfPageText[],
+): ExtractedApoliceCobertura[] {
+  const result: ExtractedApoliceCobertura[] = []
+
+  // Concatena páginas relevantes (páginas >= 4 até o fim)
+  const relevantPages = pages.filter((p) => p.pageNumber >= 4)
+  const fullText = (relevantPages.length > 0 ? relevantPages : pages).map((p) => p.text).join('\n')
+
+  // Verifica se a seção CLAUSULA PARTICULAR existe
+  const clausulaIdx = fullText.search(/cl[aá]usula\s+particular/i)
+  if (clausulaIdx === -1) {
+    return result
+  }
+
+  // Recorta o trecho da CLAUSULA PARTICULAR até a próxima seção institucional (INFORMAÇÕES SUSEP) ou fim
+  const sectionText = fullText.slice(clausulaIdx)
+  const susepIdx = sectionText.search(/informa[çc][õo]es\s+susep/i)
+  const clausulaSection = susepIdx !== -1 ? sectionText.slice(0, susepIdx) : sectionText
+
+  // 1. "Despesas de salvamento e contenção de sinistros — Cláusula Particular"
+  const hasSalvamento =
+    /despesas\s+de\s+salvamento\s+e\s+conten[çc][ãa]o\s+de\s+sinistros/i.test(clausulaSection) ||
+    /salvamento\s+e\s+conten[çc][ãa]o/i.test(clausulaSection)
+
+  if (hasSalvamento) {
+    let salvamentoLmiStr = ''
+    let salvamentoLmiNum: number | null = null
+
+    // Procura o padrão "Limite: 20% do valor da cobertura básica, limitado a r$ 500.000,00"
+    // ou "Limite: ... R$ 500.000,00"
+    const limSalvamentoM = clausulaSection.match(/limite[:\s]*([^\n\r.]+?(?:r\$\s*[\d.,]+)?)/i)
+
+    if (limSalvamentoM) {
+      const rawLim = limSalvamentoM[1].trim()
+      // Se contiver menção a % ou texto descritivo
+      if (/20%/i.test(rawLim) && /cobertura\s+b[aá]sica/i.test(rawLim)) {
+        // Formata padronizado preservando o limite extraído
+        const valMatch = rawLim.match(/r\$\s*([\d.,]+)/i)
+        if (valMatch) {
+          salvamentoLmiStr = `20% do valor da cobertura básica, limitado a R$ ${valMatch[1]}`
+          salvamentoLmiNum = parsePtBrNumber(valMatch[1])
+        } else {
+          salvamentoLmiStr = rawLim
+        }
+      } else {
+        const valMatch = rawLim.match(/r\$\s*([\d.,]+)/i)
+        if (valMatch) {
+          salvamentoLmiNum = parsePtBrNumber(valMatch[1])
+        }
+        salvamentoLmiStr = rawLim
+      }
+    }
+
+    // Procura menção de franquia logo após o limite de salvamento
+    let franquiaSalvamento = 'Não Há'
+    const franqSalvamentoM = clausulaSection.match(/franquia[:\s]*([^\n\r.]+)/i)
+    if (franqSalvamentoM) {
+      const rawFranq = franqSalvamentoM[1].trim()
+      if (/n[ãa]o\s+h[áa]/i.test(rawFranq)) {
+        franquiaSalvamento = 'Não Há'
+      } else {
+        franquiaSalvamento = normalizeEmpresaFlexFranquia(rawFranq)
+      }
+    }
+
+    result.push({
+      nome: 'Despesas de salvamento e contenção de sinistros — Cláusula Particular',
+      categoriaNormalizada: 'Despesas de Salvamento e Contenção',
+      categoriaBloco: 'Danos Materiais',
+      lmi: salvamentoLmiNum,
+      franquiaPos: franquiaSalvamento,
+      observacao: salvamentoLmiStr || undefined,
+    })
+  }
+
+  // 2. "Custo de defesa do segurado — Cláusula Particular"
+  const hasCustoDefesa =
+    /custo\s+de\s+defesa\s+do\s+segurado/i.test(clausulaSection) ||
+    /custo\s+de\s+defesa/i.test(clausulaSection)
+
+  if (hasCustoDefesa) {
+    let defesaLmiNum: number | null = null
+    let franquiaDefesa = 'Não Há'
+
+    // Procura trecho específico após a menção de Custo de Defesa:
+    // "Limite: r$ 100.000,00 franquia: não há."
+    const defesaSliceM = clausulaSection.match(
+      /(?:cobertura\s+adicional\s+de\s+)?custo\s+de\s+defesa[\s\S]*?(?:$|1\s+fica)/i,
+    )
+    const defesaBlock = defesaSliceM ? defesaSliceM[0] : clausulaSection
+
+    const limDefesaM = defesaBlock.match(/limite[:\s]*r?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+    if (limDefesaM) {
+      defesaLmiNum = parsePtBrNumber(limDefesaM[1])
+    }
+
+    const franqDefesaM = defesaBlock.match(/franquia[:\s]*([^\n\r.]+)/i)
+    if (franqDefesaM) {
+      const rawFranq = franqDefesaM[1].trim()
+      if (/n[ãa]o\s+h[áa]/i.test(rawFranq)) {
+        franquiaDefesa = 'Não Há'
+      } else {
+        franquiaDefesa = normalizeEmpresaFlexFranquia(rawFranq)
+      }
+    }
+
+    result.push({
+      nome: 'Custo de defesa do segurado — Cláusula Particular',
+      categoriaNormalizada: 'RC Custos de Defesa',
+      categoriaBloco: 'Responsabilidade Civil',
+      lmi: defesaLmiNum,
+      franquiaPos: franquiaDefesa,
+    })
+  }
+
+  return result
 }
 
 export async function parseApolicePdf(
