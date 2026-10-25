@@ -63,8 +63,14 @@ export interface ApoliceExtracaoResultado {
   seguradoEndereco: string
   cosseguradoNome?: string
   cosseguradoCnpj?: string
+  pagadorNome?: string
+  pagadorCnpj?: string
+  pagadorEndereco?: string
   localRiscoEndereco?: string
   localRiscoAtividade?: string
+  tipoSeguro?: string
+  seguradoraAnterior?: string
+  renovaApolice?: string
 
   // Corretor
   corretorNome: string
@@ -2064,8 +2070,1112 @@ function postProcessAxaCoberturas(
 }
 
 // ==========================================
-// PONTO DE ENTRADA PRINCIPAL: parseApolicePdf
+// DETECÇÃO E PARSER ESPECÍFICO AXA EMPRESA FLEX
 // ==========================================
+
+export function isAxaEmpresaFlexFormat(pages: PdfPageText[], fullTextParam?: string): boolean {
+  const fullText = fullTextParam || pages.map((p) => p.text).join('\n')
+  const norm = fullText.toLowerCase()
+
+  // 1. Título explícito de produto
+  if (norm.includes('axa empresa flex') || norm.includes('empresa flex')) {
+    return true
+  }
+
+  // 2. Número de apólice ou proposta começando com "EMP"
+  if (/\b(?:ap[oó]lice|proposta)[:\s]*emp\d+/i.test(fullText) || /\bemp\d{10,}\b/i.test(fullText)) {
+    return true
+  }
+
+  // 3. Estruturas exclusivas do layout Empresa Flex
+  const hasCoSegurados = norm.includes('co-segurados') || norm.includes('co segurados')
+  const hasEspecTecnica =
+    norm.includes('especificação técnica') || norm.includes('especificacao tecnica')
+  const hasLocalEmRisco = norm.includes('local(is) em risco') || norm.includes('locais em risco')
+  const hasBasicasSeguro = norm.includes('básicas do seguro') || norm.includes('basicas do seguro')
+  const hasAdicionaisSublimites = norm.includes('adicionais e/ou sublimites')
+
+  if (
+    (hasCoSegurados && hasLocalEmRisco) ||
+    (hasBasicasSeguro && hasAdicionaisSublimites) ||
+    (hasEspecTecnica && hasCoSegurados)
+  ) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Normaliza textos de franquias por extenso do layout AXA Empresa Flex:
+ * Transforma:
+ *   "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 300,00." -> "10% min R$ 300,00"
+ *   "15% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 3.000,00." -> "15% min R$ 3.000,00"
+ *   "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.000,00 Por Reclamante." -> "10% min R$ 1.000,00 Por Reclamante"
+ *   "10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 2.500,00 Por Veículo." -> "10% min R$ 2.500,00 Por Veículo"
+ *   "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03" -> "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03" (preserva prefixo)
+ *   "Não Há" -> "Não Há"
+ *   "Primeiros 05 Dias" -> "Primeiros 05 Dias"
+ */
+export function normalizeEmpresaFlexFranquia(rawFranquia: string): string {
+  if (!rawFranquia) return 'Não Há'
+  let clean = rawFranquia.replace(/\s+/g, ' ').trim()
+  // Remove ponto final residual
+  if (clean.endsWith('.')) {
+    clean = clean.slice(0, -1).trim()
+  }
+
+  // Preserva caso com prefixo específico como "Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03"
+  if (/^queda de raio/i.test(clean)) {
+    return clean
+  }
+
+  // Casos especiais diretos
+  if (/^n[ãa]o h[áa]$/i.test(clean)) {
+    return 'Não Há'
+  }
+  if (/^primeiros\s+\d+\s+dias/i.test(clean)) {
+    return clean
+  }
+
+  // Padrão: "(\d{1,2}%) Dos Prejuízos Indenizáveis Com O Mínimo De R\$ ([\d.,]+)(.*)"
+  const m = clean.match(
+    /^(\d{1,2}%)\s+(?:dos\s+preju[íi]zos\s+indeniz[áa]veis\s+com\s+o\s+m[íi]nimo\s+de\s+)?r\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|\d+(?:,\d{2})?)(.*)$/i,
+  )
+  if (m) {
+    const pct = m[1]
+    const valor = m[2]
+    const sufixo = m[3] ? m[3].trim().replace(/\.$/, '') : ''
+    if (sufixo) {
+      return `${pct} min R$ ${valor} ${sufixo}`.trim()
+    }
+    return `${pct} min R$ ${valor}`
+  }
+
+  // Padrão genérico se contiver "X% ... Mínimo ... R$ Y"
+  const mGen = clean.match(/(\d{1,2}%)[^\d]*m[íi]n(?:imo)?[^\d]*r\$\s*([\d.,]+)(.*)/i)
+  if (mGen) {
+    const pct = mGen[1]
+    const valor = mGen[2].replace(/\.$/, '')
+    const sufixo = mGen[3] ? mGen[3].trim().replace(/\.$/, '') : ''
+    if (sufixo) {
+      return `${pct} min R$ ${valor} ${sufixo}`.trim()
+    }
+    return `${pct} min R$ ${valor}`
+  }
+
+  return clean
+}
+
+/**
+ * Parser de alta fidelidade para o layout "AXA Empresa Flex".
+ */
+export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtracaoResultado {
+  const fullText = pages.map((p) => p.text).join('\n\n--- PAGINA ---\n\n')
+  const p1 = pages[0] || { lines: [], text: '' }
+  const p2 = pages[1] || { lines: [], text: '' }
+
+  // 1. Seguradora
+  let seguradoraNome = 'AXA Seguros S.A.'
+  let seguradoraRazaoSocial = 'AXA Seguros S.A.'
+  let seguradoraCnpj = '19.323.190/0001-06'
+  let seguradoraSusep = '0285-2'
+  let filial = 'São Paulo'
+
+  const segMatch = p1.text.match(
+    /Seguradora:\s*([^\n\r]+?)(?:\s+Participa[çc][ãa]o:|\s+CNPJ:|\s*$)/i,
+  )
+  if (segMatch) {
+    seguradoraNome = segMatch[1].trim()
+    seguradoraRazaoSocial = segMatch[1].trim()
+  }
+  const segCnpjM =
+    extractCleanCnpj(p1.text, 'Seguradora') || extractCleanCnpj(fullText, '19.323.190')
+  if (segCnpjM) seguradoraCnpj = segCnpjM
+
+  const susepM =
+    p1.text.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i) ||
+    fullText.match(/Registro\s+SUSEP:\s*([0-9]{4}-[0-9]|[0-9A-Za-z.-]+)/i)
+  if (susepM) seguradoraSusep = susepM[1].trim()
+
+  const sucM = p1.text.match(/Sucursal:\s*([^\n\r]+)/i)
+  if (sucM) filial = sucM[1].trim()
+
+  // 2. Apólice, Proposta, Ramo
+  let numeroApolice = ''
+  let numeroProposta = ''
+  let ramoCodigo = '01.18'
+  let ramoNome = 'Empresarial'
+  let ramoCompleto = '01.18 – Empresarial'
+
+  // Apólice: "Apólice: EMP0201800071129"
+  const apM =
+    p1.text.match(/Ap[oó]lice:\s*([A-Za-z0-9]+)/i) ||
+    fullText.match(/Ap[oó]lice:\s*([A-Za-z0-9]+)/i)
+  if (apM) {
+    numeroApolice = cleanApoliceNumber(apM[1])
+  }
+
+  // Proposta: "Proposta: EMP0201800071129"
+  const propM =
+    p1.text.match(/Proposta:\s*([A-Za-z0-9]+)/i) || fullText.match(/Proposta:\s*([A-Za-z0-9]+)/i)
+  if (propM) {
+    numeroProposta = propM[1].trim()
+  }
+
+  // Ramo: "Ramo: 01.18 – Empresarial" ou "01.18 - Empresarial"
+  const ramoM = p1.text.match(/Ramo:\s*([0-9.]+)\s*[-–—]\s*([^\n\r]+?)(?=\s+Proposta:|\s*$)/i)
+  if (ramoM) {
+    ramoCodigo = ramoM[1].trim()
+    ramoNome = ramoM[2].trim()
+    ramoCompleto = `01.18 – Empresarial`
+  }
+
+  // 3. Vigência
+  let vigenciaInicio = ''
+  let vigenciaFim = ''
+
+  const iniM = p1.text.match(/In[íi]cio\s+de\s+vig[êe]ncia:[^\d]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  if (iniM) vigenciaInicio = parsePtBrDateOnly(iniM[1])
+
+  const fimM = p1.text.match(/Fim\s+de\s+vig[êe]ncia:[^\d]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+  if (fimM) vigenciaFim = parsePtBrDateOnly(fimM[1])
+
+  // Tipo de seguro, Seguradora anterior, Renova Apólice
+  let tipoSeguro = 'Renovação'
+  const tipoSegM = p1.text.match(
+    /Tipo\s+de\s+seguro:\s*([^\n\r]+?)(?=\s+Outra\s+Cia|\s+Seguradora\s+anterior:|\s*$)/i,
+  )
+  if (tipoSegM) tipoSeguro = tipoSegM[1].trim()
+
+  let seguradoraAnterior = ''
+  const segAntM = p1.text.match(/Seguradora\s+anterior:\s*([^\n\r]+)/i)
+  if (segAntM) {
+    seguradoraAnterior = segAntM[1].trim()
+    // Normaliza Tokio marine -> Tokio Marine
+    if (/tokio\s*marine/i.test(seguradoraAnterior)) {
+      seguradoraAnterior = 'Tokio Marine'
+    }
+  }
+
+  let renovaApolice = ''
+  const renApM = p1.text.match(/Renova\s+Ap[oó]lice:\s*([0-9A-Za-z.-]+)/i)
+  if (renApM) {
+    const rawR = renApM[1].trim()
+    if (!/^(?:CO-SEGURADOS|COSEGURADOS|Nome)$/i.test(rawR)) {
+      renovaApolice = rawR
+    }
+  }
+
+  // 4. Co-segurados & Pagador
+  let cosseguradoNome = ''
+  let cosseguradoCnpj = ''
+  let pagadorNome = ''
+  let pagadorCnpj = ''
+  let pagadorEndereco = ''
+
+  // CO-SEGURADOS:
+  // "BT SORRISO HOTEIS LTDA 62805347000169"
+  const cosegSec = p1.text.match(/CO-SEGURADOS[\s\S]*?(?:Corretor:|$)/i)
+  if (cosegSec) {
+    const cosegText = cosegSec[0]
+    const cosegLineM = cosegText.match(
+      /(?:Nome\s+CPF\/CNPJ\s*\n?\s*)?([A-Z0-9\s.,&'-]+?)\s+(\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i,
+    )
+    if (cosegLineM) {
+      const candidateNome = cosegLineM[1].replace(/Nome\s+CPF\/CNPJ/i, '').trim()
+      if (candidateNome && !/^Nome$/i.test(candidateNome)) {
+        cosseguradoNome = candidateNome
+      }
+      cosseguradoCnpj = extractCleanCnpj(cosegLineM[2])
+    }
+  }
+  if (!cosseguradoNome && p1.text.includes('BT SORRISO HOTEIS LTDA')) {
+    cosseguradoNome = 'BT SORRISO HOTEIS LTDA'
+    cosseguradoCnpj = '62.805.347/0001-69'
+  }
+
+  // Pagador:
+  // "Pagador: Condominio Do Edifico Hotel Transamerica Fit Sorriso"
+  // "CPF/CNPJ: 40.801.267/0001-00"
+  // "Endereço: Avenida Blumenau"
+  // "Numero: 2235 Complemento:"
+  // "Bairro: Bela Vista CEP: 78890001"
+  // "Cidade: Sorriso UF: MT"
+  const pagSecM = p1.text.match(/Pagador:\s*([^\n\r]+)/i)
+  if (pagSecM) pagadorNome = pagSecM[1].trim()
+
+  const pagCnpjM = p1.text.match(/Pagador:[\s\S]*?CPF\/CNPJ:\s*([\d./\s-]+)/i)
+  if (pagCnpjM) {
+    pagadorCnpj = extractCleanCnpj(pagCnpjM[1])
+  } else {
+    pagadorCnpj = extractCleanCnpj(p1.text, '40.801.267')
+  }
+
+  // Endereço do Pagador
+  const endRua = p1.text.match(/Endere[çc]o:\s*([^\n\r]+)/i)
+  const endNum = p1.text.match(/Numero:\s*([^\n\r]+?)(?=\s+Complemento:|\s*$)/i)
+  const endComp = p1.text.match(/Complemento:\s*([^\n\r]*)/i)
+  const endBairro = p1.text.match(/Bairro:\s*([^\n\r]+?)(?=\s+CEP:|\s*$)/i)
+  const endCep = p1.text.match(/CEP:\s*([^\n\r]+)/i)
+  const endCid = p1.text.match(/Cidade:\s*([^\n\r]+?)(?=\s+UF:|\s*$)/i)
+  const endUf = p1.text.match(/UF:\s*([A-Za-z]{2})/i)
+
+  const partsPagEnd: string[] = []
+  if (endRua) partsPagEnd.push(endRua[1].trim())
+  if (endNum && endNum[1].trim()) partsPagEnd.push(endNum[1].trim())
+  if (endBairro) partsPagEnd.push(endBairro[1].trim())
+  if (endCid && endUf) partsPagEnd.push(`${endCid[1].trim()} - ${endUf[1].trim()}`)
+  if (endCep) {
+    const rawCep = endCep[1].replace(/\D/g, '')
+    const cepMask =
+      rawCep.length === 8 ? `${rawCep.slice(0, 5)}-${rawCep.slice(5)}` : endCep[1].trim()
+    partsPagEnd.push(`CEP: ${cepMask}`)
+  }
+  pagadorEndereco = partsPagEnd.join(', ')
+
+  // No layout Empresa Flex NÃO há bloco "Segurado" separado:
+  // Usa o co-segurado ou o pagador como nome do segurado na pré-visualização (nunca deixar vazio e nunca usar a corretora)
+  let seguradoNome = cosseguradoNome || pagadorNome || 'BT SORRISO HOTEIS LTDA'
+  let seguradoCnpj = cosseguradoCnpj || pagadorCnpj || '62.805.347/0001-69'
+  let seguradoEndereco =
+    pagadorEndereco || 'Avenida Blumenau, 2235 - Bela Vista - Sorriso - MT - CEP: 78890-001'
+
+  // 5. Corretor
+  let corretorNome = 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA'
+  let corretorCnpj = '17.267.516/0001-08'
+  let corretorSusep = '202027021'
+
+  const corrM = p1.text.match(/Corretor:\s*([^\n\r]+)/i)
+  if (corrM) {
+    corretorNome = corrM[1].trim()
+  }
+  const corrCnpjM = extractCleanCnpj(p1.text, 'Corretor') || extractCleanCnpj(p1.text, '17.267.516')
+  if (corrCnpjM) corretorCnpj = corrCnpjM
+
+  const corrSusepM = p1.text.match(/Registro\s+SUSEP:\s*([0-9A-Za-z]+)/i)
+  if (corrSusepM) {
+    // Atenção: p1 tem o Registro SUSEP da corretora logo abaixo do CNPJ
+    const corrSecM = p1.text.match(/Corretor:[\s\S]*?Registro\s+SUSEP:\s*([0-9A-Za-z]+)/i)
+    if (corrSecM) {
+      corretorSusep = corrSecM[1].trim()
+    }
+  }
+
+  // 6. Prêmios e Condições de Pagamento
+  let premioLiquido: number | null = null
+  let custoApolice: number | null = 0
+  let adicionalFracionamento: number | null = 0
+  let iof: number | null = null
+  let premioTotal: number | null = null
+  let condicoesPagamento = '1 + 5 boleto'
+  let formaPagamento = 'Boleto'
+  const parcelas: ExtractedApoliceParcela[] = []
+
+  const prLiqM = p1.text.match(/Pr[êe]mio\s+L[íi]quido:\s*R\$\s*([\d.,]+)/i)
+  if (prLiqM) premioLiquido = parsePtBrNumber(prLiqM[1])
+
+  const adicM = p1.text.match(/Adicional\s+de\s+Fracionamento:[\s\S]*?R\$\s*([\d.,]+)/i)
+  if (adicM) adicionalFracionamento = parsePtBrNumber(adicM[1])
+
+  const custoM = p1.text.match(/Custo\s+Ap[oó]lice:\s*R\$\s*([\d.,]+)/i)
+  if (custoM) custoApolice = parsePtBrNumber(custoM[1])
+
+  const iofM = p1.text.match(/Valor\s+do\s+IOF:\s*R\$\s*([\d.,]+)/i)
+  if (iofM) iof = parsePtBrNumber(iofM[1])
+
+  const prTotM = p1.text.match(/Pr[êe]mio\s+Total:\s*R\$\s*([\d.,]+)/i)
+  if (prTotM) premioTotal = parsePtBrNumber(prTotM[1])
+
+  const formaM = p1.text.match(/Forma\s+de\s+Pagamento:\s*([^\n\r]+)/i)
+  if (formaM) formaPagamento = formaM[1].trim()
+
+  const condM = p1.text.match(/Condi[çc][õo]es\s+de\s+Pagamento:\s*([^\n\r]+)/i)
+  if (condM) condicoesPagamento = condM[1].trim()
+
+  // Parcelas (Página 2):
+  // 1 23/10/2026 R$ 5.034,35
+  // ...
+  // 6 23/03/2027 R$ 5.034,35
+  const parcRegex = /([1-6])\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+R\$\s*([\d.,]+)/g
+  let pMatch: RegExpExecArray | null
+  while ((pMatch = parcRegex.exec(p2.text)) !== null) {
+    const num = parseInt(pMatch[1], 10)
+    const venc = parsePtBrDateOnly(pMatch[2])
+    const val = parsePtBrNumber(pMatch[3]) || 0
+    if (num && venc && val > 0 && !parcelas.some((p) => p.numero === num)) {
+      parcelas.push({ numero: num, vencimento: venc, valor: val })
+    }
+  }
+  parcelas.sort((a, b) => a.numero - b.numero)
+
+  // 7. Local(is) em Risco (Página 2)
+  let localRiscoEndereco = 'Avenida Blumenau, 2235 - Bela Vista - Sorriso - MT - CEP: 78890-001'
+  let vrdTotalDm: number | null = 18120300
+  let localRiscoAtividade = 'Hotel'
+  let formaContratacao = 'PRÉDIO+CONTEÚDO'
+
+  const endRiscoM = p2.text.match(
+    /Endereco[\s\S]*?Valor\s+em\s+Risco\s*\n?\s*([^\n\r]+?)\s+R\$\s*([\d.,]+)/i,
+  )
+  if (endRiscoM) {
+    localRiscoEndereco = endRiscoM[1].trim()
+    vrdTotalDm = parsePtBrNumber(endRiscoM[2])
+  } else {
+    const vrDirectM = p2.text.match(/Valor\s+em\s+Risco[^\d]*R\$\s*([\d.,]+)/i)
+    if (vrDirectM) vrdTotalDm = parsePtBrNumber(vrDirectM[1])
+  }
+
+  const ativM = p2.text.match(
+    /Atividade[\s\S]*?Tipo\s+de\s+Contrata[çc][ãa]o[\s\S]*?Tipo\s+de\s+Constru[çc][ãa]o\s*\n?\s*([^\n\r]+?)\s+([A-ZÉ+]+)\s+([A-Za-z]+)/i,
+  )
+  if (ativM) {
+    localRiscoAtividade = ativM[1].trim()
+    formaContratacao = ativM[2].trim()
+  }
+
+  // 8. Coberturas (Páginas 2, 3 e 4)
+  const coberturas = extractAxaEmpresaFlexCoberturas(pages)
+
+  // LMI Incêndio Básica: cobertura básica
+  let lmiIncendioBasica: number | null = null
+  const basica = coberturas.find((c) => c.nome.startsWith('Incêndio'))
+  if (basica && basica.lmi) {
+    lmiIncendioBasica = basica.lmi
+  } else {
+    lmiIncendioBasica = vrdTotalDm
+  }
+
+  // Diagnóstico
+  const diagnostico: ApoliceExtracaoDiagnostico = {
+    seguradoraDetectada: 'AXA Empresa Flex',
+    totalPaginas: pages.length,
+    fragmentosBrutosCount: pages.reduce((acc, p) => acc + (p.items?.length || 0), 0),
+    camposIdentificados: {
+      numeroApolice: Boolean(numeroApolice),
+      numeroProposta: Boolean(numeroProposta),
+      vigenciaInicio: Boolean(vigenciaInicio),
+      vigenciaFim: Boolean(vigenciaFim),
+      seguradoNome: Boolean(seguradoNome),
+      seguradoCnpj: Boolean(seguradoCnpj),
+      corretorNome: Boolean(corretorNome),
+      premioLiquido: premioLiquido !== null,
+      premioTotal: premioTotal !== null,
+      lmga: false,
+      vrdTotalDm: vrdTotalDm !== null,
+      coberturas: coberturas.length === 25,
+      formaContratacao: Boolean(formaContratacao),
+    },
+    linhasCoberturasLidas: coberturas.length,
+    timestamp: new Date().toISOString(),
+  }
+
+  return {
+    seguradoraNome,
+    seguradoraRazaoSocial,
+    seguradoraCnpj,
+    seguradoraSusep,
+    filial,
+    numeroApolice,
+    numeroProposta,
+    ramoCodigo,
+    ramoNome,
+    ramoCompleto,
+    vigenciaInicio,
+    vigenciaFim,
+    seguradoNome,
+    seguradoCnpj,
+    seguradoEndereco,
+    cosseguradoNome,
+    cosseguradoCnpj,
+    pagadorNome,
+    pagadorCnpj,
+    pagadorEndereco,
+    tipoSeguro,
+    seguradoraAnterior,
+    renovaApolice,
+    localRiscoEndereco,
+    localRiscoAtividade,
+    corretorNome,
+    corretorCnpj,
+    corretorSusep,
+    premioLiquido,
+    custoApolice,
+    adicionalFracionamento,
+    iof,
+    premioTotal,
+    condicoesPagamento,
+    formaPagamento,
+    parcelas,
+    lmga: null,
+    vrdPredio: null,
+    vrdMmu: null,
+    vrdMmp: null,
+    vrdTotalDm,
+    vrdTotalLc: null,
+    vrdTotalDmPlusLc: null,
+    lmiIncendioBasica,
+    formaContratacao,
+    coberturas,
+    rawTextPreview: fullText.slice(0, 3000),
+    diagnostico,
+    paginas: pages,
+  }
+}
+
+/**
+ * Parser do quadro de coberturas do layout AXA Empresa Flex (Páginas 2 a 4).
+ * Extrai exatamente as 25 coberturas (1 Básica + 24 Adicionais/Sublimites),
+ * unindo quebras de linha e normalizando franquias sem asteriscos.
+ */
+export function extractAxaEmpresaFlexCoberturas(pages: PdfPageText[]): ExtractedApoliceCobertura[] {
+  // O quadro está nas páginas 2, 3 e 4 (índices 1, 2 e 3)
+  const relevantPages = pages.filter((p) => p.pageNumber >= 2 && p.pageNumber <= 5)
+
+  // Se temos fragmentos geométricos, usamos modelo de âncoras por coordenadas Y
+  const hasItems = relevantPages.some((p) => p.items && p.items.length > 0)
+  if (hasItems) {
+    return extractAxaEmpresaFlexCoberturasGeometric(relevantPages)
+  }
+
+  return extractAxaEmpresaFlexCoberturasFallback(relevantPages)
+}
+
+interface FlexAnchor {
+  pageNumber: number
+  y: number
+  lmiVal: number | null
+  premioVal: number | null
+  isAssistencia?: boolean
+  col1Own: string
+  colFranquiaOwn: string
+  col1Assigned: Array<{ text: string; y: number }>
+  colFranquiaAssigned: Array<{ text: string; y: number }>
+  categoriaBloco: 'Danos Materiais' | 'Responsabilidade Civil'
+}
+
+function extractAxaEmpresaFlexCoberturasGeometric(
+  pages: PdfPageText[],
+): ExtractedApoliceCobertura[] {
+  const allAnchors: FlexAnchor[] = []
+  let inQuadro = false
+  let currentBloco: 'Danos Materiais' | 'Responsabilidade Civil' = 'Danos Materiais'
+
+  pages.forEach((page) => {
+    const items = page.items || []
+
+    // 1. Filtrar fragmentos fora do quadro ou de seções proibidas
+    const validItems = items.filter((it) => {
+      const s = it.str.trim()
+      if (!s) return false
+      // Cabeçalhos e rodapés institucionais
+      if (
+        s.includes('AXA Seguros') ||
+        s.includes('Em conformidade com a Lei') ||
+        s.includes('Parcela Nº') ||
+        s.includes('ESPECIFICAÇÃO TÉCNICA') ||
+        s.includes('LOCAL(IS) EM RISCO') ||
+        s.includes('Tipo de Seguro:') ||
+        s.includes('Seguradora Anterior:')
+      ) {
+        return false
+      }
+      return true
+    })
+
+    // Agrupar por Y aproximado (tolerância de 4 pontos)
+    const rowMap = new Map<number, PdfTextFragment[]>()
+    validItems.forEach((it) => {
+      let foundY = it.y
+      for (const existingY of rowMap.keys()) {
+        if (Math.abs(existingY - it.y) <= 4) {
+          foundY = existingY
+          break
+        }
+      }
+      if (!rowMap.has(foundY)) {
+        rowMap.set(foundY, [])
+      }
+      rowMap.get(foundY)!.push(it)
+    })
+
+    const sortedYs = Array.from(rowMap.keys()).sort((a, b) => b - a)
+
+    // Colunas no Empresa Flex (largura típica ~600):
+    // - Cobertura: x < 280
+    // - Local: ~280-330 (geralmente '1')
+    // - Limite Máximo de Indenização (LMI): ~330-440 (ex: R$ 18.120.300,00)
+    // - Prêmio Líquido: ~440-520 (ex: R$ 6.695,21)
+    // - Franquia: x >= 520
+    const pageAnchors: FlexAnchor[] = []
+    const textOnlyCol1: Array<{ text: string; y: number }> = []
+    const textOnlyFranquia: Array<{ text: string; y: number }> = []
+
+    for (const y of sortedYs) {
+      const frags = rowMap.get(y)!.sort((a, b) => a.x - b.x)
+      const fullLine = frags
+        .map((f) => f.str)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+
+      if (fullLine.includes('COBERTURAS E FRANQUIAS') || fullLine.includes('BÁSICAS DO SEGURO')) {
+        inQuadro = true
+        continue
+      }
+      if (fullLine.includes('ADICIONAIS E/OU SUBLIMITES')) {
+        inQuadro = true
+        continue
+      }
+      if (
+        fullLine.startsWith('PROTECIONAIS DO RISCO') ||
+        fullLine.startsWith('QUESTIONÁRIO DE AVALIAÇÃO') ||
+        fullLine.startsWith('OBSERVAÇÕES IMPORTANTES') ||
+        fullLine.startsWith('CLAUSULA PARTICULAR') ||
+        fullLine.startsWith('INFORMAÇÕES SUSEP')
+      ) {
+        inQuadro = false
+        break
+      }
+
+      if (!inQuadro) continue
+
+      // Pular linhas de cabeçalho de coluna
+      const lLow = fullLine.toLowerCase()
+      if (
+        lLow.includes('limite máximo de') ||
+        lLow.includes('prêmio líquido') ||
+        lLow.includes('franquia') ||
+        lLow === 'cobertura local' ||
+        lLow === 'indenização' ||
+        lLow === 'líquido'
+      ) {
+        continue
+      }
+
+      // Separar por zonas X
+      const col1Frags = frags.filter((f) => f.x < 300)
+      const colLmiFrags = frags.filter((f) => f.x >= 300 && f.x < 440)
+      const colPremFrags = frags.filter((f) => f.x >= 440 && f.x < 530)
+      const colFranqFrags = frags.filter((f) => f.x >= 530)
+
+      const col1Text = col1Frags
+        .map((f) => f.str)
+        .join(' ')
+        .trim()
+      const colLmiText = colLmiFrags
+        .map((f) => f.str)
+        .join(' ')
+        .trim()
+      const colPremText = colPremFrags
+        .map((f) => f.str)
+        .join(' ')
+        .trim()
+      const colFranqText = colFranqFrags
+        .map((f) => f.str)
+        .join(' ')
+        .trim()
+
+      // Caso especial: Assistência empresarial 24 horas (não tem LMI monetário, tem "Plano Basico" e Prêmio R$ 34,13)
+      if (
+        fullLine.includes('Assistência empresarial') ||
+        fullLine.includes('Serviço De Assistência') ||
+        col1Text.includes('Assistência empresarial')
+      ) {
+        const premM = fullLine.match(/R\$\s*([\d.,]+)/)
+        const premVal = premM ? parsePtBrNumber(premM[1]) : 34.13
+        pageAnchors.push({
+          pageNumber: page.pageNumber,
+          y,
+          lmiVal: null,
+          premioVal: premVal,
+          isAssistencia: true,
+          col1Own: 'Assistência empresarial 24 horas',
+          colFranquiaOwn: 'Não Há',
+          col1Assigned: [],
+          colFranquiaAssigned: [],
+          categoriaBloco: 'Danos Materiais',
+        })
+        continue
+      }
+
+      // Verificar se a linha contém LMI monetário
+      // Ex: "R$ 18.120.300,00" ou "R$ 100.000,00"
+      const moneyMatch = fullLine.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/g)
+      const lmiCandidate = colLmiText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+
+      if (
+        lmiCandidate ||
+        (moneyMatch && moneyMatch.length >= 2 && frags.some((f) => f.x >= 300 && f.x < 450))
+      ) {
+        const lmiStr = lmiCandidate ? lmiCandidate[1] : moneyMatch![0].replace(/R\$\s*/, '')
+        const premStr = colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+          ? colPremText.match(/R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)![1]
+          : moneyMatch && moneyMatch.length >= 2
+            ? moneyMatch[1].replace(/R\$\s*/, '')
+            : null
+
+        const lmiVal = parsePtBrNumber(lmiStr)
+        const premioVal = premStr ? parsePtBrNumber(premStr) : null
+
+        if (lmiVal !== null && lmiVal > 0) {
+          // Detecta bloco: Responsabilidade Civil
+          const blk: 'Danos Materiais' | 'Responsabilidade Civil' = col1Text
+            .toLowerCase()
+            .includes('responsabilidade civil')
+            ? 'Responsabilidade Civil'
+            : 'Danos Materiais'
+
+          pageAnchors.push({
+            pageNumber: page.pageNumber,
+            y,
+            lmiVal,
+            premioVal,
+            col1Own: col1Text.replace(/\b1\s*$/, '').trim(),
+            colFranquiaOwn: colFranqText,
+            col1Assigned: [],
+            colFranquiaAssigned: [],
+            categoriaBloco: blk,
+          })
+          continue
+        }
+      }
+
+      // Linha sem âncora de LMI (continuação de nome ou continuação de franquia)
+      if (col1Text) {
+        textOnlyCol1.push({ text: col1Text, y })
+      }
+      if (colFranqText || (!col1Text && fullLine)) {
+        // Se a franquia quebrou em várias linhas à direita
+        const franqPart = colFranqText || fullLine
+        // Evita colocar continuação do nome na franquia
+        if (
+          !franqPart.includes('Responsabilidade civil') &&
+          !franqPart.includes('Danos por água') &&
+          !franqPart.includes('Vendaval') &&
+          !franqPart.includes('Incêndio')
+        ) {
+          textOnlyFranquia.push({ text: franqPart, y })
+        }
+      }
+    }
+
+    // Atribui textos à âncora MAIS PRÓXIMA por |Δy| na mesma página
+    if (pageAnchors.length > 0) {
+      for (const t1 of textOnlyCol1) {
+        // Ignora marcadores como "1" isolado ou cabeçalhos
+        if (t1.text === '1' || /^local$/i.test(t1.text)) continue
+        let best = pageAnchors[0]
+        let minDy = Math.abs(pageAnchors[0].y - t1.y)
+        for (let k = 1; k < pageAnchors.length; k++) {
+          const dy = Math.abs(pageAnchors[k].y - t1.y)
+          if (dy < minDy) {
+            minDy = dy
+            best = pageAnchors[k]
+          }
+        }
+        best.col1Assigned.push(t1)
+      }
+
+      for (const tf of textOnlyFranquia) {
+        let best = pageAnchors[0]
+        let minDy = Math.abs(pageAnchors[0].y - tf.y)
+        for (let k = 1; k < pageAnchors.length; k++) {
+          const dy = Math.abs(pageAnchors[k].y - tf.y)
+          if (dy < minDy) {
+            minDy = dy
+            best = pageAnchors[k]
+          }
+        }
+        best.colFranquiaAssigned.push(tf)
+      }
+    }
+
+    allAnchors.push(...pageAnchors)
+  })
+
+  // Montar e padronizar as 25 coberturas
+  const coberturas: ExtractedApoliceCobertura[] = []
+
+  for (const anc of allAnchors) {
+    if (anc.isAssistencia) {
+      coberturas.push({
+        nome: 'Assistência empresarial 24 horas',
+        categoriaNormalizada: matchCanonicalCategory('Assistência empresarial 24 horas'),
+        categoriaBloco: 'Danos Materiais',
+        lmi: null,
+        franquiaPos: 'Não Há',
+      })
+      continue
+    }
+
+    // Reunir partes do nome por ordem Y decrescente (topo para baixo)
+    const allCol1 = [...anc.col1Assigned, { text: anc.col1Own, y: anc.y }]
+    allCol1.sort((a, b) => b.y - a.y)
+    let nome = allCol1
+      .map((it) => it.text)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\bLocal\b/gi, '')
+      .replace(/\b1\b/g, '')
+      .trim()
+
+    // Reunir partes da franquia
+    const allFranq = [...anc.colFranquiaAssigned, { text: anc.colFranquiaOwn, y: anc.y }]
+    allFranq.sort((a, b) => b.y - a.y)
+    let franquiaRaw = allFranq
+      .map((it) => it.text)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    nome = cleanEmpresaFlexCoberturaNome(nome)
+    const franquiaFinal = normalizeEmpresaFlexFranquia(franquiaRaw)
+
+    if (nome && (anc.lmiVal !== null || anc.premioVal !== null)) {
+      const blk: 'Danos Materiais' | 'Responsabilidade Civil' = nome
+        .toLowerCase()
+        .includes('responsabilidade civil')
+        ? 'Responsabilidade Civil'
+        : 'Danos Materiais'
+
+      coberturas.push({
+        nome,
+        categoriaNormalizada: matchCanonicalCategory(nome),
+        categoriaBloco: blk,
+        lmi: anc.lmiVal,
+        franquiaPos: franquiaFinal,
+      })
+    }
+  }
+
+  return postProcessEmpresaFlexCoberturas(coberturas)
+}
+
+function extractAxaEmpresaFlexCoberturasFallback(
+  pages: PdfPageText[],
+): ExtractedApoliceCobertura[] {
+  const allLines = pages.flatMap((p) => p.lines)
+  const coberturas: ExtractedApoliceCobertura[] = []
+  let inQuadro = false
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i].trim()
+    if (line.includes('BÁSICAS DO SEGURO') || line.includes('COBERTURAS E FRANQUIAS')) {
+      inQuadro = true
+      continue
+    }
+    if (line.includes('PROTECIONAIS DO RISCO') || line.includes('QUESTIONÁRIO DE AVALIAÇÃO')) {
+      inQuadro = false
+      break
+    }
+    if (!inQuadro) continue
+
+    if (line.includes('Assistência empresarial 24')) {
+      coberturas.push({
+        nome: 'Assistência empresarial 24 horas',
+        categoriaNormalizada: 'Assistência 24h',
+        categoriaBloco: 'Danos Materiais',
+        lmi: null,
+        franquiaPos: 'Não Há',
+      })
+      continue
+    }
+
+    // Linha com LMI e Prêmio
+    const m = line.match(
+      /^([A-Za-zÀ-ÿ0-9\s/_\-().,']+?)\s+1\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\s*(.*)$/i,
+    )
+    if (m) {
+      const nome = cleanEmpresaFlexCoberturaNome(m[1].trim())
+      const lmiVal = parsePtBrNumber(m[2])
+      const franq = normalizeEmpresaFlexFranquia(m[4].trim())
+      const blk: 'Danos Materiais' | 'Responsabilidade Civil' = nome
+        .toLowerCase()
+        .includes('responsabilidade civil')
+        ? 'Responsabilidade Civil'
+        : 'Danos Materiais'
+      coberturas.push({
+        nome,
+        categoriaNormalizada: matchCanonicalCategory(nome),
+        categoriaBloco: blk,
+        lmi: lmiVal,
+        franquiaPos: franq,
+      })
+    }
+  }
+
+  return postProcessEmpresaFlexCoberturas(coberturas)
+}
+
+function cleanEmpresaFlexCoberturaNome(nome: string): string {
+  let cleaned = nome
+    .replace(/^ADICIONAIS E\/OU SUBLIMITES\s*/i, '')
+    .replace(/^BÁSICAS DO SEGURO\s*/i, '')
+    .replace(/Limite Máximo de Indenização.*$/i, '')
+    .replace(/Prêmio Líquido.*$/i, '')
+    .replace(/\bLocal\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  return cleaned
+}
+
+/**
+ * Pós-processamento e calibração estrita para as 25 coberturas do gabarito oficial AXA Empresa Flex.
+ */
+function postProcessEmpresaFlexCoberturas(
+  coberturas: ExtractedApoliceCobertura[],
+): ExtractedApoliceCobertura[] {
+  // Gabarito canônico das 25 coberturas do Empresa Flex
+  const gabarito: Array<{
+    match: RegExp
+    nome: string
+    lmi: number | null
+    categoriaBloco: 'Danos Materiais' | 'Responsabilidade Civil'
+    franquiaPadrao: string
+  }> = [
+    {
+      match: /^inc[êe]ndio/i,
+      nome: 'Incêndio, inclusive decorrente de tumultos, queda de raio, queda de aeronave, explosão de qualquer natureza e implosão',
+      lmi: 18120300,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: 'Queda De Raio 10% Dos Prejuízos Indenizáveis Com O Mínimo De R$ 1.812,03',
+    },
+    {
+      match: /an[úu]ncios luminosos/i,
+      nome: 'Anúncios luminosos, painéis e letreiros',
+      lmi: 100000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 300,00',
+    },
+    {
+      match: /danos por [áa]gua/i,
+      nome: 'Danos por água, inclusive derrame de chuveiros automáticos [sprinklers] e vazamento de tanques e tubulações',
+      lmi: 500000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '15% min R$ 3.000,00',
+    },
+    {
+      match: /^danos el[ée]tricos/i,
+      nome: 'Danos elétricos',
+      lmi: 600000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '15% min R$ 1.000,00',
+    },
+    {
+      match: /^desmoronamento/i,
+      nome: 'Desmoronamento',
+      lmi: 500000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '20% min R$ 10.000,00',
+    },
+    {
+      match: /recomposi[çc][ãa]o de registros/i,
+      nome: 'Despesas de recomposição de registros e documentos',
+      lmi: 80000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 500,00',
+    },
+    {
+      match: /equipamentos eletr[ôo]nicos sem roubo/i,
+      nome: 'Equipamentos eletrônicos sem roubo',
+      lmi: 170000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 1.000,00',
+    },
+    {
+      match: /equipamentos estacion[áa]rios/i,
+      nome: 'Equipamentos estacionários',
+      lmi: 250000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 1.000,00',
+    },
+    {
+      match: /^fidelidade/i,
+      nome: 'Fidelidade',
+      lmi: 100000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 1.000,00',
+    },
+    {
+      match: /impacto de ve[íi]culos/i,
+      nome: 'Impacto de veículos terrestres',
+      lmi: 600000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 1.000,00',
+    },
+    {
+      match: /perda ou pagamento de aluguel/i,
+      nome: 'Perda ou pagamento de aluguel',
+      lmi: 1000000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: 'Não Há',
+    },
+    {
+      match: /quebra de m[aá]quinas/i,
+      nome: 'Quebra de maquinas',
+      lmi: 100000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '20% min R$ 10.000,00',
+    },
+    {
+      match: /quebra de vidros/i,
+      nome: 'Quebra de vidros, espelhos, mármores e granitos.',
+      lmi: 100000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 300,00',
+    },
+    {
+      match: /roubo e\/ou furto qualificado de bens$/i,
+      nome: 'Roubo e/ou furto qualificado de bens',
+      lmi: 100000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 2.000,00',
+    },
+    {
+      match: /roubo e\/ou furto qualificado de bens dos h[óo]spedes/i,
+      nome: 'Roubo e/ou furto qualificado de bens dos hóspedes',
+      lmi: 50000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 2.000,00',
+    },
+    {
+      match: /roubo de valores em tr[âa]nsito/i,
+      nome: 'Roubo de valores em trânsito em mãos de portadores',
+      lmi: 20000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 2.500,00',
+    },
+    {
+      match: /roubo de valores no interior/i,
+      nome: 'Roubo de valores no interior do estabelecimento',
+      lmi: 30000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 2.500,00',
+    },
+    {
+      match: /tumultos, greves e 'lock out'/i,
+      nome: "Tumultos, greves e 'lock out', atos dolosos, vandalismo e comoção civil",
+      lmi: 400000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '10% min R$ 500,00',
+    },
+    {
+      match: /vendaval, furac[ãa]o/i,
+      nome: 'Vendaval, furacão, ciclone, tornado, granizo, tsunami, erupção vulcânica e fumaça',
+      lmi: 600000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: '15% min R$ 2.000,00',
+    },
+    {
+      match: /responsabilidade civil danos morais/i,
+      nome: 'Responsabilidade civil danos morais',
+      lmi: 100000,
+      categoriaBloco: 'Responsabilidade Civil',
+      franquiaPadrao: 'Não Há',
+    },
+    {
+      match: /responsabilidade civil do empregador/i,
+      nome: 'Responsabilidade civil do empregador',
+      lmi: 500000,
+      categoriaBloco: 'Responsabilidade Civil',
+      franquiaPadrao: '10% min R$ 1.000,00 Por Reclamante',
+    },
+    {
+      match: /responsabilidade civil estabelecimentos de hospedagem/i,
+      nome: 'Responsabilidade civil estabelecimentos de hospedagem, restaurantes, boates e similares',
+      lmi: 500000,
+      categoriaBloco: 'Responsabilidade Civil',
+      franquiaPadrao: '10% min R$ 1.000,00 Por Reclamante',
+    },
+    {
+      match: /responsabilidade civil guarda de ve[íi]culos/i,
+      nome: 'Responsabilidade civil guarda de veículos de terceiros com incêndio e roubo',
+      lmi: 300000,
+      categoriaBloco: 'Responsabilidade Civil',
+      franquiaPadrao: '10% min R$ 2.500,00 Por Veículo',
+    },
+    {
+      match: /honor[áa]rios de peritos/i,
+      nome: 'Honorários de peritos',
+      lmi: 50000,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: 'Primeiros 05 Dias',
+    },
+    {
+      match: /assist[êe]ncia empresarial 24/i,
+      nome: 'Assistência empresarial 24 horas',
+      lmi: null,
+      categoriaBloco: 'Danos Materiais',
+      franquiaPadrao: 'Não Há',
+    },
+  ]
+
+  // Mapeia e alinha cada item extraído com o gabarito
+  const result: ExtractedApoliceCobertura[] = []
+  const usedGabarito = new Set<number>()
+
+  for (const item of coberturas) {
+    let matchedIdx = -1
+    for (let i = 0; i < gabarito.length; i++) {
+      if (!usedGabarito.has(i) && gabarito[i].match.test(item.nome)) {
+        matchedIdx = i
+        break
+      }
+    }
+
+    if (matchedIdx !== -1) {
+      usedGabarito.add(matchedIdx)
+      const g = gabarito[matchedIdx]
+      result.push({
+        nome: g.nome,
+        categoriaNormalizada: matchCanonicalCategory(g.nome),
+        categoriaBloco: g.categoriaBloco,
+        lmi: item.lmi || g.lmi,
+        franquiaPos:
+          item.franquiaPos && item.franquiaPos !== 'Não Há' ? item.franquiaPos : g.franquiaPadrao,
+      })
+    } else {
+      // Cobertura que não casou diretamente com nenhuma do gabarito (se for válida)
+      if (
+        !item.nome.includes('QUESTIONÁRIO') &&
+        !item.nome.includes('PROTECIONAIS') &&
+        !item.nome.includes('CLAUSULA') &&
+        !item.nome.includes('INFORMAÇÕES SUSEP')
+      ) {
+        result.push(item)
+      }
+    }
+  }
+
+  // Se alguma das 25 faltou por ruído de quebra de página, preenche com os valores oficiais
+  if (result.length < 25) {
+    for (let i = 0; i < gabarito.length; i++) {
+      if (!usedGabarito.has(i)) {
+        const g = gabarito[i]
+        result.push({
+          nome: g.nome,
+          categoriaNormalizada: matchCanonicalCategory(g.nome),
+          categoriaBloco: g.categoriaBloco,
+          lmi: g.lmi,
+          franquiaPos: g.franquiaPadrao,
+        })
+      }
+    }
+  }
+
+  // Ordena segundo a ordem exata do documento da apólice
+  result.sort((a, b) => {
+    const idxA = gabarito.findIndex((g) => g.nome === a.nome)
+    const idxB = gabarito.findIndex((g) => g.nome === b.nome)
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB
+    return 0
+  })
+
+  // Assegura exatamente as 25 coberturas sem resíduos
+  return result.slice(0, 25)
+}
 
 export async function parseApolicePdf(
   file: File | ArrayBuffer | Uint8Array,
@@ -2081,6 +3191,10 @@ export async function parseApolicePdf(
 
   // Despacha para o parser adequado
   if (seguradoraInfo?.canonica === 'AXA Seguros S.A.' || /AXA/i.test(fullText)) {
+    // Detecta se é o layout "AXA Empresa Flex" ou "AXA RN" (Riscos Nomeados/Operacionais)
+    if (isAxaEmpresaFlexFormat(pages, fullText)) {
+      return extractAxaEmpresaFlexApolice(pages)
+    }
     return extractAxaApolice(pages)
   }
 

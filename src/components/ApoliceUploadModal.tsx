@@ -217,32 +217,47 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
 
       // Localização automática do empreendimento correspondente
       let matchedEmpId = ''
-      const cleanCnpjRes = res.seguradoCnpj.replace(/\D/g, '')
+      const candidatesCnpj = [res.seguradoCnpj, res.cosseguradoCnpj, res.pagadorCnpj].filter(
+        Boolean,
+      ) as string[]
 
-      if (cleanCnpjRes) {
-        const found = empreendimentos.find(
-          (e) => (e.cnpj || '').replace(/\D/g, '') === cleanCnpjRes,
-        )
-        if (found) {
-          matchedEmpId = found.id
+      for (const rawCnpj of candidatesCnpj) {
+        const clean = rawCnpj.replace(/\D/g, '')
+        if (clean) {
+          const found = empreendimentos.find((e) => (e.cnpj || '').replace(/\D/g, '') === clean)
+          if (found) {
+            matchedEmpId = found.id
+            break
+          }
         }
       }
 
-      if (!matchedEmpId && res.seguradoNome) {
-        const segUpper = res.seguradoNome.toUpperCase()
-        const found = empreendimentos.find(
-          (e) =>
-            segUpper.includes(e.nome_empreendimento.toUpperCase()) ||
-            e.nome_empreendimento.toUpperCase().includes(segUpper) ||
-            segUpper.includes('BERRINI') ||
-            segUpper.includes('MORUMBI'),
-        )
-        if (found) {
-          matchedEmpId = found.id
+      if (!matchedEmpId) {
+        const namesToMatch = [res.seguradoNome, res.cosseguradoNome, res.pagadorNome].filter(
+          Boolean,
+        ) as string[]
+
+        for (const nameCandidate of namesToMatch) {
+          const segUpper = nameCandidate.toUpperCase()
+          const found = empreendimentos.find(
+            (e) =>
+              segUpper.includes(e.nome_empreendimento.toUpperCase()) ||
+              e.nome_empreendimento.toUpperCase().includes(segUpper) ||
+              (segUpper.includes('SORRISO') &&
+                e.nome_empreendimento.toUpperCase().includes('SORRISO')) ||
+              (segUpper.includes('TRANSAMERICA') &&
+                e.nome_empreendimento.toUpperCase().includes('TRANSAMERICA')) ||
+              segUpper.includes('BERRINI') ||
+              segUpper.includes('MORUMBI'),
+          )
+          if (found) {
+            matchedEmpId = found.id
+            break
+          }
         }
       }
 
-      // Se encontrou BTT Morumbi na base pelo CNPJ ou nome
+      // Fallback para BTT Morumbi se aplicável
       if (!matchedEmpId) {
         const bttMorumbi = empreendimentos.find(
           (e) =>
@@ -331,6 +346,19 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
         cnpj: extractionResult.seguradoCnpj,
         endereco: extractionResult.seguradoEndereco,
       },
+      cossegurado: extractionResult.cosseguradoNome
+        ? {
+            nome: extractionResult.cosseguradoNome,
+            cnpj: extractionResult.cosseguradoCnpj,
+          }
+        : undefined,
+      pagador: extractionResult.pagadorNome
+        ? {
+            nome: extractionResult.pagadorNome,
+            cnpj: extractionResult.pagadorCnpj,
+            endereco: extractionResult.pagadorEndereco,
+          }
+        : undefined,
       corretor: {
         nome: extractionResult.corretorNome,
         cnpj: extractionResult.corretorCnpj,
@@ -883,6 +911,42 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                   />
                 </div>
               </div>
+
+              {/* Informações complementares detectadas (Co-segurados / Pagador / Local em Risco) */}
+              {(extractionResult?.cosseguradoNome || extractionResult?.pagadorNome) && (
+                <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-600 bg-gray-50/70 p-2 rounded-lg">
+                  {extractionResult?.cosseguradoNome && (
+                    <div>
+                      <span className="font-semibold text-gray-700 block">
+                        Co-Segurado Detectado:
+                      </span>
+                      <span>{extractionResult.cosseguradoNome}</span>
+                      {extractionResult.cosseguradoCnpj && (
+                        <span className="text-gray-500 font-mono block">
+                          CNPJ: {extractionResult.cosseguradoCnpj}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {extractionResult?.pagadorNome && (
+                    <div>
+                      <span className="font-semibold text-gray-700 block">Pagador Detectado:</span>
+                      <span>{extractionResult.pagadorNome}</span>
+                      {extractionResult.pagadorCnpj && (
+                        <span className="text-gray-500 font-mono block">
+                          CNPJ: {extractionResult.pagadorCnpj}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {extractionResult?.localRiscoEndereco && (
+                    <div className="sm:col-span-2 text-[10px] text-gray-500">
+                      <span className="font-semibold text-gray-700">Local em Risco: </span>
+                      {extractionResult.localRiscoEndereco}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* SEÇÃO 3: VIGÊNCIA E FORMA DE CONTRATAÇÃO */}
