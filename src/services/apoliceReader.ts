@@ -813,9 +813,22 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   // Passa todas as páginas a partir da página 4 (índice 3 em diante)
   // para garantir que a página 6 nunca seja omitida
   // ----------------------------------------------------
-  // Páginas do quadro de coberturas (páginas 4, 5, 6 e 7 da apólice AXA):
-  // Passa as páginas 4 a 7 para capturar a legenda completa que se estende pelas páginas 6 e 7.
-  const coberturas = extractAxaCoberturas(pages.slice(3, Math.min(pages.length, 7)), fullText)
+  // Páginas do quadro de coberturas da apólice AXA RN:
+  // Detecta dinamicamente a página em que se inicia a seção "2. Coberturas do seguro (R$)"
+  // Na apólice RN (ex.: BT Anália Franco), a tabela começa na pág. 3 (índice 2) com Danos Materiais (Básica e Alagamento).
+  // Se não encontrar o cabeçalho exato, inicia na página 3 (índice 2) como padrão seguro.
+  let startCoberturasPage = pages.findIndex(
+    (p) =>
+      /2\.\s*Coberturas\s+do\s+seguro/i.test(p.text) ||
+      (/Coberturas\s+do\s+seguro/i.test(p.text) && /Danos\s+Materiais/i.test(p.text)),
+  )
+  if (startCoberturasPage < 0) {
+    startCoberturasPage = 2
+  }
+  const coberturas = extractAxaCoberturas(
+    pages.slice(startCoberturasPage, Math.min(pages.length, 7)),
+    fullText,
+  )
   // LMI Incêndio Básica: cobertura com categoria canônica "Incêndio Básica (Danos Materiais)"
   let lmiIncendioBasica: number | null = null
   const basica = coberturas.find(
