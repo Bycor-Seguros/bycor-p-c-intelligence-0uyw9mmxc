@@ -86,6 +86,12 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
   // Empreendimentos disponíveis para vincular
   const [empreendimentos, setEmpreendimentos] = useState<EmpreendimentoOption[]>([])
   const [selectedEmpreendimentoId, setSelectedEmpreendimentoId] = useState<string>('')
+  // Modo de inclusão de novo empreendimento/cliente
+  const [isNovoEmpreendimentoMode, setIsNovoEmpreendimentoMode] = useState<boolean>(false)
+  const [novoEmpNome, setNovoEmpNome] = useState<string>('')
+  const [novoEmpCnpj, setNovoEmpCnpj] = useState<string>('')
+  const [novoEmpIdCustom, setNovoEmpIdCustom] = useState<string>('')
+  const [isCreatingEmpreendimento, setIsCreatingEmpreendimento] = useState<boolean>(false)
 
   // Alerta de apólice já existente
   const [existingApoliceId, setExistingApoliceId] = useState<string | null>(null)
@@ -163,6 +169,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
     setExtractionResult(null)
     setShowDiagnosticoDet(false)
     setSelectedEmpreendimentoId('')
+    setIsNovoEmpreendimentoMode(false)
+    setNovoEmpNome('')
+    setNovoEmpCnpj('')
+    setNovoEmpIdCustom('')
+    setIsCreatingEmpreendimento(false)
     setExistingApoliceId(null)
     setConfirmOverwrite(false)
     setAntecessoraIdentificada(null)
@@ -280,6 +291,25 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
       }
 
       setSelectedEmpreendimentoId(matchedEmpId)
+
+      // Preenche os campos do pré-cadastro de novo empreendimento com os dados extraídos
+      setNovoEmpNome(res.seguradoNome || '')
+      setNovoEmpCnpj(res.seguradoCnpj || '')
+      const slugId = (res.seguradoNome || 'novo_cliente')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 30)
+      setNovoEmpIdCustom(slugId)
+
+      // Se nenhum empreendimento existente foi encontrado e temos segurado, sugere o modo novo empreendimento
+      if (!matchedEmpId && (res.seguradoNome || res.seguradoCnpj)) {
+        setIsNovoEmpreendimentoMode(true)
+      } else {
+        setIsNovoEmpreendimentoMode(false)
+      }
 
       // Checar se já existe apólice cadastrada com este número
       if (res.numeroApolice) {
@@ -407,6 +437,68 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
     URL.revokeObjectURL(url)
   }
 
+  // Criar novo empreendimento para novo cliente
+  const handleCriarNovoEmpreendimento = async (): Promise<string | null> => {
+    const nomeFinal = (novoEmpNome || seguradoNome).trim()
+    if (!nomeFinal) {
+      setErrorMessage('Informe o nome ou razão social do novo empreendimento.')
+      return null
+    }
+
+    const cnpjFinal = (novoEmpCnpj || seguradoCnpj).trim()
+    let slug = (novoEmpIdCustom || nomeFinal)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 30)
+
+    if (!slug) slug = `emp_${Date.now()}`
+
+    // Checa se slug já existe
+    const exists = await pb
+      .collection('empreendimentos')
+      .getFirstListItem(`id_empreendimento="${slug}"`)
+      .catch(() => null)
+    if (exists) {
+      slug = `${slug}_${Date.now().toString().slice(-4)}`
+    }
+
+    try {
+      setIsCreatingEmpreendimento(true)
+      const novoRec = await pb.collection('empreendimentos').create({
+        id_empreendimento: slug,
+        nome_empreendimento: nomeFinal,
+        razao_social: (seguradoNome || nomeFinal).trim(),
+        cnpj: cnpjFinal,
+        cossegurado_nome: extractionResult?.cosseguradoNome || '',
+        cossegurado_cnpj: extractionResult?.cosseguradoCnpj || '',
+        endereco: extractionResult?.seguradoEndereco || '',
+        origem: 'Criado no Upload de Apólice',
+        imported_at: new Date().toISOString(),
+        imported_by: user?.email || '',
+      })
+
+      // Atualiza a lista local de empreendimentos e seleciona o recém-criado
+      const newOption: EmpreendimentoOption = {
+        id: novoRec.id,
+        id_empreendimento: novoRec.id_empreendimento,
+        nome_empreendimento: novoRec.nome_empreendimento,
+        cnpj: novoRec.cnpj,
+      }
+      setEmpreendimentos((prev) => [newOption, ...prev])
+      setSelectedEmpreendimentoId(novoRec.id)
+      setIsNovoEmpreendimentoMode(false)
+      return novoRec.id
+    } catch (err: unknown) {
+      console.error('Erro ao criar empreendimento:', err)
+      throw new Error(`Falha ao cadastrar novo empreendimento: ${(err as Error).message}`)
+    } finally {
+      setIsCreatingEmpreendimento(false)
+    }
+  }
+
   // Gravação no Banco de Dados
   const handleConfirmarGravacao = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -427,6 +519,15 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
     setErrorMessage(null)
 
     try {
+      // Se estiver no modo de novo empreendimento, cadastra-o antes de persistir a apólice
+      let empIdToLink = selectedEmpreendimentoId
+      if (isNovoEmpreendimentoMode) {
+        const createdEmpId = await handleCriarNovoEmpreendimento()
+        if (createdEmpId) {
+          empIdToLink = createdEmpId
+        }
+      }
+
       const pLiq = parseCurrencyValue(premioLiquido)
       const pTot = parseCurrencyValue(premioTotal)
       const pIof = parseCurrencyValue(iof)
@@ -451,17 +552,22 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
 
       // Gera id_apolice canônico se novo (ex: "btt_morumbi_axa_rn_2026")
       let idApoliceCanonical = ''
-      const empSelected = empreendimentos.find((e) => e.id === selectedEmpreendimentoId)
+      const empSelected = empreendimentos.find((e) => e.id === empIdToLink)
       const empKey = empSelected?.id_empreendimento || 'apolice'
       const anoFim = vigenciaFim ? vigenciaFim.slice(0, 4) : new Date().getFullYear().toString()
-      const segShort = (nomeSeguradoraCanonica || 'seg').toLowerCase().includes('axa')
-        ? 'axa'
-        : 'apol'
-      idApoliceCanonical = `${empKey}_${segShort}_rn_${anoFim}`
+      let segShort = 'apol'
+      const lowSeg = (nomeSeguradoraCanonica || '').toLowerCase()
+      if (lowSeg.includes('tokio')) segShort = 'tokio'
+      else if (lowSeg.includes('axa')) segShort = 'axa'
+      else if (lowSeg.includes('porto')) segShort = 'porto'
+      else if (lowSeg.includes('chubb')) segShort = 'chubb'
+      else if (lowSeg.includes('mitsui')) segShort = 'msig'
+
+      idApoliceCanonical = `${empKey}_${segShort}_${anoFim}`
 
       const payloadApolice = {
         id_apolice: idApoliceCanonical,
-        id_empreendimento: selectedEmpreendimentoId || null,
+        id_empreendimento: empIdToLink || null,
         segurado_na_apolice: seguradoNome.trim(),
         cnpj_segurado: seguradoCnpj.trim(),
         seguradora: nomeSeguradoraCanonica,
@@ -557,8 +663,8 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
           formDoc.append('versao', 'v1.0')
           formDoc.append('data', new Date().toISOString().slice(0, 10))
           formDoc.append('vinculado_apolice', savedApoliceId)
-          if (selectedEmpreendimentoId) {
-            formDoc.append('vinculado_empreendimento', selectedEmpreendimentoId)
+          if (empIdToLink) {
+            formDoc.append('vinculado_empreendimento', empIdToLink)
           }
           await pb.collection('documentos').create(formDoc)
         } catch (docErr) {
@@ -890,44 +996,98 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
 
             {/* SEÇÃO 2: VÍNCULO DE EMPREENDIMENTO E SEGURADO */}
             <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-3">
-              <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-[#16578B]" />
-                <span>Segurado & Vínculo com Empreendimento do Portfólio</span>
-              </span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Vincular ao Empreendimento da Base
-                  </Label>
-                  <select
-                    value={selectedEmpreendimentoId}
-                    onChange={(e) => setSelectedEmpreendimentoId(e.target.value)}
-                    className="w-full h-8 rounded border border-gray-300 bg-white px-2 text-xs font-medium"
-                  >
-                    <option value="">— Selecione o empreendimento ou deixe geral —</option>
-                    {empreendimentos.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.nome_empreendimento} ({emp.cnpj || emp.id_empreendimento})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-gray-700">
-                    Razão Social do Segurado na Apólice
-                  </Label>
-                  <Input
-                    type="text"
-                    value={seguradoNome}
-                    onChange={(e) => setSeguradoNome(e.target.value)}
-                    placeholder="Ex: CONDOMINIO EDIFICIO CONVENTION CENTER BERRINI"
-                    className="h-8 text-xs font-medium"
-                    required
-                  />
-                </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#16578B]" />
+                  <span>Segurado & Vínculo com Empreendimento do Portfólio</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsNovoEmpreendimentoMode(!isNovoEmpreendimentoMode)}
+                  className="text-[11px] text-[#16578B] hover:text-blue-800 font-semibold underline flex items-center gap-1"
+                >
+                  {isNovoEmpreendimentoMode
+                    ? '← Selecionar da base existente'
+                    : '+ Cadastrar como novo cliente/empreendimento'}
+                </button>
               </div>
+
+              {/* MODO 1: SELECIONAR DA BASE EXISTENTE */}
+              {!isNovoEmpreendimentoMode ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Vincular ao Empreendimento da Base
+                    </Label>
+                    <select
+                      value={selectedEmpreendimentoId}
+                      onChange={(e) => setSelectedEmpreendimentoId(e.target.value)}
+                      className="w-full h-8 rounded border border-gray-300 bg-white px-2 text-xs font-medium"
+                    >
+                      <option value="">— Selecione o empreendimento ou deixe geral —</option>
+                      {empreendimentos.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.nome_empreendimento} ({emp.cnpj || emp.id_empreendimento})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-gray-500">
+                      {selectedEmpreendimentoId
+                        ? 'Empreendimento vinculado com sucesso. Você pode alterá-lo a qualquer momento.'
+                        : 'Nenhum empreendimento vinculado. Se for um novo cliente, clique em "+ Cadastrar como novo cliente".'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Razão Social do Segurado na Apólice
+                    </Label>
+                    <Input
+                      type="text"
+                      value={seguradoNome}
+                      onChange={(e) => setSeguradoNome(e.target.value)}
+                      placeholder="Ex: BT FORTALEZA HOTEIS LTDA"
+                      className="h-8 text-xs font-medium"
+                      required
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* MODO 2: NOVO CLIENTE / EMPREENDIMENTO */
+                <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs text-blue-900 font-semibold">
+                    <span>Novo Empreendimento / Cliente (inclusão automática na base)</span>
+                    <span className="text-[10px] bg-blue-100 px-2 py-0.5 rounded text-blue-700 font-normal">
+                      Será salvo em empreendimentos
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-[10px] font-semibold text-blue-900">
+                        Nome / Razão Social do Novo Empreendimento
+                      </Label>
+                      <Input
+                        type="text"
+                        value={novoEmpNome}
+                        onChange={(e) => setNovoEmpNome(e.target.value)}
+                        placeholder="Ex: BT FORTALEZA HOTEIS LTDA"
+                        className="h-7 text-xs bg-white"
+                        required={isNovoEmpreendimentoMode}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold text-blue-900">CNPJ</Label>
+                      <Input
+                        type="text"
+                        value={novoEmpCnpj}
+                        onChange={(e) => setNovoEmpCnpj(e.target.value)}
+                        placeholder="38.594.094/0001-47"
+                        className="h-7 text-xs font-mono bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div className="space-y-1">
@@ -937,8 +1097,13 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                   <Input
                     type="text"
                     value={seguradoCnpj}
-                    onChange={(e) => setSeguradoCnpj(e.target.value)}
-                    placeholder="04.300.917/0001-62"
+                    onChange={(e) => {
+                      setSeguradoCnpj(e.target.value)
+                      if (isNovoEmpreendimentoMode && !novoEmpCnpj) {
+                        setNovoEmpCnpj(e.target.value)
+                      }
+                    }}
+                    placeholder="38.594.094/0001-47"
                     className="h-8 text-xs font-mono"
                   />
                 </div>

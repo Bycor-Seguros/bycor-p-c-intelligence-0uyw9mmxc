@@ -1,0 +1,68 @@
+{
+  "seguradora": "AXA Seguros S.A.",
+  "numeroApolice": "03739924",
+  "proposta": "15772067",
+  "ramo": "01.96 RISCOS NOMEADOS",
+  "vigencia": {
+    "inicio": "",
+    "fim": ""
+  },
+  "segurado": {
+    "nome": "",
+    "cnpj": "",
+    "endereco": ""
+  },
+  "corretor": {
+    "nome": "BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA",
+    "cnpj": "17.267.516/0001-08",
+    "susep": "202027021"
+  },
+  "financeiro": {
+    "premioLiquido": null,
+    "custoApolice": 0,
+    "iof": null,
+    "premioTotal": null,
+    "condicoesPagamento": "4 (1+3)",
+    "formaPagamento": "Boleto Santander",
+    "parcelas": []
+  },
+  "limites": {
+    "lmga": null,
+    "vrdTotalDm": null,
+    "vrdTotalLc": null,
+    "vrdTotalDmPlusLc": null,
+    "lmiIncendioBasica": null,
+    "formaContratacao": "1º RISCO RELATIVO"
+  },
+  "coberturas": [
+    {
+      "nome": "Tumulto, Greves, \"Lock-Out\", Atos Dolosos, Vandalismo E Comoção Civil",
+      "categoriaNormalizada": "Tumultos/Greves/Lock-out/Vandalismo",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1500,
+      "franquiaPos": "Prêmio líquido - R$"
+    }
+  ],
+  "diagnostico": {
+    "seguradoraDetectada": "AXA Seguros S.A.",
+    "totalPaginas": 204,
+    "fragmentosBrutosCount": 8007,
+    "camposIdentificados": {
+      "numeroApolice": true,
+      "numeroProposta": true,
+      "vigenciaInicio": false,
+      "vigenciaFim": false,
+      "seguradoNome": false,
+      "seguradoCnpj": false,
+      "corretorNome": true,
+      "premioLiquido": false,
+      "premioTotal": false,
+      "lmga": false,
+      "vrdTotalDm": false,
+      "coberturas": true,
+      "formaContratacao": true
+    },
+    "linhasCoberturasLidas": 1,
+    "timestamp": "2026-10-26T17:33:28.925Z"
+  }
+}
