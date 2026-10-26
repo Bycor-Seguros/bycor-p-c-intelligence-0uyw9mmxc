@@ -56,6 +56,7 @@ import {
   ApoliceExtracaoResultado,
   ExtractedApoliceCobertura,
 } from '@/services/apoliceReader'
+import { normalizarSeguradora } from '@/services/seguradoraNormalizer'
 import { ApoliceMinima, buildMapaSucessao } from '@/services/apoliceStatusService'
 
 interface EmpreendimentoOption {
@@ -185,10 +186,18 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
       const res = await parseApolicePdf(file)
       setExtractionResult(res)
 
+      // Normaliza nome canônico da seguradora contra o cadastro
+      const segNorm = await normalizarSeguradora(res.seguradoraNome, {
+        cnpj: res.seguradoraCnpj,
+        susep: res.seguradoraSusep,
+        razaoSocial: res.seguradoraRazaoSocial,
+        autoCadastrar: false,
+      })
+
       // Preenche os campos editáveis
-      setSeguradoraNome(res.seguradoraNome || '')
-      setSeguradoraCnpj(res.seguradoraCnpj || '')
-      setSeguradoraSusep(res.seguradoraSusep || '')
+      setSeguradoraNome(segNorm.nomeCanonica || res.seguradoraNome || '')
+      setSeguradoraCnpj(segNorm.cnpj || res.seguradoraCnpj || '')
+      setSeguradoraSusep(segNorm.susep || res.seguradoraSusep || '')
       setNumeroApolice(res.numeroApolice || '')
       setNumeroProposta(res.numeroProposta || '')
       setRamo(res.ramoCompleto || res.ramoNome || '')
@@ -432,12 +441,22 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
         razaoLmiVr = valLmiBasica / vrdDm
       }
 
+      // Garante normalização canônica antes de persistir no banco
+      const segResolvida = await normalizarSeguradora(seguradoraNome.trim(), {
+        cnpj: seguradoraCnpj.trim(),
+        susep: seguradoraSusep.trim(),
+        autoCadastrar: true,
+      })
+      const nomeSeguradoraCanonica = segResolvida.nomeCanonica || seguradoraNome.trim()
+
       // Gera id_apolice canônico se novo (ex: "btt_morumbi_axa_rn_2026")
       let idApoliceCanonical = ''
       const empSelected = empreendimentos.find((e) => e.id === selectedEmpreendimentoId)
       const empKey = empSelected?.id_empreendimento || 'apolice'
       const anoFim = vigenciaFim ? vigenciaFim.slice(0, 4) : new Date().getFullYear().toString()
-      const segShort = (seguradoraNome || 'seg').toLowerCase().includes('axa') ? 'axa' : 'apol'
+      const segShort = (nomeSeguradoraCanonica || 'seg').toLowerCase().includes('axa')
+        ? 'axa'
+        : 'apol'
       idApoliceCanonical = `${empKey}_${segShort}_rn_${anoFim}`
 
       const payloadApolice = {
@@ -445,7 +464,7 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
         id_empreendimento: selectedEmpreendimentoId || null,
         segurado_na_apolice: seguradoNome.trim(),
         cnpj_segurado: seguradoCnpj.trim(),
-        seguradora: seguradoraNome.trim(),
+        seguradora: nomeSeguradoraCanonica,
         numero_apolice: numeroApolice.trim(),
         ramo: ramo.trim() || '01.96 RISCOS NOMEADOS',
         corretor: corretorNome.trim(),
@@ -553,7 +572,7 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
           registro_id: savedApoliceId,
           tabela: 'apolices',
           data: new Date().toISOString().slice(0, 10),
-          cia: seguradoraNome,
+          cia: nomeSeguradoraCanonica,
           texto: `Apólice emitida e registrada via leitor de PDF (Vigência: ${formatDate(vigenciaInicio)} a ${formatDate(vigenciaFim)}; Prêmio: ${formatCurrency(pTot || 0)}).`,
           autor: user?.id || null,
           timestamp: new Date().toISOString(),
@@ -583,7 +602,7 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
             registro_id: antecessoraIdentificada.id,
             tabela: 'apolices',
             data: new Date().toISOString().slice(0, 10),
-            cia: seguradoraNome,
+            cia: nomeSeguradoraCanonica,
             texto: `RENOVAÇÃO CONCLUÍDA: Apólice renovada pela sucessora nº ${numeroApolice.trim()} (ID ${savedApoliceId}) com vigência a partir de ${formatDate(vigenciaInicio)}.`,
             autor: user?.id || null,
             timestamp: new Date().toISOString(),

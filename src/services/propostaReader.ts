@@ -220,7 +220,7 @@ const SEGURADORAS_CONHECIDAS: Array<{
     matchNames: ['mitsui', 'msig', 'mitsui sumitomo'],
     canonica: 'Mitsui Sumitomo Seguros S.A.',
     razaoSocial: 'Mitsui Sumitomo Seguros S.A.',
-    cnpj: '33.048.406/0001-49',
+    cnpj: '33.016.221/0001-07',
     susep: '05266',
   },
   {

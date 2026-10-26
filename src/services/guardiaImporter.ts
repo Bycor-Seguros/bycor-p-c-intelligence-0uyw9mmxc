@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx'
 import pb from '@/lib/pocketbase/client'
+import {
+  normalizarSeguradora,
+  normalizarNomeSeguradoraSync,
+  getSeguradorasCadastro,
+} from './seguradoraNormalizer'
 
 export interface CollectionChangeStats {
   created: number
@@ -1001,6 +1006,9 @@ export async function processGuardiaWorkbook(
     let unchangedCount = 0
     let rowIdx = 0
 
+    // Pré-carrega cadastro de seguradoras para normalização unificada
+    const seguradorasCadastradas = await getSeguradorasCadastro().catch(() => [])
+
     for (const r of rows) {
       rowIdx++
       const idApolice = String(r['id_apolice'] || '').trim()
@@ -1037,12 +1045,29 @@ export async function processGuardiaWorkbook(
         statusVal = 'ativa'
       }
 
+      // Normalização canônica da seguradora
+      const rawSeguradora = String(r['seguradora'] || '').trim()
+      let seguradoraCanonica = rawSeguradora
+      if (rawSeguradora) {
+        // Tenta casar primeiro de forma síncrona/rápida com base no cache
+        const matched = seguradorasCadastradas.find(
+          (s) =>
+            s.nome.trim().toLowerCase() === rawSeguradora.toLowerCase() ||
+            normalizarNomeSeguradoraSync(s.nome) === normalizarNomeSeguradoraSync(rawSeguradora),
+        )
+        if (matched) {
+          seguradoraCanonica = matched.nome
+        } else {
+          seguradoraCanonica = normalizarNomeSeguradoraSync(rawSeguradora) || rawSeguradora
+        }
+      }
+
       const payload = {
         id_apolice: idApolice,
         id_empreendimento: empRecordId,
         segurado_na_apolice: String(r['segurado_na_apolice'] || '').trim(),
         cnpj_segurado: String(r['cnpj_segurado'] || '').trim(),
-        seguradora: String(r['seguradora'] || '').trim(),
+        seguradora: seguradoraCanonica,
         numero_apolice: String(r['numero_apolice'] || '').trim(),
         ramo: String(r['ramo'] || '').trim(),
         corretor: String(r['corretor'] || 'Bycor Consultoria e Corretora de Seguros').trim(),

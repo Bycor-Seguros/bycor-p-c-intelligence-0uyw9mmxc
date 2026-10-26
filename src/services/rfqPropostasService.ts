@@ -1,5 +1,6 @@
 import pb from '@/lib/pocketbase/client'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
+import { normalizarSeguradora } from './seguradoraNormalizer'
 
 export type RfqSeguradoraStatus = 'Convidada' | 'Kit entregue' | 'Proposta recebida' | 'Declinou'
 
@@ -437,96 +438,18 @@ export async function autoCadastrarOuLocalizarSeguradora(dados: {
   susep?: string
   razaoSocial?: string
 }): Promise<{ id: string; nome: string; autoCadastrada: boolean }> {
-  const nomeBuscado = dados.nome.trim()
-  const nomeLower = nomeBuscado.toLowerCase()
+  const res = await normalizarSeguradora(dados.nome, {
+    cnpj: dados.cnpj,
+    susep: dados.susep,
+    razaoSocial: dados.razaoSocial,
+    autoCadastrar: true,
+  })
 
-  // 1. Busca todas as seguradoras cadastradas no Mapa
-  const todas = await pb.collection('seguradoras').getFullList<{
-    id: string
-    nome: string
-    observacoes?: string
-    contatos?: any
-    historico_relacionamento?: any[]
-  }>()
-
-  // Casamento exato ou por tokens canônicos com verificação estrita
-  let match = todas.find((s) => s.nome.toLowerCase() === nomeLower)
-
-  if (!match) {
-    // Casamento estrito por nome canônico normalizado
-    const canonicaBuscada = canonicalizeInsurerName(nomeBuscado)
-    if (canonicaBuscada) {
-      match = todas.find((s) => {
-        const canonicaExistente = canonicalizeInsurerName(s.nome)
-        return canonicaExistente && canonicaExistente === canonicaBuscada
-      })
-    }
+  return {
+    id: res.id || '',
+    nome: res.nomeCanonica,
+    autoCadastrada: res.autoCadastrada,
   }
-
-  if (match) {
-    // Já existe! Se houver CNPJ/SUSEP novo e o cadastro estiver com observações vazias, atualiza suavemente
-    const updates: Record<string, any> = {}
-    let observacaoAtual = match.observacoes || ''
-    let updatedNeeded = false
-
-    if (dados.cnpj && !observacaoAtual.includes(dados.cnpj)) {
-      observacaoAtual += `${observacaoAtual ? ' | ' : ''}CNPJ: ${dados.cnpj}`
-      updatedNeeded = true
-    }
-    if (dados.susep && !observacaoAtual.includes(dados.susep)) {
-      observacaoAtual += `${observacaoAtual ? ' | ' : ''}SUSEP: ${dados.susep}`
-      updatedNeeded = true
-    }
-
-    if (updatedNeeded) {
-      try {
-        await pb.collection('seguradoras').update(match.id, {
-          observacoes: observacaoAtual,
-        })
-      } catch (e) {
-        console.warn('Erro ao atualizar dados complementares da seguradora:', e)
-      }
-    }
-
-    return { id: match.id, nome: match.nome, autoCadastrada: false }
-  }
-
-  // Não existe: cria automaticamente no Mapa de Mercado!
-  const hoje = new Date().toISOString().slice(0, 10)
-  const obs = [
-    'Cadastrada a partir de proposta (extração automática) — completar dados',
-    dados.cnpj ? `CNPJ: ${dados.cnpj}` : '',
-    dados.susep ? `SUSEP: ${dados.susep}` : '',
-  ]
-    .filter(Boolean)
-    .join(' | ')
-
-  const payload = {
-    nome: dados.razaoSocial || dados.nome,
-    posicionamento: 'Seguradora de Ramos Elementares e P&C (Auto-cadastrada via Proposta)',
-    apetite_segmentos: { 'Hotéis & Resorts': 'Médio' },
-    faixa_lmi: 'Sob consulta',
-    condicoes_tipicas: 'Cadastro originado de upload de proposta de seguro.',
-    observacoes: obs,
-    contatos: {
-      email: '',
-      telefone: '',
-      responsavel: 'Cadastro via Extração de Proposta',
-    },
-    historico_relacionamento: [
-      {
-        data: hoje,
-        fonte: 'Upload de Proposta',
-        observacao: `Seguradora cadastrada automaticamente a partir do upload de proposta/cotação${
-          dados.cnpj ? ` (CNPJ ${dados.cnpj})` : ''
-        }.`,
-      },
-    ],
-  }
-
-  const nova = await pb.collection('seguradoras').create<{ id: string; nome: string }>(payload)
-
-  return { id: nova.id, nome: nova.nome, autoCadastrada: true }
 }
 
 /**

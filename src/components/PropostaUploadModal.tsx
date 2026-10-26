@@ -38,6 +38,7 @@ import {
 } from '@/services/propostaReader'
 import { registrarPropostaComArquivo, RfqSeguradoraRecord } from '@/services/rfqPropostasService'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
+import { normalizarSeguradora } from '@/services/seguradoraNormalizer'
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { isCoberturaBasica, isCoberturaLucrosCessantes } from '@/services/submissionKitService'
 import { matchCanonicalCategory } from '@/services/riskCardReader'
@@ -266,36 +267,30 @@ export default function PropostaUploadModal({
   }
 
   // Preenche formulário da prévia a partir do segmento extraído
-  const applySegmentToForm = (seg: PropostaSegmentoExtracao) => {
+  const applySegmentToForm = async (seg: PropostaSegmentoExtracao) => {
     setSelectedSegment(seg)
 
-    // Tenta casar a seguradora detectada com as do banco (match estrito por token/canônica, sem colisão de substring)
-    const detectedCanonical = canonicalizeInsurerName(seg.seguradora.nomeCanonica)
-    const matchedBank = seguradorasDisponiveis.find((s) => {
-      const sCanonical = canonicalizeInsurerName(s.nome)
-      if (detectedCanonical && sCanonical) {
-        return detectedCanonical === sCanonical
-      }
-      const sLower = s.nome.toLowerCase().trim()
-      const detectedName = seg.seguradora.nomeCanonica.toLowerCase().trim()
-      return sLower === detectedName
+    // Normaliza contra o cadastro do banco ou dicionário canônico (por CNPJ e por nome)
+    const segNorm = await normalizarSeguradora(seg.seguradora.nomeCanonica, {
+      cnpj: seg.seguradora.cnpj,
+      susep: seg.seguradora.susep,
+      razaoSocial: seg.seguradora.razaoSocial,
+      autoCadastrar: false,
     })
 
-    if (matchedBank) {
-      setTargetSeguradoraId(matchedBank.id)
-      setSeguradoraNome(matchedBank.nome)
+    if (segNorm.id) {
+      setTargetSeguradoraId(segNorm.id)
+      setSeguradoraNome(segNorm.nomeCanonica)
     } else if (initialSeguradoraId) {
       setTargetSeguradoraId(initialSeguradoraId)
-      setSeguradoraNome(
-        initialSeguradoraNome || seg.seguradora.razaoSocial || seg.seguradora.nomeCanonica,
-      )
+      setSeguradoraNome(initialSeguradoraNome || segNorm.nomeCanonica)
     } else {
-      setTargetSeguradoraId('auto') // Marca para auto-cadastro no Mapa
-      setSeguradoraNome(seg.seguradora.razaoSocial || seg.seguradora.nomeCanonica)
+      setTargetSeguradoraId('auto') // Marca para auto-cadastro no Mapa com o nome canônico
+      setSeguradoraNome(segNorm.nomeCanonica)
     }
 
-    setSeguradoraCnpj(seg.seguradora.cnpj || '')
-    setSeguradoraSusep(seg.seguradora.susep || '')
+    setSeguradoraCnpj(segNorm.cnpj || seg.seguradora.cnpj || '')
+    setSeguradoraSusep(segNorm.susep || seg.seguradora.susep || '')
     setDataProposta(seg.dataCotacao || new Date().toISOString().slice(0, 10))
     setNumeroCotacao(seg.numeroCotacao || '')
     setVersao(seg.versao || '1')

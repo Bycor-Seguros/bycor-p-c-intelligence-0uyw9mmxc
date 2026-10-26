@@ -186,7 +186,7 @@ export interface SeguradoraApoliceInfo {
 export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo | null {
   const norm = fullText.toLowerCase()
 
-  // 1. AXA Seguros S/A
+  // 1. AXA Seguros S.A.
   if (
     norm.includes('axa seguros') ||
     norm.includes('axa.com.br') ||
@@ -195,13 +195,30 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
   ) {
     return {
       canonica: 'AXA Seguros S.A.',
-      razaoSocial: 'AXA Seguros S/A',
+      razaoSocial: 'AXA Seguros S.A.',
       cnpj: '19.323.190/0001-06',
       susep: '0285-2',
     }
   }
 
-  // 2. Porto Seguro
+  // 2. Mitsui Sumitomo Seguros S.A. (MSIG)
+  if (
+    norm.includes('mitsui sumitomo') ||
+    norm.includes('mitsui') ||
+    norm.includes('msig') ||
+    norm.includes('33.016.221/0001-07') ||
+    norm.includes('05266') ||
+    norm.includes('06602')
+  ) {
+    return {
+      canonica: 'Mitsui Sumitomo Seguros S.A.',
+      razaoSocial: 'Mitsui Sumitomo Seguros S.A.',
+      cnpj: '33.016.221/0001-07',
+      susep: '05266',
+    }
+  }
+
+  // 3. Porto Seguro
   if (
     norm.includes('porto seguro') ||
     norm.includes('61.198.164/0001-60') ||
@@ -215,7 +232,7 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
     }
   }
 
-  // 3. Chubb
+  // 4. Chubb
   if (
     norm.includes('chubb seguros') ||
     norm.includes('03.502.099/0001-18') ||
@@ -229,7 +246,7 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
     }
   }
 
-  // 4. Tokio Marine
+  // 5. Tokio Marine
   if (
     norm.includes('tokio marine') ||
     norm.includes('33.164.021/0001-00') ||
@@ -243,7 +260,7 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
     }
   }
 
-  // 5. Allianz
+  // 6. Allianz
   if (
     norm.includes('allianz seguros') ||
     norm.includes('061.573.796/0001-66') ||
@@ -257,13 +274,23 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
     }
   }
 
-  // 6. Zurich
+  // 7. Zurich
   if (norm.includes('zurich') || norm.includes('17.197.385/0001-21') || norm.includes('05495')) {
     return {
       canonica: 'Zurich Minas Brasil Seguros S.A.',
       razaoSocial: 'Zurich Minas Brasil Seguros S.A.',
       cnpj: '17.197.385/0001-21',
       susep: '05495',
+    }
+  }
+
+  // 8. Ezze
+  if (norm.includes('ezze') || norm.includes('31.534.848/0001-24') || norm.includes('03158')) {
+    return {
+      canonica: 'Ezze Seguros S.A.',
+      razaoSocial: 'Ezze Seguros S.A.',
+      cnpj: '31.534.848/0001-24',
+      susep: '03158',
     }
   }
 
@@ -284,8 +311,8 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   // ----------------------------------------------------
   // 1. Identificação da Seguradora (Pág 2 / Pág 1 / Rodapé)
   // ----------------------------------------------------
-  let seguradoraNome = 'AXA Seguros S/A'
-  let seguradoraRazaoSocial = 'AXA Seguros S/A'
+  let seguradoraNome = 'AXA Seguros S.A.'
+  let seguradoraRazaoSocial = 'AXA Seguros S.A.'
   let seguradoraCnpj = '19.323.190/0001-06'
   let seguradoraSusep = '0285-2'
   let filial = 'São Paulo'
@@ -2294,9 +2321,8 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   const segAntM = p1.text.match(/Seguradora\s+anterior:\s*([^\n\r]+)/i)
   if (segAntM) {
     seguradoraAnterior = segAntM[1].trim()
-    // Normaliza Tokio marine -> Tokio Marine
     if (/tokio\s*marine/i.test(seguradoraAnterior)) {
-      seguradoraAnterior = 'Tokio Marine'
+      seguradoraAnterior = 'Tokio Marine Seguradora S.A.'
     }
   }
 

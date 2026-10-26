@@ -9,6 +9,7 @@ import {
   matchesEmpreendimento,
   buildSinistroDedupeKey,
 } from '@/services/guardiaImporter'
+import { normalizarSeguradora, normalizarNomeSeguradoraSync } from '@/services/seguradoraNormalizer'
 
 // ==========================================
 // TIPAGEM DO OBJETO ESTRUTURADO CARTÃO DE RISCO
@@ -673,7 +674,8 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
       if (isChecked(colC) && /renova/i.test(colC)) result.seguroRenovacao = true
     }
     if (normD.includes('seguradora')) {
-      result.seguradoraAnterior = colE || colD.replace(/^seguradora[:\s]*/i, '').trim()
+      const rawSeg = colE || colD.replace(/^seguradora[:\s]*/i, '').trim()
+      result.seguradoraAnterior = normalizarNomeSeguradoraSync(rawSeg) || rawSeg
     }
     if (normD.includes('apolice')) {
       result.numeroApoliceAnterior = colE || colD.replace(/^n.*apolice[:\s]*/i, '').trim()
@@ -1396,13 +1398,21 @@ export async function saveRiskCardToDatabase(
     0
 
   if (!apoliceRecordId) {
+    // Normaliza seguradora anterior de forma canônica antes de criar processo de apólice
+    let seguradoraCanonica = 'A Cotar'
+    if (card.seguradoraAnterior && card.seguradoraAnterior !== 'A Cotar') {
+      const segNorm = await normalizarSeguradora(card.seguradoraAnterior, { autoCadastrar: true })
+      seguradoraCanonica =
+        segNorm.nomeCanonica || normalizarNomeSeguradoraSync(card.seguradoraAnterior)
+    }
+
     // Cria novo processo de apólice (Status prospect)
     const apolPayload = {
       id_apolice: `proc_risco_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       id_empreendimento: empRecordId,
       segurado_na_apolice: card.segurado,
       cnpj_segurado: card.cnpj,
-      seguradora: card.seguradoraAnterior || 'A Cotar',
+      seguradora: seguradoraCanonica,
       numero_apolice: card.numeroApoliceAnterior || 'Processo de Cotação',
       ramo: match.ramoCanonicaCartao,
       data_inicio: card.vigenciaInicio || null,
