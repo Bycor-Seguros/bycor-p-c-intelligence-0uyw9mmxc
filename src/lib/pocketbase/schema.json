@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-26T12:30:15.681Z",
+  "generatedAt": "2026-10-26T12:58:09.746Z",
   "collections": [
     {
       "name": "users",
@@ -1241,6 +1241,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_seguradoras_nome ON seguradoras (nome)"]
