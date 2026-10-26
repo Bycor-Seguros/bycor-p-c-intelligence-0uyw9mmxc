@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Loader2,
 } from 'lucide-react'
+import { ApoliceMinima, buildMapaSucessao } from '@/services/apoliceStatusService'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -123,6 +124,59 @@ export default function AprovacaoPage() {
           await pb.collection('apolices').update(selectedAudit.apolice, {
             status: 'ativa',
           })
+
+          // 2.1 Vincular sucessão e registrar evento de renovação se houver apólice antecessora
+          try {
+            const apoliceAprovada = await pb
+              .collection('apolices')
+              .getOne<ApoliceMinima>(selectedAudit.apolice)
+
+            const empId = apoliceAprovada.id_empreendimento
+            const cnpj = apoliceAprovada.cnpj_segurado
+            let filterExp = ''
+            if (empId && cnpj) {
+              filterExp = `id_empreendimento="${empId}" || cnpj_segurado="${cnpj}"`
+            } else if (empId) {
+              filterExp = `id_empreendimento="${empId}"`
+            } else if (cnpj) {
+              filterExp = `cnpj_segurado="${cnpj}"`
+            }
+
+            if (filterExp) {
+              const irmas = await pb.collection('apolices').getFullList<ApoliceMinima>({
+                filter: filterExp,
+              })
+              const mapa = buildMapaSucessao(irmas)
+              const rel = mapa.get(apoliceAprovada.id)
+              if (rel?.antecessora) {
+                const dataRenovacao = apoliceAprovada.data_inicio
+                  ? `${apoliceAprovada.data_inicio.slice(0, 10)} 00:00:00.000Z`
+                  : `${now.slice(0, 10)} 00:00:00.000Z`
+
+                await pb.collection('apolices').update(rel.antecessora.id, {
+                  status: 'renovada',
+                  renovada_em: dataRenovacao,
+                  apolice_sucessora: apoliceAprovada.id,
+                })
+
+                await pb.collection('historico').create({
+                  registro_id: rel.antecessora.id,
+                  tabela: 'apolices',
+                  data: now.slice(0, 10),
+                  cia: selectedAudit.expand?.apolice?.seguradora || 'Seguradora',
+                  texto: `RENOVAÇÃO HOMOLOGADA EM C6: Apólice renovada pela nova apólice oficial nº ${
+                    apoliceAprovada.numero_apolice ||
+                    apoliceAprovada.id_apolice ||
+                    apoliceAprovada.id
+                  } aprovada por ${analistaNome}.`,
+                  autor: user?.id,
+                  timestamp: now,
+                })
+              }
+            }
+          } catch (succErr) {
+            console.warn('Erro ao verificar/vincular sucessão na aprovação C6:', succErr)
+          }
         }
 
         // 3. Write immutable audit trail into historico

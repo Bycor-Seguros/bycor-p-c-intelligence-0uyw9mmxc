@@ -69,16 +69,24 @@ export default function Layout() {
         let urgent = 0
         records.forEach((ap) => {
           const rel = mapa.get(ap.id)
-          const statusEfetivo = rel?.statusDerivado || ap.status || ''
+          const statusEfetivo = (rel?.statusDerivado || ap.status || '').toUpperCase().trim()
+          const rawStatus = (ap.status || '').toLowerCase().trim()
           const days = getDaysRemaining(ap.data_fim)
 
-          // Renovada não é urgente (já foi sucedida)
-          if (statusEfetivo === 'RENOVADA' || statusEfetivo === 'PERDIDA') {
+          // Apólices já renovadas (statusDerivado RENOVADA, status renovada, ou com sucessora/renovada_em) não geram alerta
+          if (
+            statusEfetivo === 'RENOVADA' ||
+            rawStatus === 'renovada' ||
+            Boolean(rel?.sucessora) ||
+            Boolean(ap.apolice_sucessora) ||
+            Boolean(ap.renovada_em) ||
+            statusEfetivo === 'PERDIDA'
+          ) {
             return
           }
           if (statusEfetivo === 'VENCIDA' || statusEfetivo === 'EM EMISSÃO') {
             urgent++
-          } else if (days !== null && days <= 60) {
+          } else if (days !== null && days <= 60 && days >= 0) {
             urgent++
           }
         })

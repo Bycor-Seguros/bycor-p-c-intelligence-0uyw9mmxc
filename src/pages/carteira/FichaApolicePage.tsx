@@ -63,6 +63,8 @@ interface ApoliceDetail {
   razao_lmi_vr_dm: number
   status: string
   status_manual?: 'Perdida' | 'Em Emissão' | string | null
+  renovada_em?: string | null
+  apolice_sucessora?: string | null
   comissao: number
   iof: number
   endossos: string
@@ -79,6 +81,14 @@ interface ApoliceDetail {
       area_construida_m2: number
       num_unidades: number
       tipo_construcao: string
+    }
+    apolice_sucessora?: {
+      id: string
+      id_apolice?: string
+      numero_apolice?: string
+      seguradora?: string
+      data_inicio?: string
+      data_fim?: string
     }
   }
 }
@@ -157,7 +167,7 @@ export default function FichaApolicePage() {
     try {
       setLoading(true)
       const ap = await pb.collection('apolices').getOne<ApoliceDetail>(id, {
-        expand: 'id_empreendimento',
+        expand: 'id_empreendimento,apolice_sucessora',
       })
       setApolice(ap)
 
@@ -398,23 +408,46 @@ export default function FichaApolicePage() {
                 </span>
               </div>
 
-              {/* Relação de Sucessão / Antecessão */}
-              {relacaoSucessao?.sucessora && (
-                <div className="mt-1 text-xs text-[#16578B] flex items-center gap-1.5 font-medium">
-                  <ArrowRight className="w-3.5 h-3.5" />
+              {/* Relação de Sucessão / Antecessão e Evento de Renovação Estruturado */}
+              {(relacaoSucessao?.sucessora || apolice.apolice_sucessora || apolice.renovada_em) && (
+                <div className="mt-1 text-xs text-[#16578B] flex flex-wrap items-center gap-1.5 font-medium">
+                  <ArrowRight className="w-3.5 h-3.5 text-[#16578B]" />
                   <span>Sucedida pela apólice</span>
                   <Link
-                    to={`/carteira/apolice/${relacaoSucessao.sucessora.id}`}
+                    to={`/carteira/apolice/${
+                      relacaoSucessao?.sucessora?.id ||
+                      apolice.expand?.apolice_sucessora?.id ||
+                      apolice.apolice_sucessora
+                    }`}
                     className="font-bold underline hover:text-[#0F2B46]"
                   >
-                    {relacaoSucessao.sucessora.numero_apolice ||
-                      relacaoSucessao.sucessora.id_apolice ||
+                    {relacaoSucessao?.sucessora?.numero_apolice ||
+                      apolice.expand?.apolice_sucessora?.numero_apolice ||
+                      relacaoSucessao?.sucessora?.id_apolice ||
+                      apolice.expand?.apolice_sucessora?.id_apolice ||
                       'Ficha da Sucessora'}
                   </Link>
-                  <span className="text-[11px] text-gray-400">
-                    ({formatDate(relacaoSucessao.sucessora.data_inicio)} até{' '}
-                    {formatDate(relacaoSucessao.sucessora.data_fim)})
-                  </span>
+                  {(relacaoSucessao?.sucessora?.data_inicio ||
+                    apolice.expand?.apolice_sucessora?.data_inicio) && (
+                    <span className="text-[11px] text-gray-400">
+                      (Vigência:{' '}
+                      {formatDate(
+                        relacaoSucessao?.sucessora?.data_inicio ||
+                          apolice.expand?.apolice_sucessora?.data_inicio,
+                      )}{' '}
+                      até{' '}
+                      {formatDate(
+                        relacaoSucessao?.sucessora?.data_fim ||
+                          apolice.expand?.apolice_sucessora?.data_fim,
+                      )}
+                      )
+                    </span>
+                  )}
+                  {apolice.renovada_em && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-[#1E40AF]">
+                      Renovada em: {formatDate(apolice.renovada_em)}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -663,6 +696,38 @@ export default function FichaApolicePage() {
                   {formatCurrency(apolice.lmi_incendio_basica)}
                 </div>
               </div>
+
+              {(apolice.renovada_em || apolice.apolice_sucessora) && (
+                <div className="space-y-1 col-span-1 sm:col-span-2 lg:col-span-3 p-3 bg-blue-50/60 rounded-lg border border-blue-100">
+                  <span className="text-[#16578B] font-semibold flex items-center gap-1.5">
+                    <FileCheck className="w-3.5 h-3.5" />
+                    Evento de Renovação & Evolução da Carteira
+                  </span>
+                  <div className="text-xs text-gray-700 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {apolice.renovada_em && (
+                      <span>
+                        <strong>Data do Evento de Renovação:</strong>{' '}
+                        {formatDate(apolice.renovada_em)}
+                      </span>
+                    )}
+                    {apolice.apolice_sucessora && (
+                      <span>
+                        <strong>Vínculo com Sucessora:</strong>{' '}
+                        <Link
+                          to={`/carteira/apolice/${
+                            apolice.expand?.apolice_sucessora?.id || apolice.apolice_sucessora
+                          }`}
+                          className="font-bold underline text-[#16578B] hover:text-[#0F2B46]"
+                        >
+                          {apolice.expand?.apolice_sucessora?.numero_apolice ||
+                            apolice.expand?.apolice_sucessora?.id_apolice ||
+                            apolice.apolice_sucessora}
+                        </Link>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {apolice.endossos && (

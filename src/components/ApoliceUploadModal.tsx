@@ -565,6 +565,32 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
       let descSucessao = ''
       if (antecessoraIdentificada) {
         descSucessao = `Sucessão identificada: renova a apólice anterior nº ${antecessoraIdentificada.numero_apolice || antecessoraIdentificada.id_apolice}`
+
+        // Registrar formalmente o evento de renovação na apólice original/antecessora
+        try {
+          const dataRenovacaoEvento = vigenciaInicio
+            ? `${vigenciaInicio.slice(0, 10)} 00:00:00.000Z`
+            : `${new Date().toISOString().slice(0, 10)} 00:00:00.000Z`
+
+          await pb.collection('apolices').update(antecessoraIdentificada.id, {
+            status: 'renovada',
+            renovada_em: dataRenovacaoEvento,
+            apolice_sucessora: savedApoliceId,
+          })
+
+          // Trilha histórica do evento de renovação na apólice antecessora
+          await pb.collection('historico').create({
+            registro_id: antecessoraIdentificada.id,
+            tabela: 'apolices',
+            data: new Date().toISOString().slice(0, 10),
+            cia: seguradoraNome,
+            texto: `RENOVAÇÃO CONCLUÍDA: Apólice renovada pela sucessora nº ${numeroApolice.trim()} (ID ${savedApoliceId}) com vigência a partir de ${formatDate(vigenciaInicio)}.`,
+            autor: user?.id || null,
+            timestamp: new Date().toISOString(),
+          })
+        } catch (succErr) {
+          console.warn('Erro ao registrar vínculo de renovação na apólice antecessora:', succErr)
+        }
       }
 
       setSaveSuccessSummary({

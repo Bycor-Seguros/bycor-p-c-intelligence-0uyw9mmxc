@@ -42,6 +42,8 @@ interface ApolicePortfolioItem {
   razao_lmi_vr_dm: number
   status: string
   status_manual?: 'Perdida' | 'Em Emissão' | string | null
+  renovada_em?: string | null
+  apolice_sucessora?: string | null
   expand?: {
     id_empreendimento?: {
       id?: string
@@ -49,6 +51,13 @@ interface ApolicePortfolioItem {
       nome_empreendimento: string
       uf: string
       segmento: string
+    }
+    apolice_sucessora?: {
+      id?: string
+      id_apolice?: string
+      numero_apolice?: string
+      data_inicio?: string
+      data_fim?: string
     }
   }
 }

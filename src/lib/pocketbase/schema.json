@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-26T11:24:24.951Z",
+  "generatedAt": "2026-10-26T12:30:15.681Z",
   "collections": [
     {
       "name": "users",
@@ -710,6 +710,19 @@
           "required": false,
           "system": false,
           "selectValues": ["Perdida", "Em Emissão"]
+        },
+        {
+          "name": "renovada_em",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "apolice_sucessora",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
         }
       ],
       "indexes": [

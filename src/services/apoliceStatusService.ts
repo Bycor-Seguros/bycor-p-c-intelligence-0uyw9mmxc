@@ -36,11 +36,20 @@ export interface ApoliceMinima {
   data_fim?: string
   status?: string
   status_manual?: 'Perdida' | 'Em Emissão' | string | null
+  renovada_em?: string | null
+  apolice_sucessora?: string | null
   expand?: {
     id_empreendimento?: {
       id?: string
       id_empreendimento?: string
       nome_empreendimento?: string
+    }
+    apolice_sucessora?: {
+      id?: string
+      numero_apolice?: string
+      id_apolice?: string
+      data_inicio?: string
+      data_fim?: string
     }
   }
 }
@@ -161,6 +170,12 @@ export function buildMapaSucessao(apolices: ApoliceMinima[]): Map<string, Relaca
   const mapa = new Map<string, RelacaoSucessao>()
   const hojeMs = getHojeMs()
 
+  // Index rápido por id para relacionamento direto de apolice_sucessora
+  const porId = new Map<string, ApoliceMinima>()
+  for (const ap of apolices) {
+    if (ap.id) porId.set(ap.id, ap)
+  }
+
   // Agrupar apólices por unidade de renovação (empreendimento + ramo)
   const grupos = new Map<string, ApoliceMinima[]>()
   for (const ap of apolices) {
@@ -169,7 +184,6 @@ export function buildMapaSucessao(apolices: ApoliceMinima[]): Map<string, Relaca
     list.push(ap)
     grupos.set(chave, list)
   }
-
   // Para cada grupo, ordenar cronologicamente por vigência (data_fim ou data_inicio)
   grupos.forEach((itens) => {
     // Ordenar do mais antigo ao mais recente
@@ -213,6 +227,17 @@ export function buildMapaSucessao(apolices: ApoliceMinima[]): Map<string, Relaca
         }
       }
 
+      // Se a apólice tiver apolice_sucessora persistida explicitamente, priorizar essa referência
+      if (!sucessora && atual.apolice_sucessora) {
+        sucessora = porId.get(atual.apolice_sucessora) || {
+          id: atual.apolice_sucessora,
+          numero_apolice: atual.expand?.apolice_sucessora?.numero_apolice,
+          id_apolice: atual.expand?.apolice_sucessora?.id_apolice,
+          data_inicio: atual.expand?.apolice_sucessora?.data_inicio,
+          data_fim: atual.expand?.apolice_sucessora?.data_fim,
+        }
+      }
+
       // Localizar antecessora imediata (a apólice que esta renova)
       let antecessora: ApoliceMinima | undefined = undefined
       for (let j = i - 1; j >= 0; j--) {
@@ -249,17 +274,22 @@ export function buildMapaSucessao(apolices: ApoliceMinima[]): Map<string, Relaca
         } else {
           statusDerivado = 'ATIVA'
         }
+      } else if (
+        rawStatus === 'renovada' ||
+        sucessora ||
+        atual.apolice_sucessora ||
+        atual.renovada_em
+      ) {
+        // Se já foi renovada (explicitamente gravada ou inferida por sucessora posterior)
+        statusDerivado = 'RENOVADA'
       } else if (fimAtualMs < hojeMs) {
         // Data fim < hoje: NUNCA exibir "ATIVA"
-        if (sucessora) {
-          // Regra 2: se existir apólice mais recente para o mesmo empreendimento + ramo -> Renovada
-          statusDerivado = 'RENOVADA'
-        } else if (manual === 'Perdida') {
+        if (manual === 'Perdida') {
           statusDerivado = 'PERDIDA'
         } else if (manual === 'Em Emissão') {
           statusDerivado = 'EM EMISSÃO'
         } else {
-          // Regra 3: Sem sucessora -> Vencida
+          // Sem sucessora -> Vencida
           statusDerivado = 'VENCIDA'
         }
       } else {
@@ -302,6 +332,11 @@ export function getStatusDerivadoSingle(
     return {
       statusDerivado: (apolice.status as any) || 'ATIVA',
     }
+  }
+
+  const rawSt = (apolice.status || '').toLowerCase().trim()
+  if (rawSt === 'renovada' || apolice.apolice_sucessora || apolice.renovada_em) {
+    return { statusDerivado: 'RENOVADA' }
   }
 
   if (fimMs < hojeMs) {

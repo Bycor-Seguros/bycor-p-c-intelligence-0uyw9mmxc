@@ -52,6 +52,8 @@ interface ApoliceItem {
   lmga: number
   status: string
   status_manual?: 'Perdida' | 'Em Emissão' | string | null
+  renovada_em?: string | null
+  apolice_sucessora?: string | null
   prospect_retorno?: string
   razao_lmi_vr_dm?: number
   expand?: {
@@ -74,6 +76,7 @@ export default function DashboardHome() {
   const [filterBucket, setFilterBucket] = useState<
     'todos' | '60' | '30' | '15' | 'vencidas' | 'nao_renovadas'
   >('todos')
+  const [showRenovadasHistorico, setShowRenovadasHistorico] = useState(false)
   const [rfqCount, setRfqCount] = useState(0)
   const [propostasCount, setPropostasCount] = useState(0)
   const [auditoriasCount, setAuditoriasCount] = useState(0)
@@ -134,55 +137,101 @@ export default function DashboardHome() {
     return buildMapaSucessao(apolices as ApoliceMinima[])
   }, [apolices])
 
-  // Calculate Buckets
-  const { bucket60, bucket30, bucket15, bucketVencidas, bucketNaoRenovadas } = useMemo(() => {
-    const b60: ApoliceItem[] = []
-    const b30: ApoliceItem[] = []
-    const b15: ApoliceItem[] = []
-    const bVenc: ApoliceItem[] = []
-    const bNaoRen: ApoliceItem[] = []
+  // Determina se a apólice já foi renovada (status derivado RENOVADA, status base renovada, ou vínculo com sucessora)
+  const isApoliceRenovada = (ap: ApoliceItem) => {
+    const rel = mapaSucessao.get(ap.id)
+    const stDerivado = (rel?.statusDerivado || ap.status || '').toUpperCase().trim()
+    const rawStatus = (ap.status || '').toLowerCase().trim()
+    return (
+      stDerivado === 'RENOVADA' ||
+      rawStatus === 'renovada' ||
+      Boolean(rel?.sucessora) ||
+      Boolean(ap.apolice_sucessora) ||
+      Boolean(ap.renovada_em)
+    )
+  }
+
+  // Estatísticas globais da carteira (mantém a contagem de renovadas nas métricas)
+  const statsCarteira = useMemo(() => {
+    let renovadasCount = 0
+    let ativasCount = 0
+    let totalContratos = apolices.length
 
     apolices.forEach((ap) => {
-      const rel = mapaSucessao.get(ap.id)
-      const stDerivado = (rel?.statusDerivado || ap.status || '').toUpperCase()
-
-      // Apólices já sucedidas ("RENOVADA") não devem lotar buckets de urgência de renovação
-      if (stDerivado === 'RENOVADA' || stDerivado === 'PERDIDA') {
-        return
-      }
-
-      if (stDerivado === 'NÃO RENOVADA') {
-        bNaoRen.push(ap)
-        return
-      }
-
-      const days = getDaysRemaining(ap.data_fim)
-      if (days === null) return
-
-      if (days < 0 || stDerivado === 'VENCIDA' || stDerivado === 'EM EMISSÃO') {
-        bVenc.push(ap)
-      } else if (days <= 7) {
-        // 15 days bucket: 7 a 1 dias (alta urgência)
-        b15.push(ap)
-      } else if (days <= 15) {
-        // 30 days bucket: 15 a 8 dias
-        b30.push(ap)
-      } else if (days <= 60) {
-        // 60 days bucket: 60 a 16 dias
-        b60.push(ap)
+      if (isApoliceRenovada(ap)) {
+        renovadasCount++
+      } else {
+        ativasCount++
       }
     })
 
+    const taxaRenovacao =
+      totalContratos > 0 ? Math.round((renovadasCount / totalContratos) * 100) : 0
     return {
-      bucket60: b60,
-      bucket30: b30,
-      bucket15: b15,
-      bucketVencidas: bVenc,
-      bucketNaoRenovadas: bNaoRen,
+      renovadasCount,
+      ativasCount,
+      totalContratos,
+      taxaRenovacao,
     }
   }, [apolices, mapaSucessao])
 
-  // Filtered renewal list
+  // Calculate Buckets (exclui apólices renovadas das contagens de atraso/alertas)
+  const { bucket60, bucket30, bucket15, bucketVencidas, bucketNaoRenovadas, renovadasList } =
+    useMemo(() => {
+      const b60: ApoliceItem[] = []
+      const b30: ApoliceItem[] = []
+      const b15: ApoliceItem[] = []
+      const bVenc: ApoliceItem[] = []
+      const bNaoRen: ApoliceItem[] = []
+      const bRen: ApoliceItem[] = []
+
+      apolices.forEach((ap) => {
+        const rel = mapaSucessao.get(ap.id)
+        const stDerivado = (rel?.statusDerivado || ap.status || '').toUpperCase().trim()
+
+        // Apólices já sucedidas/renovadas: SAEM dos buckets de atraso e urgência
+        if (isApoliceRenovada(ap)) {
+          bRen.push(ap)
+          return
+        }
+
+        if (stDerivado === 'PERDIDA') {
+          return
+        }
+
+        if (stDerivado === 'NÃO RENOVADA') {
+          bNaoRen.push(ap)
+          return
+        }
+
+        const days = getDaysRemaining(ap.data_fim)
+        if (days === null) return
+
+        if (days < 0 || stDerivado === 'VENCIDA' || stDerivado === 'EM EMISSÃO') {
+          bVenc.push(ap)
+        } else if (days <= 7) {
+          // 15 days bucket: 7 a 1 dias (alta urgência)
+          b15.push(ap)
+        } else if (days <= 15) {
+          // 30 days bucket: 15 a 8 dias
+          b30.push(ap)
+        } else if (days <= 60) {
+          // 60 days bucket: 60 a 16 dias
+          b60.push(ap)
+        }
+      })
+
+      return {
+        bucket60: b60,
+        bucket30: b30,
+        bucket15: b15,
+        bucketVencidas: bVenc,
+        bucketNaoRenovadas: bNaoRen,
+        renovadasList: bRen,
+      }
+    }, [apolices, mapaSucessao])
+
+  // Filtered renewal list (a lista operacional por vencimento deve conter apenas ações pendentes)
   const filteredList = useMemo(() => {
     switch (filterBucket) {
       case '60':
@@ -195,15 +244,31 @@ export default function DashboardHome() {
         return bucketVencidas
       case 'nao_renovadas':
         return bucketNaoRenovadas
-      default:
-        // All active/upcoming renewals sorted by data_fim asc
-        return [...apolices].sort((a, b) => {
+      default: {
+        // 'todos': Lista operacional por vencimento (ação pendente: vigente a vencer e vencida sem sucessor)
+        // Se showRenovadasHistorico estiver ativo via toggle de visão geral, inclui também as renovadas
+        const base = showRenovadasHistorico
+          ? [...apolices]
+          : apolices.filter((ap) => !isApoliceRenovada(ap))
+
+        return base.sort((a, b) => {
           const dA = a.data_fim || ''
           const dB = b.data_fim || ''
           return dA.localeCompare(dB)
         })
+      }
     }
-  }, [filterBucket, apolices, bucket60, bucket30, bucket15, bucketVencidas, bucketNaoRenovadas])
+  }, [
+    filterBucket,
+    apolices,
+    bucket60,
+    bucket30,
+    bucket15,
+    bucketVencidas,
+    bucketNaoRenovadas,
+    showRenovadasHistorico,
+    mapaSucessao,
+  ])
 
   // Chart data: Premiums by Insurer
   const seguradoraChartData = useMemo(() => {
@@ -266,6 +331,17 @@ export default function DashboardHome() {
             Acompanhe prazos críticos, zoneamento de rateio por subseguro e conversão de propostas
             em hotéis, resorts e condo-hotéis de São Paulo.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-blue-100">
+            <span className="bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+              Taxa de Renovação da Carteira:{' '}
+              <strong className="text-white font-bold">{statsCarteira.taxaRenovacao}%</strong> (
+              {statsCarteira.renovadasCount} renovadas / {statsCarteira.totalContratos} contratos)
+            </span>
+            <span className="bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+              Contratos Vigentes Ativos:{' '}
+              <strong className="text-white font-bold">{statsCarteira.ativasCount}</strong>
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -569,27 +645,44 @@ export default function DashboardHome() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { id: 'todos', label: 'Todas as Apólices' },
-              { id: '60', label: `60 dias (${bucket60.length})` },
-              { id: '30', label: `30 dias (${bucket30.length})` },
-              { id: '15', label: `15 dias (${bucket15.length})` },
-              { id: 'vencidas', label: `Vencidas (${bucketVencidas.length})` },
-              { id: 'nao_renovadas', label: `Não Renovadas (${bucketNaoRenovadas.length})` },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilterBucket(f.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  filterBucket === f.id
-                    ? 'bg-[#0F2B46] text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'todos', label: `Pendentes (${filteredList.length})` },
+                { id: '60', label: `60 dias (${bucket60.length})` },
+                { id: '30', label: `30 dias (${bucket30.length})` },
+                { id: '15', label: `15 dias (${bucket15.length})` },
+                { id: 'vencidas', label: `Vencidas (${bucketVencidas.length})` },
+                { id: 'nao_renovadas', label: `Não Renovadas (${bucketNaoRenovadas.length})` },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setFilterBucket(f.id as any)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    filterBucket === f.id
+                      ? 'bg-[#0F2B46] text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Toggle para exibir ou ocultar apólices renovadas no histórico */}
+            {filterBucket === 'todos' && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 bg-gray-50 border border-gray-200 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-gray-100 select-none">
+                <input
+                  type="checkbox"
+                  checked={showRenovadasHistorico}
+                  onChange={(e) => setShowRenovadasHistorico(e.target.checked)}
+                  className="rounded border-gray-300 text-[#16578B] focus:ring-[#16578B]"
+                />
+                <span className="font-medium">
+                  Incluir Renovadas ({statsCarteira.renovadasCount})
+                </span>
+              </label>
+            )}
           </div>
         </div>
 
@@ -670,7 +763,11 @@ export default function DashboardHome() {
                         {formatDate(ap.data_inicio)} → {formatDate(ap.data_fim)}
                       </td>
                       <td className="py-3 px-4">
-                        {days !== null ? (
+                        {isApoliceRenovada(ap) ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                            Histórico
+                          </span>
+                        ) : days !== null ? (
                           <span
                             className={`font-semibold tabular-nums ${
                               days < 0
@@ -687,7 +784,7 @@ export default function DashboardHome() {
                         ) : (
                           '—'
                         )}
-                        {subseguro && (
+                        {subseguro && !isApoliceRenovada(ap) && (
                           <span
                             title="Razão LMI/VR abaixo de 1.00 (possível subseguro/zona de rateio)"
                             className="ml-1.5 inline-block text-[10px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold"
