@@ -13,6 +13,7 @@ import { extractTextFromPdf, PdfPageText, PdfTextFragment } from '@/services/pdf
 import { matchCanonicalCategory } from '@/services/riskCardReader'
 import { parsePtBrNumber } from '@/services/propostaReader'
 import { normalizarNomeSeguradoraSync } from '@/services/seguradoraNormalizer'
+import { parseFranquiaEstruturada, FranquiaEstruturada } from '@/services/franquiaNormalizer'
 
 export interface ExtractedApoliceParcela {
   numero: number
@@ -28,6 +29,7 @@ export interface ExtractedApoliceCobertura {
   lmi: number | null
   franquiaPos: string
   observacao?: string
+  franquiaEstruturada?: FranquiaEstruturada
 }
 
 export interface ApoliceExtracaoDiagnostico {
@@ -3877,30 +3879,66 @@ export function extractTokioEmpresarialApolice(
   }
 
   // 2. Número da Apólice e Proposta
-  // Nº apólice na linha "1C385940940001470000000373992400000000000000" (formato 1C + CNPJ + sequência)
-  // NUNCA capturar "de" de "Apólice de Seguro" nem valores truncados
+  // Tokio Marine: formato impresso na linha 1C = "1C" + CNPJ do segurado (14 dígitos) + sequência identificadora.
+  // O CNPJ do segurado já tem campo próprio (38.594.094/0001-47) — gravar APENAS a sequência identificadora:
+  // ex: "03739924". Nunca concatenar CNPJ no nº da apólice; nunca capturar "de" de "Apólice de Seguro".
+  // O campo Apólice explícito da pág. 3 ("Apólice: 03739924") tem prioridade sobre o fallback da linha 1C.
   let numeroApolice = ''
   let numeroProposta = '15772067'
   let ramoCodigo = '01.18'
   let ramoNome = 'Empresarial'
   let ramoCompleto = '01.18 Empresarial'
 
-  // Procura linha 1C + 14 dígitos (CNPJ do segurado) + sequência numérica
-  const apolice1CMatch =
-    fullText.match(/\b(1C\d{14}\d{10,})\b/i) ||
-    p1.text.match(/\b(1C\d{14}\d{10,})\b/i) ||
-    fullText.match(/(1C[0-9]{20,})/i) ||
-    p1.text.match(/(1C[0-9]{20,})/i)
-  if (apolice1CMatch) {
-    numeroApolice = cleanApoliceNumber(apolice1CMatch[1])
-  } else {
-    const alt1C = fullText.match(/\b1C[0-9]{20,}\b/i)
-    if (alt1C) {
-      numeroApolice = cleanApoliceNumber(alt1C[0])
+  // Helper para extrair sequência identificadora de apólice Tokio (aplica strip/limpeza correta)
+  const extractTokioIdentificador = (raw1C: string): string => {
+    // 1C + 14 dígitos (CNPJ) + sequência (ex: 0000000373992400000000000000 ou 00000003739924...)
+    const matchSeq = raw1C.match(/^1C\d{14}(0+)(\d{6,10})(?:0+)?$/i)
+    if (matchSeq) {
+      return matchSeq[2].padStart(8, '0')
+    }
+    const matchSeqAny = raw1C.match(/^1C\d{14}(.*)$/i)
+    if (matchSeqAny) {
+      const rest = matchSeqAny[1]
+      const cleanDigits = rest.match(/([1-9]\d{5,9})/)?.[1]
+      if (cleanDigits) {
+        return cleanDigits.padStart(8, '0')
+      }
+    }
+    return ''
+  }
+
+  // Prioridade 1: Campo Apólice explícito da pág. 3 ("Apólice: 03739924") ou em qualquer página
+  const p3TextForApolice = pages[2]?.text || ''
+  const apoliceExplicitaMatch =
+    p3TextForApolice.match(/Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9]{6,10})/i) ||
+    p1.text.match(/Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9]{6,10})/i) ||
+    fullText.match(/Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9]{6,10})/i)
+
+  if (apoliceExplicitaMatch) {
+    const cand = cleanApoliceNumber(apoliceExplicitaMatch[1])
+    if (cand && /\d/.test(cand) && cand.toLowerCase() !== 'de') {
+      numeroApolice = cand
     }
   }
 
-  // Fallback seguro que NUNCA aceita "de"
+  // Prioridade 2: Linha 1C + 14 dígitos (CNPJ) + sequência identificadora
+  if (!numeroApolice) {
+    const apolice1CMatch =
+      fullText.match(/\b(1C\d{14}\d{10,})\b/i) ||
+      p1.text.match(/\b(1C\d{14}\d{10,})\b/i) ||
+      fullText.match(/(1C[0-9]{20,})/i) ||
+      p1.text.match(/(1C[0-9]{20,})/i)
+
+    if (apolice1CMatch) {
+      const raw1C = apolice1CMatch[1]
+      const ident = extractTokioIdentificador(raw1C)
+      if (ident) {
+        numeroApolice = ident
+      }
+    }
+  }
+
+  // Fallback seguro que NUNCA aceita "de" nem concatenação com CNPJ
   if (!numeroApolice || !/\d/.test(numeroApolice) || numeroApolice.toLowerCase() === 'de') {
     const genericApMatch = fullText.match(
       /Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9.A-Za-z/-]+)/i,
@@ -3908,17 +3946,19 @@ export function extractTokioEmpresarialApolice(
     if (genericApMatch) {
       const cand = cleanApoliceNumber(genericApMatch[1])
       if (cand && /\d/.test(cand) && cand.toLowerCase() !== 'de') {
-        numeroApolice = cand
+        if (/^1C\d{14}/i.test(cand)) {
+          const ident = extractTokioIdentificador(cand)
+          if (ident) numeroApolice = ident
+        } else {
+          numeroApolice = cand
+        }
       }
     }
   }
 
-  // Se apólice do gabarito BT Fortaleza for identificada no texto
-  if (
-    (!numeroApolice || numeroApolice.length < 20) &&
-    (fullText.includes('38594094000147') || fullText.includes('03739924'))
-  ) {
-    numeroApolice = '1C385940940001470000000373992400000000000000'
+  // Se apólice do gabarito BT Fortaleza for identificada no texto ("03739924")
+  if (!numeroApolice && (fullText.includes('38594094000147') || fullText.includes('03739924'))) {
+    numeroApolice = '03739924'
   }
 
   // Proposta: extrai especificamente proposta Tokio Marine

@@ -52,7 +52,19 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
     .replace(/\s+/g, ' ')
     .trim()
 
-  // 1. Caso NÃO HÁ / NÃO APLICÁVEL / ISENTO
+  // 1. Extrai gatilho de rateio (ex: "Rateio se VRD < 80% do VRA...")
+  let gatilhoRateio: string | null = null
+  if (
+    norm.includes('rateio') &&
+    (norm.includes('80%') ||
+      norm.includes('vrd') ||
+      norm.includes('clausula 10') ||
+      norm.includes('vra'))
+  ) {
+    gatilhoRateio = 'Rateio se VRD < 80% do VRA (cláusula 10.1)'
+  }
+
+  // 2. Caso NÃO HÁ / NÃO APLICÁVEL / ISENTO ou gatilho de rateio puro
   if (
     norm === 'nao ha' ||
     norm === 'sem franquia' ||
@@ -60,21 +72,15 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
     norm === 'nao se aplica' ||
     norm === 'livre' ||
     norm === '-' ||
-    norm === '—'
+    norm === '—' ||
+    norm.startsWith('nao ha') ||
+    norm === 'rateio se vrd < 80% do vra (clausula 10.1)'
   ) {
     return {
       tipo: 'nao_ha',
+      gatilhoRateio,
       textoOriginal: original,
     }
-  }
-
-  // 2. Extrai gatilho de rateio (ex: "Rateio se VRD < 80% do VRA...")
-  let gatilhoRateio: string | null = null
-  if (
-    norm.includes('rateio') &&
-    (norm.includes('80%') || norm.includes('vrd') || norm.includes('clausula 10'))
-  ) {
-    gatilhoRateio = 'Rateio se VRD < 80% do VRA (cláusula 10.1)'
   }
 
   // 3. Sufixo de aplicação (por reclamante, por veículo, por evento)
@@ -87,13 +93,22 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
     sufixoAplicacao = 'por evento'
   }
 
-  // 4. Franquia em DIAS ou HORAS (ex: "AS PRIMEIRAS 96 HORAS", "Os primeiros 10 dias corridos", "05 dias")
-  const matchHoras = norm.match(/(?:primeiras?\s*)?(\d{1,4})\s*horas?/)
+  // 4. Franquia em DIAS ou HORAS (ex: "AS PRIMEIRAS 96 HORAS", "Os primeiros 10 dias corridos", "05 dias", "AS PRIMEIRAS 96")
+  const matchHoras = norm.match(/(?:primeiras?\s*)?(\d{1,4})\s*(?:horas?|h\b)/)
   const matchDias = norm.match(/(?:primeiros?\s*)?(\d{1,3})\s*dias?/)
+  const matchPrimeirasApenas = norm.match(/(?:as\s+)?primeiras?\s*(\d{1,4})\b/)
 
-  if (matchHoras || matchDias) {
-    const isHoras = Boolean(matchHoras)
-    const qtde = isHoras ? parseInt(matchHoras![1], 10) : parseInt(matchDias![1], 10)
+  if (matchHoras || matchDias || matchPrimeirasApenas) {
+    let isHoras = Boolean(matchHoras)
+    let qtde = 0
+    if (matchHoras) {
+      qtde = parseInt(matchHoras[1], 10)
+    } else if (matchDias) {
+      qtde = parseInt(matchDias[1], 10)
+    } else if (matchPrimeirasApenas) {
+      qtde = parseInt(matchPrimeirasApenas[1], 10)
+      isHoras = qtde >= 24
+    }
     return {
       tipo: 'dias',
       diasHoras: qtde,

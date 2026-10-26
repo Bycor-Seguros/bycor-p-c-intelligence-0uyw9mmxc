@@ -1,6 +1,7 @@
 import pb from '@/lib/pocketbase/client'
 import { CATEGORIAS_48, formatCurrency } from '@/lib/formatters'
 import { matchCanonicalCategory, RiskCardData } from '@/services/riskCardReader'
+import { compararFranquiasEstruturadas } from '@/services/franquiaNormalizer'
 
 export interface ItemAuditoriaComparativo {
   id: string
@@ -330,18 +331,33 @@ export function buildAuditoriaSnapshot(
           const lmiC = ci.lmi
           const lmiA = ai.lmi
           const { dif, pct } = calcDesvio(lmiC, lmiA)
-          // Divergência se diferença absoluta de LMI > 100 reais ou franquias diferentes
+          // Divergência se diferença absoluta de LMI > 100 reais ou franquias divergentes via comparador estruturado
           const divergenteLmi =
             lmiC !== null && lmiA !== null && Math.abs((lmiC || 0) - (lmiA || 0)) > 100
+
+          // Comparação estruturada de franquias (não por string crua)
+          const compFranquia = compararFranquiasEstruturadas(ci.franquia, ai.franquia)
+          const divergenteFranquia = !compFranquia.equivalentes
+
+          const isDivergenteGeral = divergenteLmi || divergenteFranquia
+
           const itemId = `item_casada_${itemCounter}_${cat.replace(/[^a-zA-Z0-9]/g, '_')}`
 
-          let motivo = ''
+          const motivos: string[] = []
           if (divergenteLmi) {
-            motivo = `LMI no Cartão é ${formatCurrency(lmiC)} vs ${formatCurrency(lmiA)} na Apólice (desvio de ${pct}%).`
+            motivos.push(
+              `LMI no Cartão é ${formatCurrency(lmiC)} vs ${formatCurrency(lmiA)} na Apólice (desvio de ${pct}%).`,
+            )
           }
+          if (divergenteFranquia && compFranquia.motivo) {
+            motivos.push(compFranquia.motivo)
+          }
+          const motivo = motivos.join(' ')
 
           const isCandidato =
-            ressalvasSet.has(itemId) || (divergenteLmi && pct !== null && Math.abs(pct) >= 1)
+            ressalvasSet.has(itemId) ||
+            (divergenteLmi && pct !== null && Math.abs(pct) >= 1) ||
+            (divergenteFranquia && compFranquia.divergenciaGravidade === 'critica')
 
           casadas.push({
             id: itemId,
@@ -355,7 +371,7 @@ export function buildAuditoriaSnapshot(
             diferencaLmi: dif,
             percentualDesvio: pct,
             tipo: 'casada',
-            divergente: divergenteLmi,
+            divergente: isDivergenteGeral,
             candidatoRessalvaC5: isCandidato,
             motivoDivergencia: motivo,
           })
