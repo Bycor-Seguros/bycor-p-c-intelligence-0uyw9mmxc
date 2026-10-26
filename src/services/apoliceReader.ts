@@ -133,6 +133,9 @@ export function cleanApoliceNumber(raw: string): string {
  */
 export function extractCleanCnpj(text: string, contextHint?: string): string {
   if (!text) return ''
+  if (contextHint && text.indexOf(contextHint) === -1) {
+    return ''
+  }
   const targetText = contextHint
     ? text.slice(Math.max(0, text.indexOf(contextHint) - 50), text.indexOf(contextHint) + 300)
     : text
@@ -294,10 +297,24 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
     seguradoraRazaoSocial = segMatch[1].trim()
   }
 
-  // CNPJ da seguradora na pág 2 ou no rodapé de página
-  // Padrão no rodapé: "CNPJ 19.323.190/0001-06 Registo Susep 0285-2"
+  // CNPJ da seguradora na pág 1/2 ou no rodapé/cabeçalho de página
+  // Padrão preferencial: linha rotulada "Seguradora: ... CNPJ: XX.XXX.XXX/XXXX-XX"
+  // Padrão de cabeçalho/rodapé: "CNPJ XX.XXX.XXX/XXXX-XX Registo Susep"
+  const labeledSegCnpjM =
+    fullText.match(/Seguradora:[^\n\r]*?CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i) ||
+    p1.text.match(/Seguradora:[^\n\r]*?CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i) ||
+    p2.text.match(/Seguradora:[^\n\r]*?CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i)
+  const headerSegCnpjM = fullText.match(
+    /CNPJ\s+(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+Regi[st][oa]\s+Susep/i,
+  )
+
   const segCnpjExtracted =
-    extractCleanCnpj(p2.text, 'Seguradora') || extractCleanCnpj(fullText, '19.323.190')
+    (labeledSegCnpjM ? labeledSegCnpjM[1] : '') ||
+    (headerSegCnpjM ? headerSegCnpjM[1] : '') ||
+    extractCleanCnpj(p1.text, 'Seguradora') ||
+    extractCleanCnpj(p2.text, 'Seguradora') ||
+    extractCleanCnpj(fullText, '19.323.190')
+
   if (segCnpjExtracted) {
     seguradoraCnpj = segCnpjExtracted
   } else if (fullText.includes('19.323.190/0001-06')) {
@@ -565,6 +582,18 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
       corretorCnpj = fallbackCorr
     } else {
       corretorCnpj = '17.267.516/0001-08'
+    }
+  }
+
+  // Guard: CNPJ da seguradora nunca pode ser igual ao do corretor
+  if (corretorCnpj && seguradoraCnpj === corretorCnpj) {
+    const headerCnpj = fullText.match(
+      /CNPJ\s+(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+Regi[st][oa]\s+Susep/i,
+    )
+    if (headerCnpj && headerCnpj[1] !== corretorCnpj) {
+      seguradoraCnpj = headerCnpj[1]
+    } else if (fullText.includes('19.323.190/0001-06')) {
+      seguradoraCnpj = '19.323.190/0001-06'
     }
   }
 
@@ -2155,8 +2184,18 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
     seguradoraNome = segMatch[1].trim()
     seguradoraRazaoSocial = segMatch[1].trim()
   }
+  const labeledFlexSegCnpjM =
+    fullText.match(/Seguradora:[^\n\r]*?CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i) ||
+    p1.text.match(/Seguradora:[^\n\r]*?CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i)
+  const headerFlexSegCnpjM = fullText.match(
+    /CNPJ\s+(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+Regi[st][oa]\s+Susep/i,
+  )
+
   const segCnpjM =
-    extractCleanCnpj(p1.text, 'Seguradora') || extractCleanCnpj(fullText, '19.323.190')
+    (labeledFlexSegCnpjM ? labeledFlexSegCnpjM[1] : '') ||
+    (headerFlexSegCnpjM ? headerFlexSegCnpjM[1] : '') ||
+    extractCleanCnpj(p1.text, 'Seguradora') ||
+    extractCleanCnpj(fullText, '19.323.190')
   if (segCnpjM) seguradoraCnpj = segCnpjM
 
   // REGISTRO SUSEP DA SEGURADORA:
@@ -2353,6 +2392,18 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   }
   const corrCnpjM = extractCleanCnpj(p1.text, 'Corretor') || extractCleanCnpj(p1.text, '17.267.516')
   if (corrCnpjM) corretorCnpj = corrCnpjM
+
+  // Guard: CNPJ da seguradora nunca pode ser igual ao do corretor
+  if (corretorCnpj && seguradoraCnpj === corretorCnpj) {
+    const headerCnpj = fullText.match(
+      /CNPJ\s+(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+Regi[st][oa]\s+Susep/i,
+    )
+    if (headerCnpj && headerCnpj[1] !== corretorCnpj) {
+      seguradoraCnpj = headerCnpj[1]
+    } else if (fullText.includes('19.323.190/0001-06')) {
+      seguradoraCnpj = '19.323.190/0001-06'
+    }
+  }
 
   const corrSusepM = p1.text.match(/Registro\s+SUSEP:\s*([0-9A-Za-z]+)/i)
   if (corrSusepM) {
@@ -3548,10 +3599,16 @@ function extractGenericApolice(
   const lmgM = fullText.match(/LMGA?[:\s]*R?\$?\s*([\d.,]+)/i)
   if (lmgM) lmga = parsePtBrNumber(lmgM[1])
 
+  // Guard no parser genérico: CNPJ da seguradora nunca pode ficar igual ao do corretor
+  let segCnpjFinal = segInfo?.cnpj || ''
+  if (corretorCnpj && segCnpjFinal === corretorCnpj) {
+    segCnpjFinal = ''
+  }
+
   return {
     seguradoraNome: segInfo?.canonica || 'Seguradora Não Identificada',
     seguradoraRazaoSocial: segInfo?.razaoSocial || '',
-    seguradoraCnpj: segInfo?.cnpj || '',
+    seguradoraCnpj: segCnpjFinal,
     seguradoraSusep: segInfo?.susep || '',
     numeroApolice,
     numeroProposta,
