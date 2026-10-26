@@ -1122,7 +1122,17 @@ function extractAxaCoberturasGeometric(
     'Danos Materiais'
 
   pages4to6.forEach((page) => {
-    const items = page.items || []
+    let items = page.items || []
+
+    // Na primeira página do quadro (ou se contiver o título), a varredura do quadro de coberturas
+    // deve começar APENAS após o título "2. Coberturas do seguro (R$)" para não capturar
+    // linhas da tabela 1.2 Detalhamento do valor em risco (Item, MMU, MMP, Prédio, etc.).
+    const headerItem = items.find((it) => /2\.\s*Coberturas\s+do\s+seguro/i.test(it.str))
+    if (headerItem) {
+      // No sistema de coordenadas do PDF (Y decrescente: topo tem Y maior, rodapé tem Y menor),
+      // itens abaixo do cabeçalho têm Y estritamente menor que headerItem.y (com margem de segurança).
+      items = items.filter((it) => it.y < headerItem.y - 2)
+    }
 
     // 1. Filtrar fragmentos institucionais e de rodapé/cabeçalho
     const validItems = items.filter((it) => {
@@ -1346,13 +1356,13 @@ function extractAxaCoberturasGeometric(
       }
     }
 
-    // 5. Atribuição de linhas só-de-texto col1 à âncora MAIS PRÓXIMA por |Δy| estritamente dentro da mesma página
-    // REGRA: linha de texto em col1 logo ABAIXO da âncora de valores (a linha que contém o LMI em col2),
-    // dentro da mesma banda vertical (mais próxima desta âncora por |Δy| do que de qualquer outra âncora),
-    // é CONTINUAÇÃO do nome dessa cobertura — nunca descartada, nunca criada como cobertura separada.
+    // 5. Atribuição de linhas só-de-texto col1 à âncora correta estritamente dentro da mesma página
+    // REGRA: linha de texto em col1 abaixo da âncora (ou acima se for o início do nome na célula)
+    // pertence à âncora mais próxima verticalmente.
     if (pageAnchors.length > 0) {
       for (const tLine of textOnlyCol1) {
-        // Encontra a âncora com menor distância vertical |Δy|
+        // Procura primeiro uma âncora cujo y seja maior ou igual (tLine logo abaixo ou na mesma banda)
+        // ou a âncora com menor distância |Δy|
         let bestAnchor = pageAnchors[0]
         let minDy = Math.abs(pageAnchors[0].y - tLine.y)
 
@@ -1367,16 +1377,27 @@ function extractAxaCoberturasGeometric(
         bestAnchor.col1Assigned.push(tLine)
       }
 
-      // 6. Atribuição de linhas só-de-texto col3 à âncora MAIS PRÓXIMA por |Δy| estritamente dentro da mesma página
+      // 6. Atribuição de linhas só-de-texto col3 à âncora correta estritamente dentro da mesma página.
+      // Continuação de franquia/P.O.S. (ex: "por reclamante", "por veículo", "corridos", "PI: 12 meses",
+      // "a cobertura acionada") está sempre na linha seguinte da MESMA banda, ou seja, logo ABAIXO da
+      // âncora de valores (y da âncora > y da continuação no sistema de coordenadas do PDF onde topo tem Y maior).
+      // Deve pertencer à âncora imediatamente acima (anc.y >= pLine.y).
       for (const pLine of textOnlyCol3) {
-        let bestAnchor = pageAnchors[0]
-        let minDy = Math.abs(pageAnchors[0].y - pLine.y)
-
-        for (let i = 1; i < pageAnchors.length; i++) {
-          const dy = Math.abs(pageAnchors[i].y - pLine.y)
-          if (dy < minDy) {
-            minDy = dy
-            bestAnchor = pageAnchors[i]
+        // Filtra âncoras acima da linha de continuação (anc.y >= pLine.y - 12)
+        const candidates = pageAnchors.filter((anc) => anc.y >= pLine.y - 12)
+        let bestAnchor: AxaAnchor
+        if (candidates.length > 0) {
+          bestAnchor = candidates[candidates.length - 1] // a mais recente/mais próxima acima
+        } else {
+          // Fallback por menor |Δy|
+          bestAnchor = pageAnchors[0]
+          let minDy = Math.abs(pageAnchors[0].y - pLine.y)
+          for (let i = 1; i < pageAnchors.length; i++) {
+            const dy = Math.abs(pageAnchors[i].y - pLine.y)
+            if (dy < minDy) {
+              minDy = dy
+              bestAnchor = pageAnchors[i]
+            }
           }
         }
 
@@ -1794,9 +1815,10 @@ function postProcessAxaCoberturas(
     }
 
     // 17. RC - Custos de Defesa
+    // No PDF pág. 6, ela está na seção RESPONSABILIDADE CIVIL (após RC Síndico)
     if (c.nome.includes('Custos de Defesa')) {
       c.nome = 'RC - Custos de Defesa'
-      c.categoriaBloco = 'Danos Materiais'
+      c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Custos de Defesa'
     }
 
@@ -1867,7 +1889,6 @@ function postProcessAxaCoberturas(
 
     // 25. RC Guarda de Veículos
     if (c.nome.includes('Guarda De Veículos') || c.nome.includes('Guarda De Veiculos')) {
-      c.nome = 'Responsabilidade Civil Guarda De Veículos De Terceiros – Incêndio E Roubo'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Guarda de Veículos de Terceiros'
     }
@@ -1882,13 +1903,24 @@ function postProcessAxaCoberturas(
     // BLOCO LUCROS CESSANTES (1)
     // 27. Lucros Cessantes
     if (
-      c.nome.includes('Lucros Cessantes [Líquido]') ||
-      (c.nome.includes('Lucros Cessantes') && c.lmi && c.lmi > 10000000)
+      c.nome.includes('Lucros Cessantes') &&
+      !c.nome.includes('Honorários') &&
+      !c.nome.includes('Honorarios')
     ) {
-      c.nome =
-        'Lucros Cessantes [Líquido] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza E Implosão'
       c.categoriaBloco = 'Lucros Cessantes'
       c.categoriaNormalizada = 'Lucros Cessantes / Perda de Receita'
+      // Preserva o nome do PDF se já contiver o texto completo, ou expande se truncado
+      if (c.nome.includes('[Ll+Df]') || c.nome.includes('[LL+DF]') || c.nome.includes('[ll+df]')) {
+        if (!c.nome.includes('Queda De Raio') && !c.nome.includes('Engenhos Espaciais')) {
+          c.nome =
+            'Lucros Cessantes [Ll+Df] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza, Implosão E Queda De Aeronave E/Ou Outros Engenhos Espaciais'
+        }
+      } else if (c.nome.includes('[Líquido]')) {
+        if (!c.nome.includes('Queda De Raio')) {
+          c.nome =
+            'Lucros Cessantes [Líquido] Decorrentes De Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza E Implosão'
+        }
+      }
     }
   })
 
