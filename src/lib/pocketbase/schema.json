@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-26T12:58:09.746Z",
+  "generatedAt": "2026-10-26T13:55:58.076Z",
   "collections": [
     {
       "name": "users",
@@ -2084,6 +2084,125 @@
         "CREATE INDEX idx_rfq_seg_rfq ON rfq_seguradoras (rfq)",
         "CREATE INDEX idx_rfq_seg_seg ON rfq_seguradoras (seguradora)",
         "CREATE INDEX idx_rfq_seg_status ON rfq_seguradoras (status)"
+      ]
+    },
+    {
+      "name": "auditoria_rodadas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "empreendimento",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "numero_rodada",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_rodada",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "produto_ramo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "arquivo_origem",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "usuario_upload",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "usuario_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desfecho",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_divergencias",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_ressalvas_c5",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "snapshot_comparativo",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ressalvas_marcadas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_auditoria_rodadas_emp ON auditoria_rodadas (empreendimento)",
+        "CREATE INDEX idx_auditoria_rodadas_apolice ON auditoria_rodadas (apolice)",
+        "CREATE INDEX idx_auditoria_rodadas_created ON auditoria_rodadas (created DESC)"
       ]
     }
   ]

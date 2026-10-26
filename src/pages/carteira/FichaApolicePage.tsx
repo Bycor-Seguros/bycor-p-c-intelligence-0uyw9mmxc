@@ -379,13 +379,23 @@ export default function FichaApolicePage() {
           <span>Voltar ao Portfólio</span>
         </Link>
 
-        <Button
-          onClick={() => setRenovacaoModalOpen(true)}
-          className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-9 shadow-sm flex items-center gap-2"
-        >
-          <Share2 className="w-4 h-4 text-blue-300" />
-          <span>Iniciar Ciclo de Renovação</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/auditoria-cartao-apolice?emp=${apolice.id_empreendimento}&rodada=`}
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-blue-200 bg-blue-50/80 text-[#16578B] hover:bg-blue-100 text-xs font-semibold transition-colors"
+          >
+            <FileCheck className="w-4 h-4 text-[#16578B]" />
+            <span>Auditoria Cartão × Apólice</span>
+          </Link>
+
+          <Button
+            onClick={() => setRenovacaoModalOpen(true)}
+            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-9 shadow-sm flex items-center gap-2"
+          >
+            <Share2 className="w-4 h-4 text-blue-300" />
+            <span>Iniciar Ciclo de Renovação</span>
+          </Button>
+        </div>
       </div>
 
       {/* Main Header Card */}

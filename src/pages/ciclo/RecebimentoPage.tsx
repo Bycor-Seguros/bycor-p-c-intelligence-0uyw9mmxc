@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { processGuardiaWorkbook, ImportSummary } from '@/services/guardiaImporter'
@@ -65,6 +66,7 @@ interface DocumentRecord {
 }
 
 export default function RecebimentoPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -347,6 +349,16 @@ export default function RecebimentoPage() {
           >
             <FileText className="w-4 h-4 text-blue-300" />
             <span>Subir Apólice (PDF)</span>
+          </Button>
+
+          {/* BOTÃO AUDITORIA CARTÃO × APÓLICE */}
+          <Button
+            onClick={() => navigate('/auditoria-cartao-apolice')}
+            variant="outline"
+            className="border-blue-200 text-[#16578B] bg-blue-50/70 hover:bg-blue-100 text-xs font-semibold h-10 px-3.5 shadow-sm flex items-center gap-2"
+          >
+            <FileCheck2 className="w-4 h-4 text-[#16578B]" />
+            <span>Auditoria Cartão × Apólice</span>
           </Button>
 
           <Button
@@ -674,7 +686,6 @@ export default function RecebimentoPage() {
                   <p className="text-xs leading-relaxed mt-1 font-medium">{riskCardMatch.motivo}</p>
                 </div>
               </div>
-
               {/* Resumo dos dados extraídos do Cartão */}
               <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-200 text-xs space-y-2.5">
                 <div className="flex items-center justify-between border-b border-gray-200 pb-2">
@@ -762,7 +773,6 @@ export default function RecebimentoPage() {
                   </div>
                 )}
               </div>
-
               {/* DIVERGÊNCIAS LADO A LADO (QUANDO HOUVER) */}
               {riskCardMatch.divergencias.length > 0 && (
                 <div className="border border-amber-300 bg-amber-50/70 rounded-xl p-3.5 space-y-2">
@@ -799,7 +809,6 @@ export default function RecebimentoPage() {
                   </div>
                 </div>
               )}
-
               {/* Ações / Botão Ver detalhes expansíveis */}
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <button
@@ -883,22 +892,33 @@ export default function RecebimentoPage() {
                   </div>
                 )}
               </div>
-
               {/* Botões de Ação */}
-              <div className="pt-2 flex items-center justify-between">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setParsedRiskCard(null)
-                    setRiskCardMatch(null)
-                    setRiskCardFile(null)
-                  }}
-                  disabled={savingRiskCard}
-                  className="text-xs h-9"
-                >
-                  Trocar Arquivo
-                </Button>
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setParsedRiskCard(null)
+                      setRiskCardMatch(null)
+                      setRiskCardFile(null)
+                    }}
+                    disabled={savingRiskCard}
+                    className="text-xs h-9"
+                  >
+                    Trocar Arquivo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate('/auditoria-cartao-apolice')}
+                    disabled={savingRiskCard}
+                    className="border-blue-200 text-[#16578B] hover:bg-blue-50 text-xs h-9 flex items-center gap-1.5"
+                  >
+                    <FileCheck2 className="w-3.5 h-3.5 text-[#16578B]" />
+                    <span>Abrir Auditorias Salvas</span>
+                  </Button>{' '}
+                </div>
 
                 <div className="flex gap-2">
                   <Button
@@ -929,7 +949,7 @@ export default function RecebimentoPage() {
                     )}
                   </Button>
                 </div>
-              </div>
+              </div>{' '}
             </div>
           )}
 
@@ -946,7 +966,6 @@ export default function RecebimentoPage() {
                   </p>
                 </div>
               </div>
-
               {/* Badges de Mutações */}
               <div className="grid grid-cols-3 gap-2.5 text-center">
                 <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200">
@@ -977,7 +996,6 @@ export default function RecebimentoPage() {
                   <div className="text-[9px] text-gray-500">Escritas evitadas</div>
                 </div>
               </div>
-
               {/* Detalhes por entidade */}
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1.5">
                 <div className="font-semibold text-gray-800 mb-1">Resumo Técnico da Operação:</div>
@@ -1012,7 +1030,6 @@ export default function RecebimentoPage() {
                   </div>
                 </div>
               </div>
-
               {/* Erros residuais se houver */}
               {riskCardSummary.errors.length > 0 && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1">
@@ -1025,8 +1042,24 @@ export default function RecebimentoPage() {
                   ))}
                 </div>
               )}
-
-              <div className="pt-2 flex justify-end">
+              <div className="pt-2 flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const rodadaId = riskCardSummary?.auditoriaRodadaId || ''
+                    setRiskCardModalOpen(false)
+                    navigate(
+                      rodadaId
+                        ? `/auditoria-cartao-apolice?rodada=${rodadaId}`
+                        : '/auditoria-cartao-apolice',
+                    )
+                  }}
+                  className="border-blue-200 text-[#16578B] hover:bg-blue-50 text-xs h-9 px-3.5 flex items-center gap-1.5"
+                >
+                  <FileCheck2 className="w-3.5 h-3.5 text-[#16578B]" />
+                  <span>Ver Relatório de Auditoria Persistente</span>
+                </Button>
                 <Button
                   onClick={() => {
                     setRiskCardModalOpen(false)
@@ -1039,7 +1072,7 @@ export default function RecebimentoPage() {
                 >
                   Concluir e Fechar
                 </Button>
-              </div>
+              </div>{' '}
             </div>
           )}
         </DialogContent>

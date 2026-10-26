@@ -139,6 +139,7 @@ export default function Layout() {
         { label: 'C3 Tabulação', path: '/c3-tabulacao', icon: GitCompare },
         { label: 'C4 Apresentação', path: '/c4-apresentacao', icon: FileText },
         { label: 'C5 Auditoria', path: '/c5-auditoria', icon: ClipboardCheck },
+        { label: 'Auditoria Cartão × Apólice', path: '/auditoria-cartao-apolice', icon: FileCheck },
         { label: 'C6 Aprovação', path: '/c6-aprovacao', icon: CheckCircle },
       ],
     },
@@ -166,6 +167,8 @@ export default function Layout() {
     if (p.startsWith('/c3-tabulacao')) return 'C3 · Tabulação e Comparação de Propostas'
     if (p.startsWith('/c4-apresentacao')) return 'C4 · Apresentação Comercial'
     if (p.startsWith('/c5-auditoria')) return 'C5 · Auditoria Técnica de Apólices'
+    if (p.startsWith('/auditoria-cartao-apolice'))
+      return 'Auditoria Cartão × Apólice (Relatório Comparativo)'
     if (p.startsWith('/c6-aprovacao')) return 'C6 · Fila de Aprovação Humana'
     if (p.startsWith('/mercado')) return 'Mapa de Mercado & Seguradoras'
     if (p.startsWith('/versao-contratacao')) return 'Versão Padrão de Contratação'

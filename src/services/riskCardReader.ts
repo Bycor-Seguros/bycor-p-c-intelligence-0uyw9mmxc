@@ -172,6 +172,7 @@ export interface RiskCardImportSummary {
   coberturasUpdated: number
   coberturasUnchanged: number
   divergenciasRecorded: number
+  auditoriaRodadaId?: string
   errors: string[]
 }
 
@@ -1042,12 +1043,69 @@ export async function matchRiskCardAgainstDatabase(
   if (sameProductApolice) {
     const divergencias: DivergenciaField[] = []
 
-    // Comparativo LMI / VRD
+    // 1. Identificação / Cadastro
+    const cardCnpjStr = card.cnpj ? card.cnpj.trim() : ''
+    const apoliceCnpjStr = String(sameProductApolice.cnpj_segurado || '').trim()
+    const cardCnpjDig = cleanCnpj(cardCnpjStr)
+    const apCnpjDig = cleanCnpj(apoliceCnpjStr)
+    if (cardCnpjDig && apCnpjDig && cardCnpjDig !== apCnpjDig) {
+      divergencias.push({
+        campo: 'CNPJ do Segurado',
+        valorApoliceVigente: apoliceCnpjStr,
+        valorCartaoRisco: cardCnpjStr,
+        descricao: `CNPJ na apólice (${apoliceCnpjStr}) diverge do Cartão de Risco (${cardCnpjStr}).`,
+      })
+    }
+
+    if (
+      card.seguradoraAnterior &&
+      card.seguradoraAnterior !== 'A Cotar' &&
+      sameProductApolice.seguradora
+    ) {
+      const segApol = String(sameProductApolice.seguradora).trim().toLowerCase()
+      const segCard = card.seguradoraAnterior.trim().toLowerCase()
+      if (segApol !== segCard && !segApol.includes(segCard) && !segCard.includes(segApol)) {
+        divergencias.push({
+          campo: 'Seguradora Anterior / Emitente',
+          valorApoliceVigente: String(sameProductApolice.seguradora),
+          valorCartaoRisco: card.seguradoraAnterior,
+          descricao: `Seguradora vigente é ${sameProductApolice.seguradora} vs ${card.seguradoraAnterior} no Cartão.`,
+        })
+      }
+    }
+
+    if (card.vigenciaInicio && sameProductApolice.data_inicio) {
+      const iniApol = String(sameProductApolice.data_inicio).slice(0, 10)
+      if (card.vigenciaInicio !== iniApol) {
+        divergencias.push({
+          campo: 'Início de Vigência',
+          valorApoliceVigente: iniApol,
+          valorCartaoRisco: card.vigenciaInicio,
+          descricao: `Início de vigência na apólice (${iniApol}) diverge do Cartão (${card.vigenciaInicio}).`,
+        })
+      }
+    }
+
+    if (card.vigenciaFim && sameProductApolice.data_fim) {
+      const fimApol = String(sameProductApolice.data_fim).slice(0, 10)
+      if (card.vigenciaFim !== fimApol) {
+        divergencias.push({
+          campo: 'Término de Vigência',
+          valorApoliceVigente: fimApol,
+          valorCartaoRisco: card.vigenciaFim,
+          descricao: `Fim de vigência na apólice (${fimApol}) diverge do Cartão (${card.vigenciaFim}).`,
+        })
+      }
+    }
+
+    // 2. VRD por rubrica e LMI Básica
     const apoliceLmiBasica = Number(sameProductApolice.lmi_incendio_basica || 0)
     const cardIsBasica =
+      card.coberturas.find((c) => c.categoriaNormalizada.includes('Incêndio'))?.isEscolhida ||
+      card.coberturas.find((c) => c.categoriaNormalizada.includes('Incêndio'))?.isAtualizada ||
+      card.coberturas.find((c) => c.categoriaNormalizada.includes('Incêndio'))?.isAtual ||
       card.vrd.totalAtualizado ||
       card.vrd.predioAtualizado ||
-      card.coberturas.find((c) => c.categoriaNormalizada.includes('Incêndio'))?.isAtualizada ||
       0
 
     if (
@@ -1064,14 +1122,76 @@ export async function matchRiskCardAgainstDatabase(
     }
 
     const apoliceVrDm = Number(sameProductApolice.valor_em_risco_dm || 0)
-    const cardVrDm = Number(card.vrd.totalAtualizado || card.vrd.totalAtual || 0)
+    const cardVrDm = Number(
+      card.vrd.totalAtualizado ||
+        card.vrd.totalAtual ||
+        (card.vrd.predioAtualizado || card.vrd.predioAtual || 0) +
+          (card.vrd.danoMaterialMmuAtualizado || card.vrd.danoMaterialMmuAtual || 0),
+    )
     if (apoliceVrDm > 0 && cardVrDm > 0 && Math.abs(apoliceVrDm - cardVrDm) > 1000) {
       divergencias.push({
-        campo: 'Valor em Risco Declarado (VRD Total)',
+        campo: 'Valor em Risco Declarado (VRD Danos Materiais)',
         valorApoliceVigente: apoliceVrDm,
         valorCartaoRisco: cardVrDm,
-        descricao: `VRD na apólice é R$ ${apoliceVrDm.toLocaleString('pt-BR')} vs R$ ${cardVrDm.toLocaleString('pt-BR')} no Cartão.`,
+        descricao: `VRD DM na apólice é R$ ${apoliceVrDm.toLocaleString('pt-BR')} vs R$ ${cardVrDm.toLocaleString('pt-BR')} no Cartão.`,
       })
+    }
+
+    const apoliceVrLc = Number(sameProductApolice.valor_em_risco_lc || 0)
+    const cardVrLc = Number(
+      card.vrd.lucrosCessantesAtualizado || card.vrd.lucrosCessantesAtual || 0,
+    )
+    if (apoliceVrLc > 0 && cardVrLc > 0 && Math.abs(apoliceVrLc - cardVrLc) > 1000) {
+      divergencias.push({
+        campo: 'VRD Lucros Cessantes',
+        valorApoliceVigente: apoliceVrLc,
+        valorCartaoRisco: cardVrLc,
+        descricao: `VRD LC na apólice é R$ ${apoliceVrLc.toLocaleString('pt-BR')} vs R$ ${cardVrLc.toLocaleString('pt-BR')} no Cartão.`,
+      })
+    }
+
+    // 3. Cruzamento prévio de Coberturas da Apólice Vigente vs Cartão
+    try {
+      const existingCobs = await pb.collection('coberturas').getFullList({
+        filter: `id_apolice="${sameProductApolice.id}"`,
+      })
+      const apCobMap = new Map<string, number>()
+      for (const ec of existingCobs) {
+        const cat = String(
+          ec.categoria_normalizada || matchCanonicalCategory(String(ec.nome_cobertura || '')),
+        ).trim()
+        const lmi = typeof ec.lmi_rs === 'number' ? ec.lmi_rs : null
+        if (cat && lmi !== null) {
+          apCobMap.set(cat, lmi)
+        }
+      }
+
+      for (const cob of card.coberturas) {
+        const lmiCartao = cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual ?? null
+        const catCartao = cob.categoriaNormalizada || matchCanonicalCategory(cob.nomeOriginal)
+        if (lmiCartao !== null && lmiCartao > 0) {
+          if (apCobMap.has(catCartao)) {
+            const lmiAp = apCobMap.get(catCartao)!
+            if (Math.abs(lmiAp - lmiCartao) > 500) {
+              divergencias.push({
+                campo: `Cobertura: ${catCartao}`,
+                valorApoliceVigente: lmiAp,
+                valorCartaoRisco: lmiCartao,
+                descricao: `LMI na apólice é R$ ${lmiAp.toLocaleString('pt-BR')} vs R$ ${lmiCartao.toLocaleString('pt-BR')} no Cartão.`,
+              })
+            }
+          } else {
+            divergencias.push({
+              campo: `Cobertura Só no Cartão: ${catCartao}`,
+              valorApoliceVigente: 'Não contratada',
+              valorCartaoRisco: lmiCartao,
+              descricao: `Cobertura solicitada no Cartão (${catCartao}) não consta na apólice vigente.`,
+            })
+          }
+        }
+      }
+    } catch {
+      // Coberturas não impedem o fluxo de casamento
     }
 
     return {
@@ -1526,58 +1646,152 @@ export async function saveRiskCardToDatabase(
     }
   }
 
+  // ETAPA 0: Se a apólice casada já estiver emitida/renovada (status 'ativa' ou 'renovada' e não prospect),
+  // NÃO sobrescrever as coberturas da apólice vigente com as do Cartão.
+  // Coberturas só são gravadas/atualizadas quando a apólice for um prospect (processo novo de cotação)
+  // ou quando não houver apólice vigente emitida.
+  let isApoliceVigenteEmitida = false
+  let apoliceRecordParaAuditoria: Record<string, unknown> | null = null
+  let coberturasApoliceVigente: Array<Record<string, unknown>> = []
+
+  if (apoliceRecordId) {
+    try {
+      apoliceRecordParaAuditoria = (await pb
+        .collection('apolices')
+        .getOne(apoliceRecordId)) as unknown as Record<string, unknown>
+      const statusApol = String(apoliceRecordParaAuditoria.status || '').toLowerCase()
+      // Se status for 'ativa', 'renovada', 'vencida', 'a vencer' ou tiver número de apólice oficial (não prospect)
+      if (
+        statusApol === 'ativa' ||
+        statusApol === 'renovada' ||
+        statusApol === 'a vencer' ||
+        statusApol === 'vencida' ||
+        (statusApol !== 'prospect' && apoliceRecordParaAuditoria.numero_apolice)
+      ) {
+        isApoliceVigenteEmitida = true
+      }
+    } catch {
+      // fallback: se era renovação consideramos emitida
+      if (match.outcome === 'RENOVACAO') {
+        isApoliceVigenteEmitida = true
+      }
+    }
+  }
+
   // 6. Coberturas Solicitadas / Declaradas
   if (card.coberturas.length > 0 && apoliceRecordId) {
-    onProgress?.('Gravando coberturas solicitadas pelo Cartão de Risco...')
-    const existingCobs = await pb.collection('coberturas').getFullList({
-      filter: `id_apolice="${apoliceRecordId}"`,
-    })
-    const existingCobMap = new Map<string, Record<string, unknown>>()
-    for (const ec of existingCobs) {
-      const k = `${ec.id_apolice}::${normalizeHeader(ec.nome_cobertura)}`
-      existingCobMap.set(k, ec as unknown as Record<string, unknown>)
+    // Carrega coberturas existentes
+    try {
+      coberturasApoliceVigente = (await pb.collection('coberturas').getFullList({
+        filter: `id_apolice="${apoliceRecordId}"`,
+      })) as unknown as Array<Record<string, unknown>>
+    } catch {
+      coberturasApoliceVigente = []
     }
 
-    for (const cob of card.coberturas) {
-      // Prioridade de valor: IS Escolhida -> IS Atualizada -> IS Atual
-      const lmiPrincipal = cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual ?? null
-      const cobPayload = {
-        id_apolice: apoliceRecordId,
-        nome_cobertura: cob.nomeOriginal,
-        categoria_normalizada: cob.categoriaNormalizada,
-        lmi_rs: lmiPrincipal,
-        is_atualizada: cob.isAtualizada,
-        is_escolhida: cob.isEscolhida,
-        observacao: cob.observacao,
-        origem: 'Cartão de Risco',
+    if (isApoliceVigenteEmitida) {
+      // ETAPA 0: NÃO SOBRESCREVER COBERTURAS DA APÓLICE VIGENTE
+      onProgress?.(
+        'Apólice vigente já emitida/renovada: preservando coberturas originais sem sobrescrita...',
+      )
+      summary.coberturasUnchanged += coberturasApoliceVigente.length || card.coberturas.length
+      summary.unchangedCount += coberturasApoliceVigente.length || card.coberturas.length
+    } else {
+      // Processo de cotação novo ou prospect: grava normalmente
+      onProgress?.('Gravando coberturas solicitadas pelo Cartão de Risco...')
+      const existingCobMap = new Map<string, Record<string, unknown>>()
+      for (const ec of coberturasApoliceVigente) {
+        const k = `${ec.id_apolice}::${normalizeHeader(String(ec.nome_cobertura || ''))}`
+        existingCobMap.set(k, ec)
       }
 
-      const dedupeKey = `${apoliceRecordId}::${normalizeHeader(cob.nomeOriginal)}`
-      const existing = existingCobMap.get(dedupeKey)
-
-      try {
-        if (existing) {
-          if (isRecordIdentical(existing, cobPayload)) {
-            summary.coberturasUnchanged++
-            summary.unchangedCount++
-            continue
-          }
-          await executeWithRetry(() =>
-            pb.collection('coberturas').update(String(existing.id), cobPayload),
-          )
-          summary.coberturasUpdated++
-          summary.updatedCount++
-        } else {
-          const created = await executeWithRetry(() =>
-            pb.collection('coberturas').create(cobPayload),
-          )
-          existingCobMap.set(dedupeKey, created as unknown as Record<string, unknown>)
-          summary.coberturasCreated++
-          summary.createdCount++
+      for (const cob of card.coberturas) {
+        // Prioridade de valor: IS Escolhida -> IS Atualizada -> IS Atual
+        const lmiPrincipal = cob.isEscolhida ?? cob.isAtualizada ?? cob.isAtual ?? null
+        const cobPayload = {
+          id_apolice: apoliceRecordId,
+          nome_cobertura: cob.nomeOriginal,
+          categoria_normalizada: cob.categoriaNormalizada,
+          lmi_rs: lmiPrincipal,
+          is_atualizada: cob.isAtualizada,
+          is_escolhida: cob.isEscolhida,
+          observacao: cob.observacao,
+          origem: 'Cartão de Risco',
         }
-      } catch (err) {
-        summary.errors.push(`Erro cobertura ${cob.nomeOriginal}: ${(err as Error).message}`)
+
+        const dedupeKey = `${apoliceRecordId}::${normalizeHeader(cob.nomeOriginal)}`
+        const existing = existingCobMap.get(dedupeKey)
+
+        try {
+          if (existing) {
+            if (isRecordIdentical(existing, cobPayload)) {
+              summary.coberturasUnchanged++
+              summary.unchangedCount++
+              continue
+            }
+            await executeWithRetry(() =>
+              pb.collection('coberturas').update(String(existing.id), cobPayload),
+            )
+            summary.coberturasUpdated++
+            summary.updatedCount++
+          } else {
+            const created = await executeWithRetry(() =>
+              pb.collection('coberturas').create(cobPayload),
+            )
+            existingCobMap.set(dedupeKey, created as unknown as Record<string, unknown>)
+            summary.coberturasCreated++
+            summary.createdCount++
+          }
+        } catch (err) {
+          summary.errors.push(`Erro cobertura ${cob.nomeOriginal}: ${(err as Error).message}`)
+        }
       }
+    }
+  }
+
+  // 7. ETAPA 1: GERAR NOVA RODADA DE AUDITORIA PERSISTENTE (AUDITORIA_RODADAS)
+  if (empRecordId) {
+    try {
+      onProgress?.('Registrando nova rodada da Auditoria Cartão × Apólice...')
+      const { buildAuditoriaSnapshot, createAuditoriaRodada } =
+        await import('@/services/auditoriaCartaoApoliceService')
+      const snapshot = buildAuditoriaSnapshot(
+        card,
+        apoliceRecordParaAuditoria,
+        coberturasApoliceVigente,
+        {
+          produtoCartao: match.produtoCartao,
+          ramoCanonicaCartao: match.ramoCanonicaCartao,
+        },
+      )
+
+      let usuarioId = ''
+      try {
+        if (currentUserEmail) {
+          const userRec = await pb
+            .collection('users')
+            .getFirstListItem(`email="${currentUserEmail}"`)
+          usuarioId = userRec?.id || ''
+        }
+      } catch {
+        // ignore
+      }
+
+      const rodadaCriada = await createAuditoriaRodada({
+        empreendimentoId: empRecordId,
+        apoliceId: apoliceRecordId || undefined,
+        produtoRamo: match.ramoCanonicaCartao || match.produtoCartao || 'Riscos Nomeados',
+        arquivoOrigem: card.fileName || originalFile.name || 'Cartao_de_Risco.xlsx',
+        usuarioId: usuarioId || undefined,
+        usuarioEmail: currentUserEmail,
+        desfecho: match.outcome,
+        snapshot,
+        observacoes: `Auditoria gerada automaticamente no upload do Cartão de Risco (${card.fileName}). Total de divergências identificadas: ${snapshot.coberturas.totalDivergencias + snapshot.identificacao.divergenciasIdentificacao.length}.`,
+      })
+      summary.auditoriaRodadaId = rodadaCriada.id
+    } catch (err) {
+      console.warn('Erro ao salvar rodada de auditoria:', err)
+      // Não trava o fluxo principal se a rodada falhar
     }
   }
 

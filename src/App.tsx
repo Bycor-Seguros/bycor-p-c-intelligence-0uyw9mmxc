@@ -19,6 +19,7 @@ import RfqPage from '@/pages/ciclo/RfqPage'
 import TabulacaoPage from '@/pages/ciclo/TabulacaoPage'
 import ApresentacaoPage from '@/pages/ciclo/ApresentacaoPage'
 import AuditoriaPage from '@/pages/ciclo/AuditoriaPage'
+import AuditoriaCartaoApolicePage from '@/pages/ciclo/AuditoriaCartaoApolicePage'
 import AprovacaoPage from '@/pages/ciclo/AprovacaoPage'
 import MercadoPage from '@/pages/mercado/MercadoPage'
 import VersaoContratacaoPage from '@/pages/mercado/VersaoContratacaoPage'
@@ -58,8 +59,8 @@ export default function App() {
             <Route path="/c3-tabulacao" element={<TabulacaoPage />} />
             <Route path="/c4-apresentacao" element={<ApresentacaoPage />} />
             <Route path="/c5-auditoria" element={<AuditoriaPage />} />
+            <Route path="/auditoria-cartao-apolice" element={<AuditoriaCartaoApolicePage />} />
             <Route path="/c6-aprovacao" element={<AprovacaoPage />} />
-
             {/* Gestão Comercial */}
             <Route path="/mercado" element={<MercadoPage />} />
             <Route path="/versao-contratacao" element={<VersaoContratacaoPage />} />

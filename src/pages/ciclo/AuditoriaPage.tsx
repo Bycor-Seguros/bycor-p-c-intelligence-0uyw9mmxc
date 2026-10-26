@@ -323,13 +323,24 @@ BYCOR Consultoria e Corretora de Seguros`
           </p>
         </div>
 
-        <Button
-          onClick={() => setNewModalOpen(true)}
-          className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4 text-blue-300" />
-          <span>Nova Auditoria Técnica</span>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            onClick={() => (window.location.href = '/auditoria-cartao-apolice')}
+            variant="outline"
+            className="border-blue-200 text-[#16578B] bg-blue-50/80 hover:bg-blue-100 text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+          >
+            <FileCheck className="w-4 h-4 text-[#16578B]" />
+            <span>Auditoria Cartão × Apólice (Persistente)</span>
+          </Button>
+
+          <Button
+            onClick={() => setNewModalOpen(true)}
+            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4 text-blue-300" />
+            <span>Nova Auditoria Técnica</span>
+          </Button>
+        </div>
       </div>
 
       {/* Auditorias Table */}
