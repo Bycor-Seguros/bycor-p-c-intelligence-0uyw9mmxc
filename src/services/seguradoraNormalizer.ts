@@ -13,7 +13,7 @@
  * 5. Possui cache em memória durante a sessão/operação assíncrona para evitar chamadas repetidas.
  */
 
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 
 export interface SeguradoraCadastroRecord {
   id: string
