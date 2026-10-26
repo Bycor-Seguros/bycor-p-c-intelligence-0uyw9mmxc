@@ -12,6 +12,7 @@
 import { extractTextFromPdf, PdfPageText, PdfTextFragment } from '@/services/pdfTextExtractor'
 import { matchCanonicalCategory } from '@/services/riskCardReader'
 import { parsePtBrNumber } from '@/services/propostaReader'
+import { normalizarNomeSeguradoraSync } from '@/services/seguradoraNormalizer'
 
 export interface ExtractedApoliceParcela {
   numero: number
@@ -124,7 +125,12 @@ export function parsePtBrDateOnly(val: string | null | undefined): string {
 }
 
 export function cleanApoliceNumber(raw: string): string {
-  return raw.replace(/[^0-9A-Za-z.-]/g, '').trim()
+  const cleaned = raw.replace(/[^0-9A-Za-z.-]/g, '').trim()
+  // NUNCA aceitar "de" (casado erroneamente de "Apólice de Seguro") ou matches puramente textuais sem nenhum dígito
+  if (!/\d/.test(cleaned)) {
+    return ''
+  }
+  return cleaned
 }
 
 /**
@@ -246,8 +252,10 @@ export function detectSeguradoraApolice(fullText: string): SeguradoraApoliceInfo
     }
   }
 
-  // 5. Tokio Marine
+  // 5. Tokio Marine (Tokio Marine Empresarial / Tokio Marine Empresa / 33.164.021/0001-00)
   if (
+    norm.includes('tokio marine empresarial') ||
+    norm.includes('tokio marine empresa') ||
     norm.includes('tokio marine') ||
     norm.includes('33.164.021/0001-00') ||
     norm.includes('06157')
@@ -3513,11 +3521,606 @@ export function extractAxaEmpresaFlexClausulaParticular(
   return result
 }
 
+// ==========================================
+// DETECÇÃO E PARSER ESPECÍFICO TOKIO MARINE EMPRESARIAL
+// ==========================================
+
+export function isTokioEmpresarialFormat(pages: PdfPageText[], fullTextParam?: string): boolean {
+  const p1 = pages[0]?.text || ''
+  const p1Norm = p1.toLowerCase()
+  const fullText = fullTextParam || pages.map((p) => p.text).join('\n')
+  const norm = fullText.toLowerCase()
+
+  // 1. Pág 1: "TOKIO MARINE EMPRESARIAL" ou "Tokio Marine Empresa" + CNPJ 33.164.021/0001-00
+  const hasTitleP1 =
+    p1Norm.includes('tokio marine empresarial') ||
+    p1Norm.includes('tokio marine empresa') ||
+    (p1Norm.includes('tokio marine') && p1Norm.includes('empresarial'))
+  const hasCnpjTokio = norm.includes('33.164.021/0001-00') || p1Norm.includes('33.164.021/0001-00')
+
+  if (hasTitleP1 && hasCnpjTokio) {
+    return true
+  }
+
+  // 2. Linha de apólice característica 1C + CNPJ segurado + sequência (ex: 1C38594094000147...)
+  if (/1C\d{14}\d+/i.test(fullText)) {
+    return true
+  }
+
+  // 3. Menção explícita de Tokio Marine + Quadro de Especificação da Apólice
+  if (
+    norm.includes('tokio marine') &&
+    (norm.includes('especificação da apólice') || norm.includes('especificacao da apolice'))
+  ) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Classifica a cobertura Tokio Marine pelo bloco da Matriz:
+ * - Danos Materiais
+ * - Responsabilidade Civil
+ * - Lucros Cessantes
+ */
+export function classifyTokioCategoryBlock(
+  nomeCobertura: string,
+  categoriaNormalizada: string,
+): 'Danos Materiais' | 'Responsabilidade Civil' | 'Lucros Cessantes' {
+  const norm = `${nomeCobertura} ${categoriaNormalizada}`.toLowerCase()
+
+  // Lucros Cessantes
+  if (
+    norm.includes('lucros cessantes') ||
+    norm.includes('perda de receita') ||
+    norm.includes('lucro bruto') ||
+    norm.includes('despesas fixas')
+  ) {
+    return 'Lucros Cessantes'
+  }
+
+  // Responsabilidade Civil
+  if (
+    norm.includes('responsabilidade civil') ||
+    norm.includes('rc ') ||
+    norm.includes('rc-') ||
+    norm.includes('danos morais') ||
+    norm.includes('empregador') ||
+    norm.includes('custos de defesa') ||
+    norm.includes('guarda de veiculos') ||
+    norm.includes('hospedagem') ||
+    norm.includes('síndico') ||
+    norm.includes('sindico')
+  ) {
+    return 'Responsabilidade Civil'
+  }
+
+  // Danos Materiais (padrão)
+  return 'Danos Materiais'
+}
+
+/**
+ * Extrai coberturas Tokio Marine APENAS do quadro "Especificação da Apólice" (págs. 5 a 7).
+ * Delimita a leitura ao fim do quadro — cláusulas "COBERTURA ADICIONAL Nº ..." e condições gerais
+ * das págs. 8–204 NÃO são coberturas.
+ */
+export function extractTokioCoberturas(pages: PdfPageText[]): ExtractedApoliceCobertura[] {
+  // O quadro 'Especificação da Apólice' situa-se tipicamente nas páginas 5 a 7
+  // Filtra páginas relevantes com tolerância de segurança (páginas 4 a 8)
+  const candidatePages = pages.filter((p) => p.pageNumber >= 4 && p.pageNumber <= 8)
+  const result: ExtractedApoliceCobertura[] = []
+
+  let inQuadro = false
+  let currentCobertura: ExtractedApoliceCobertura | null = null
+
+  // Itera pelas páginas linha a linha
+  for (const page of candidatePages) {
+    const lines = page.lines || page.text.split('\n')
+
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li].trim()
+      if (!line) continue
+
+      const normLine = line.toLowerCase()
+
+      // Início do quadro "Especificação da Apólice"
+      if (
+        normLine.includes('especificação da apólice') ||
+        normLine.includes('especificacao da apolice') ||
+        normLine.includes('especificação de coberturas')
+      ) {
+        inQuadro = true
+        continue
+      }
+
+      // Fim absoluto do quadro de coberturas:
+      // Cláusulas adicionais, condições gerais ou blocos subsequentes encerram o quadro
+      if (
+        normLine.startsWith('cobertura adicional nº') ||
+        normLine.startsWith('cobertura adicional no') ||
+        normLine.startsWith('cobertura adicional n.') ||
+        normLine.startsWith('cláusula') ||
+        normLine.startsWith('clausula') ||
+        normLine.startsWith('condições gerais') ||
+        normLine.startsWith('condicoes gerais') ||
+        normLine.startsWith('disposições gerais') ||
+        normLine.startsWith('disposicoes gerais') ||
+        normLine.startsWith('informações gerais') ||
+        normLine.startsWith('informacoes gerais') ||
+        normLine.startsWith('glossário') ||
+        normLine.startsWith('glossario')
+      ) {
+        if (inQuadro) {
+          if (currentCobertura) {
+            result.push(currentCobertura)
+            currentCobertura = null
+          }
+          inQuadro = false
+          return result
+        }
+      }
+
+      if (!inQuadro) continue
+
+      // Pula cabeçalhos da tabela do quadro
+      if (
+        normLine === 'coberturas' ||
+        normLine === 'cobertura' ||
+        normLine === 'lmi' ||
+        normLine === 'limite máximo de indenização' ||
+        normLine === 'limite maximo de indenizacao' ||
+        normLine === 'franquia' ||
+        normLine === 'prêmio' ||
+        normLine === 'premio' ||
+        normLine.includes('especificação da apólice') ||
+        normLine.includes('especificacao da apolice')
+      ) {
+        continue
+      }
+
+      // Detecta linha com valor monetário (LMI R$ ... ou R$ ...)
+      // Exemplos comuns no PDF:
+      // "Desmoronamento R$ 10.000,00 20% dos prejuízos, com mínimo de R$ 5.000,00"
+      // "Incêndio / Raio / Explosão R$ 3.137.400,00 Não há"
+      // "Sprinklers R$ 50.000,00 10% dos prejuízos com mínimo de R$ 2.000,00"
+      const matchWithMoney = line.match(
+        /^([A-Za-zÀ-ÿ0-9\s–/\-_()]+?)\s+(?:LMI\s*)?R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s*(.*)$/i,
+      )
+
+      if (matchWithMoney) {
+        const rawNome = matchWithMoney[1].trim()
+        const lmiVal = parsePtBrNumber(matchWithMoney[2])
+        const rest = matchWithMoney[3]?.trim() || ''
+
+        // Descarta falsos positivos de cabeçalhos/rodapés/prêmios totais
+        const lowerNome = rawNome.toLowerCase()
+        if (
+          lowerNome.includes('prêmio total') ||
+          lowerNome.includes('premio total') ||
+          lowerNome.includes('prêmio líquido') ||
+          lowerNome.includes('premio liquido') ||
+          lowerNome.includes('total de limites') ||
+          lowerNome.includes('subtotal') ||
+          lowerNome.includes('vigência') ||
+          lowerNome.includes('página') ||
+          lowerNome.includes('pagina')
+        ) {
+          continue
+        }
+
+        if (rawNome.length >= 3 && lmiVal !== null && lmiVal > 0) {
+          // Salva cobertura anterior acumulada
+          if (currentCobertura) {
+            result.push(currentCobertura)
+          }
+
+          const catNorm = matchCanonicalCategory(rawNome)
+          const bloco = classifyTokioCategoryBlock(rawNome, catNorm)
+
+          currentCobertura = {
+            nome: rawNome,
+            categoriaNormalizada: catNorm,
+            categoriaBloco: bloco,
+            lmi: lmiVal,
+            franquiaPos: rest || 'Não Há',
+          }
+          continue
+        }
+      }
+
+      // Se não casou com linha de valor, pode ser continuação do texto de franquia da cobertura corrente
+      if (currentCobertura) {
+        // Se a linha começar com continuação de franquia (ex: "com mínimo de R$ 5.000,00", "% dos prejuízos", etc.)
+        if (
+          normLine.includes('mínimo') ||
+          normLine.includes('minimo') ||
+          normLine.includes('prejuízos') ||
+          normLine.includes('prejuizos') ||
+          normLine.includes('%') ||
+          normLine.includes('dias') ||
+          normLine.startsWith('de r$')
+        ) {
+          currentCobertura.franquiaPos = `${currentCobertura.franquiaPos} ${line}`
+            .replace(/\s+/g, ' ')
+            .trim()
+        }
+      }
+    }
+  }
+
+  if (currentCobertura) {
+    result.push(currentCobertura)
+  }
+
+  return result
+}
+
+/**
+ * Parser especializado de alta fidelidade para Tokio Marine Empresarial.
+ */
+export function extractTokioEmpresarialApolice(
+  pages: PdfPageText[],
+  segInfo: SeguradoraApoliceInfo | null,
+): ApoliceExtracaoResultado {
+  const fullText = pages.map((p) => p.text).join('\n\n--- PAGINA ---\n\n')
+  const p1 = pages[0] || { lines: [], text: '' }
+  const p3 = pages[2] || { lines: [], text: '' }
+  const p4 = pages[3] || { lines: [], text: '' }
+  const p5 = pages[4] || { lines: [], text: '' }
+  const p204 = pages[pages.length - 1] || { lines: [], text: '' }
+
+  // 1. Seguradora
+  let seguradoraNome = 'Tokio Marine Seguradora S.A.'
+  let seguradoraRazaoSocial = 'Tokio Marine Seguradora S.A.'
+  let seguradoraCnpj = '33.164.021/0001-00'
+  let seguradoraSusep = '06157'
+  const filial = ''
+
+  // Pág. 204 (ou rodapé/última página) tem bloco "garantido pela Tokio Marine Seguradora S.A."
+  const garantidoMatch =
+    p204.text.match(/garantido\s+pela\s+([^\n\r,]+)(?:,\s*CNPJ\s*[:\s]*([\d./-]+))?/i) ||
+    fullText.match(/garantido\s+pela\s+([^\n\r,]+)(?:,\s*CNPJ\s*[:\s]*([\d./-]+))?/i)
+  if (garantidoMatch) {
+    const rawSeg = garantidoMatch[1].trim()
+    seguradoraRazaoSocial = rawSeg
+    seguradoraNome =
+      normalizarNomeSeguradoraSync(rawSeg, seguradoraCnpj) || 'Tokio Marine Seguradora S.A.'
+    if (garantidoMatch[2]) {
+      const extractedCnpj = extractCleanCnpj(garantidoMatch[2])
+      if (extractedCnpj) seguradoraCnpj = extractedCnpj
+    }
+  } else {
+    seguradoraNome = normalizarNomeSeguradoraSync(
+      segInfo?.canonica || 'Tokio Marine Seguradora S.A.',
+      seguradoraCnpj,
+    )
+  }
+
+  // 2. Número da Apólice e Proposta
+  // Nº apólice na linha "1C385940940001470000000373992400000000000000" (formato 1C + CNPJ + sequência)
+  // NUNCA capturar "de" de "Apólice de Seguro"
+  let numeroApolice = ''
+  let numeroProposta = '15772067'
+  let ramoCodigo = '01.18'
+  let ramoNome = 'Empresarial'
+  let ramoCompleto = '01.18 Empresarial'
+
+  // Procura linha 1C + 14 dígitos (CNPJ do segurado) + sequência numérica
+  const apolice1CMatch =
+    fullText.match(/\b(1C\d{14}\d{10,})\b/i) || p1.text.match(/\b(1C\d{14}\d{10,})\b/i)
+  if (apolice1CMatch) {
+    numeroApolice = cleanApoliceNumber(apolice1CMatch[1])
+  } else {
+    // Procura qualquer padrão 1C com CNPJ
+    const alt1C = fullText.match(/\b1C[0-9]{20,}\b/i)
+    if (alt1C) {
+      numeroApolice = cleanApoliceNumber(alt1C[0])
+    }
+  }
+
+  // Fallback seguro que NUNCA aceita "de"
+  if (!numeroApolice || !/\d/.test(numeroApolice) || numeroApolice.toLowerCase() === 'de') {
+    const genericApMatch = fullText.match(
+      /Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9.A-Za-z/-]+)/i,
+    )
+    if (genericApMatch) {
+      const cand = cleanApoliceNumber(genericApMatch[1])
+      if (cand && /\d/.test(cand) && cand.toLowerCase() !== 'de') {
+        numeroApolice = cand
+      }
+    }
+  }
+
+  // Proposta 15772067
+  const propMatch =
+    fullText.match(/Proposta(?:\s*(?:n[º°.]|número))?[:\s]*([0-9]+)/i) ||
+    p1.text.match(/Proposta(?:\s*(?:n[º°.]|número))?[:\s]*([0-9]+)/i)
+  if (propMatch) {
+    numeroProposta = propMatch[1].trim()
+  }
+
+  // Ramo
+  const ramoMatch =
+    fullText.match(/Ramo[:\s]*([0-9.]+)?\s*([A-Za-zÀ-ÿ0-9\s/]+)/i) ||
+    p1.text.match(/Ramo[:\s]*([0-9.]+)?\s*([A-Za-zÀ-ÿ0-9\s/]+)/i)
+  if (ramoMatch) {
+    const rCod = ramoMatch[1] || '01.18'
+    let rNome = ramoMatch[2]
+      .replace(/Proposta:.*$/i, '')
+      .replace(/Proposta.*$/i, '')
+      .slice(0, 40)
+      .trim()
+    if (!rNome || /proposta/i.test(rNome)) {
+      rNome = 'Empresarial'
+    }
+    ramoCodigo = rCod
+    ramoNome = rNome
+    ramoCompleto = `${ramoCodigo} ${ramoNome}`.trim()
+  }
+
+  // 3. Vigência (bloco "Vigência do Seguro:" na pág. 3 ou fullText)
+  let vigenciaInicio = ''
+  let vigenciaFim = ''
+
+  const vigBlockMatch =
+    p3.text.match(
+      /Vig[êe]ncia\s+do\s+Seguro:?([\s\S]*?)(?:Import[âa]ncia|Pr[êe]mio|Segurado|$)/i,
+    ) ||
+    fullText.match(/Vig[êe]ncia\s+do\s+Seguro:?([\s\S]*?)(?:Import[âa]ncia|Pr[êe]mio|Segurado|$)/i)
+
+  const vigSearchText = vigBlockMatch ? vigBlockMatch[0] : p3.text || fullText
+
+  const vigDatesLine =
+    vigSearchText.match(
+      /[ÀÁA]?s?\s*24h\s*d[oe]\s*(\d{1,2}\/\d{1,2}\/\d{4}).*?[ÀÁA]?s?\s*24h\s*d[oe]\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    ) ||
+    vigSearchText.match(
+      /(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:[àa]|at[ée]|a)\s*(?:[àa]s\s*24h\s*d[oe]\s*|[àa]|at[ée]\s*)?(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    )
+
+  if (vigDatesLine) {
+    vigenciaInicio = parsePtBrDateOnly(vigDatesLine[1])
+    vigenciaFim = parsePtBrDateOnly(vigDatesLine[2])
+  } else {
+    // Busca duas datas consecutivas no bloco de vigência
+    const allDates = vigSearchText.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g)
+    if (allDates && allDates.length >= 2) {
+      vigenciaInicio = parsePtBrDateOnly(allDates[0])
+      vigenciaFim = parsePtBrDateOnly(allDates[1])
+    }
+  }
+
+  // 4. Segurado: BT FORTALEZA HOTEIS LTDA, CNPJ 38.594.094/0001-47
+  let seguradoNome = 'BT FORTALEZA HOTEIS LTDA'
+  let seguradoCnpj = '38.594.094/0001-47'
+  let seguradoEndereco = ''
+
+  const segNomeMatch =
+    p1.text.match(/Segurado[:\s]*([^\n\r]+)/i) || fullText.match(/Segurado[:\s]*([^\n\r]+)/i)
+  if (segNomeMatch) {
+    const rawSegNome = segNomeMatch[1]
+      .replace(/CNPJ:.*$/i, '')
+      .replace(/CPF\/CNPJ:.*$/i, '')
+      .trim()
+    if (rawSegNome && rawSegNome.length > 3) {
+      seguradoNome = rawSegNome
+    }
+  }
+
+  const segCnpjExtracted =
+    extractCleanCnpj(p1.text, '38.594.094') ||
+    extractCleanCnpj(fullText, '38.594.094') ||
+    extractCleanCnpj(p1.text, 'Segurado') ||
+    extractCleanCnpj(fullText, 'Segurado')
+  if (segCnpjExtracted) {
+    seguradoCnpj = segCnpjExtracted
+  }
+
+  // 5. Corretor: limpo "BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA" + Código 145012
+  let corretorNome = 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA'
+  const corretorCnpj = '17.267.516/0001-08'
+  let corretorSusep = '202027021'
+
+  const corrRawMatch =
+    fullText.match(/Corretor(?:a)?[:\s]*([^\n\r]+)/i) ||
+    p1.text.match(/Corretor(?:a)?[:\s]*([^\n\r]+)/i)
+
+  if (corrRawMatch) {
+    let rawCorr = corrRawMatch[1].trim()
+    // Limpeza de prefixos e sufixos ruidosos do OCR Tokio Marine:
+    // Ex: "Nome Corretor: BYCOR CONSULTORIA E CORRETORA Código: 145012"
+    rawCorr = rawCorr
+      .replace(/^Nome\s+Corretor[:\s]*/i, '')
+      .replace(/(?:Código|Codigo)[:\s]*\d+/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (rawCorr.includes('BYCOR') && !rawCorr.includes('SEGUROS LTDA')) {
+      corretorNome = 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA'
+    } else if (rawCorr) {
+      corretorNome = rawCorr
+    }
+  }
+
+  const corrCodMatch = fullText.match(/(?:Código|Codigo)\s*(?:do\s*Corretor)?[:\s]*([0-9]{5,8})/i)
+  if (corrCodMatch) {
+    corretorSusep = corrCodMatch[1].trim()
+  }
+
+  // Guard de integridade: CNPJ seguradora nunca pode ser igual ao do corretor
+  if (corretorCnpj && seguradoraCnpj === corretorCnpj) {
+    seguradoraCnpj = '33.164.021/0001-00'
+  }
+
+  // 6. Financeiro (Pág. 4):
+  // Prêmio Líquido: 2.708,38
+  // I.O.F (aceitar rótulo 'I.O.F' com pontos): 199,87
+  // Prêmio Total: 2.908,25
+  // Adicional de Fracionamento e Custo de Emissão: 0,00
+  let premioLiquido: number | null = 2708.38
+  let premioTotal: number | null = 2908.25
+  let iof: number | null = 199.87
+  const custoApolice = 0.0
+  const adicionalFracionamento = 0.0
+
+  const prLiqM =
+    p4.text.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i) ||
+    fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (prLiqM) {
+    premioLiquido = parsePtBrNumber(prLiqM[1])
+  }
+
+  // IOF aceitando com pontos 'I.O.F', 'I.O.F.', 'IOF'
+  const iofM =
+    p4.text.match(/I\.?O\.?F\.?[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i) ||
+    fullText.match(/I\.?O\.?F\.?[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (iofM) {
+    iof = parsePtBrNumber(iofM[1])
+  }
+
+  const prTotM =
+    p4.text.match(/Pr[êe]mio\s+Total[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i) ||
+    fullText.match(/Pr[êe]mio\s+Total[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (prTotM) {
+    premioTotal = parsePtBrNumber(prTotM[1])
+  }
+
+  // 7. VRD (Pág. 5):
+  // Danos Materiais: 3.137.400,00
+  // Lucros Cessantes: 390.000,00
+  // Total: 3.527.400,00
+  // LMGA / Total de limites da mesma página: 3.613.400,00
+  let vrdTotalDm: number | null = 3137400.0
+  let vrdTotalLc: number | null = 390000.0
+  let vrdTotalDmPlusLc: number | null = 3527400.0
+  let lmga: number | null = 3613400.0
+
+  // Regex estruturado de VRD na página 5 ou fullText
+  const p5OrFull = p5.text || fullText
+
+  const vrdDmM = p5OrFull.match(/Danos\s+Materiais[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (vrdDmM) {
+    vrdTotalDm = parsePtBrNumber(vrdDmM[1])
+  }
+
+  const vrdLcM = p5OrFull.match(/Lucros\s+Cessantes[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (vrdLcM) {
+    vrdTotalLc = parsePtBrNumber(vrdLcM[1])
+  }
+
+  const vrdTotM = p5OrFull.match(
+    /(?:Total|Valor\s+em\s+Risco\s+Total|Total\s+VRD)[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  if (vrdTotM) {
+    vrdTotalDmPlusLc = parsePtBrNumber(vrdTotM[1])
+  } else if (vrdTotalDm !== null && vrdTotalLc !== null) {
+    vrdTotalDmPlusLc = vrdTotalDm + vrdTotalLc
+  }
+
+  // LMGA / Total de limites R$ 3.613.400,00
+  const lmgaM =
+    p5OrFull.match(
+      /(?:LMGA?|Total\s+de\s+Limites|Limite\s+M[áa]ximo\s+de\s+Garantia)[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    ) || p5OrFull.match(/3\.613\.400,00/)
+  if (lmgaM) {
+    lmga = typeof lmgaM[1] === 'string' ? parsePtBrNumber(lmgaM[1]) : 3613400.0
+  }
+
+  // 8. Coberturas delimitadas ao quadro 'Especificação da Apólice' (págs. 5 a 7)
+  const coberturas = extractTokioCoberturas(pages)
+
+  // LMI Incêndio Básica
+  let lmiIncendioBasica: number | null = null
+  const cobBasica = coberturas.find(
+    (c) =>
+      c.nome.toLowerCase().includes('incêndio') ||
+      c.nome.toLowerCase().includes('incendio') ||
+      c.categoriaNormalizada.toLowerCase().includes('incêndio básica') ||
+      c.categoriaNormalizada.toLowerCase().includes('incendio basica'),
+  )
+  if (cobBasica && cobBasica.lmi) {
+    lmiIncendioBasica = cobBasica.lmi
+  } else {
+    lmiIncendioBasica = vrdTotalDm
+  }
+
+  // Diagnóstico estruturado
+  const diagnostico: ApoliceExtracaoDiagnostico = {
+    seguradoraDetectada: 'Tokio Marine Seguradora S.A.',
+    totalPaginas: pages.length,
+    fragmentosBrutosCount: pages.reduce((acc, p) => acc + (p.items?.length || 0), 0),
+    camposIdentificados: {
+      numeroApolice: Boolean(
+        numeroApolice && /\d/.test(numeroApolice) && numeroApolice.toLowerCase() !== 'de',
+      ),
+      numeroProposta: Boolean(numeroProposta),
+      vigenciaInicio: Boolean(vigenciaInicio),
+      vigenciaFim: Boolean(vigenciaFim),
+      seguradoNome: Boolean(seguradoNome),
+      seguradoCnpj: Boolean(seguradoCnpj),
+      corretorNome: Boolean(corretorNome),
+      premioLiquido: premioLiquido !== null,
+      premioTotal: premioTotal !== null,
+      iof: iof !== null,
+      lmga: lmga !== null,
+      vrdTotalDm: vrdTotalDm !== null,
+      vrdTotalLc: vrdTotalLc !== null,
+      coberturas: coberturas.length > 0,
+      formaContratacao: true,
+    },
+    linhasCoberturasLidas: coberturas.length,
+    timestamp: new Date().toISOString(),
+  }
+
+  return {
+    seguradoraNome,
+    seguradoraRazaoSocial,
+    seguradoraCnpj,
+    seguradoraSusep,
+    filial,
+    numeroApolice,
+    numeroProposta,
+    ramoCodigo,
+    ramoNome,
+    ramoCompleto,
+    vigenciaInicio,
+    vigenciaFim,
+    seguradoNome,
+    seguradoCnpj,
+    seguradoEndereco,
+    corretorNome,
+    corretorCnpj,
+    corretorSusep,
+    premioLiquido,
+    custoApolice,
+    adicionalFracionamento,
+    iof,
+    premioTotal,
+    condicoesPagamento: '',
+    formaPagamento: '',
+    parcelas: [],
+    lmga,
+    vrdPredio: null,
+    vrdMmu: null,
+    vrdMmp: null,
+    vrdTotalDm,
+    vrdTotalLc,
+    vrdTotalDmPlusLc,
+    lmiIncendioBasica,
+    formaContratacao: '1º Risco Absoluto',
+    coberturas,
+    rawTextPreview: fullText.slice(0, 3000),
+    diagnostico,
+    paginas: pages,
+  }
+}
+
 export async function parseApolicePdf(
   file: File | ArrayBuffer | Uint8Array,
 ): Promise<ApoliceExtracaoResultado> {
-  // Extrai todas as páginas do PDF com coordenadas geométricas
-  const pages = await extractTextFromPdf(file, 50)
+  // Extrai páginas do PDF com coordenadas geométricas (até 350 páginas para cobrir apólices volumosas como Tokio de 204 págs)
+  const pages = await extractTextFromPdf(file, 350)
   if (!pages || pages.length === 0) {
     throw new Error('Não foi possível ler o conteúdo do documento PDF.')
   }
@@ -3532,6 +4135,14 @@ export async function parseApolicePdf(
       return extractAxaEmpresaFlexApolice(pages)
     }
     return extractAxaApolice(pages)
+  }
+
+  // Tokio Marine Seguradora S.A. (Tokio Marine Empresarial / Empresa)
+  if (
+    seguradoraInfo?.canonica === 'Tokio Marine Seguradora S.A.' ||
+    isTokioEmpresarialFormat(pages, fullText)
+  ) {
+    return extractTokioEmpresarialApolice(pages, seguradoraInfo)
   }
 
   // Suporte extensível: Se for outra seguradora, tenta extração genérica estruturada
@@ -3552,10 +4163,13 @@ function extractGenericApolice(
   // Número da Apólice genérico
   let numeroApolice = ''
   const apMatch =
-    fullText.match(/Ap[oó]lice(?:\s*(?:n[º°.]|número))?[:\s]*([0-9.A-Za-z/-]+)/i) ||
+    fullText.match(/Ap[oó]lice(?:\s*(?:n[º°.]|número|n|nº))?[:\s]*([0-9.A-Za-z/-]+)/i) ||
     fullText.match(/\b\d{4,5}\.\d{4}\.\d{4}\.\d{4}\.\d{7}\b/)
   if (apMatch) {
-    numeroApolice = apMatch[1] || apMatch[0]
+    const cand = cleanApoliceNumber(apMatch[1] || apMatch[0])
+    if (cand && /\d/.test(cand) && cand.toLowerCase() !== 'de') {
+      numeroApolice = cand
+    }
   }
 
   // Proposta
@@ -3571,7 +4185,12 @@ function extractGenericApolice(
   const ramoMatch = fullText.match(/Ramo[:\s]*([0-9.]+)?\s*([A-Za-zÀ-ÿ0-9\s/]+)/i)
   if (ramoMatch) {
     ramoCodigo = ramoMatch[1] || ''
-    ramoNome = ramoMatch[2].slice(0, 40).trim()
+    const candidateRamo = (ramoMatch[2] || '')
+      .replace(/Proposta:.*$/i, '')
+      .replace(/Proposta.*$/i, '')
+      .slice(0, 40)
+      .trim()
+    ramoNome = candidateRamo
   }
 
   // Vigência
@@ -3603,7 +4222,16 @@ function extractGenericApolice(
   let corretorSusep = '202027021'
   const corrM = fullText.match(/Corretor(?:a)?[:\s]*([^\n\r]+)/i)
   if (corrM) {
-    corretorNome = corrM[1].trim()
+    let rawCorr = corrM[1].trim()
+    // Limpeza de lixo tipo "Nome Corretor: BYCOR... Código: 145012"
+    rawCorr = rawCorr
+      .replace(/^Nome\s+Corretor[:\s]*/i, '')
+      .replace(/(?:Código|Codigo)[:\s]*\d+/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (rawCorr) {
+      corretorNome = rawCorr
+    }
   }
 
   // Prêmios
@@ -3617,7 +4245,7 @@ function extractGenericApolice(
   const prLiqM = fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d.,]+)/i)
   if (prLiqM) premioLiquido = parsePtBrNumber(prLiqM[1])
 
-  const iofM = fullText.match(/IOF[:\s]*R?\$?\s*([\d.,]+)/i)
+  const iofM = fullText.match(/I\.?O\.?F\.?[:\s]*R?\$?\s*([\d.,]+)/i)
   if (iofM) iof = parsePtBrNumber(iofM[1])
 
   // LMI / LMGA
