@@ -1356,52 +1356,35 @@ function extractAxaCoberturasGeometric(
       }
     }
 
-    // 5. Atribuição de linhas só-de-texto col1 à âncora correta estritamente dentro da mesma página
-    // REGRA: linha de texto em col1 abaixo da âncora (ou acima se for o início do nome na célula)
-    // pertence à âncora mais próxima verticalmente.
+    // 5. Atribuição de linhas só-de-texto col1 e col3 à âncora correta pela banda vertical da cobertura:
+    // Compõe o NOME de cada cobertura e a FRANQUIA (P.O.S.) com TODAS as linhas de texto da própria banda
+    // vertical da cobertura — linhas ACIMA ou ABAIXO da linha de valores/âncora — em ordem y, sem cruzar bandas.
+    // Delimita a banda pela metade da distância entre âncoras adjacentes (topo/fundo no infinito dentro da página).
     if (pageAnchors.length > 0) {
-      for (const tLine of textOnlyCol1) {
-        // Procura primeiro uma âncora cujo y seja maior ou igual (tLine logo abaixo ou na mesma banda)
-        // ou a âncora com menor distância |Δy|
-        let bestAnchor = pageAnchors[0]
-        let minDy = Math.abs(pageAnchors[0].y - tLine.y)
+      // Garante que pageAnchors estejam ordenadas de cima para baixo (y decrescente)
+      pageAnchors.sort((a, b) => b.y - a.y)
 
-        for (let i = 1; i < pageAnchors.length; i++) {
-          const dy = Math.abs(pageAnchors[i].y - tLine.y)
-          if (dy < minDy) {
-            minDy = dy
-            bestAnchor = pageAnchors[i]
+      const getAnchorForY = (targetY: number): AxaAnchor => {
+        if (pageAnchors.length === 1) return pageAnchors[0]
+        for (let i = 0; i < pageAnchors.length; i++) {
+          const bandTop = i === 0 ? Infinity : (pageAnchors[i - 1].y + pageAnchors[i].y) / 2
+          const bandBottom =
+            i === pageAnchors.length - 1 ? -Infinity : (pageAnchors[i].y + pageAnchors[i + 1].y) / 2
+          if (targetY >= bandBottom && targetY < bandTop) {
+            return pageAnchors[i]
           }
         }
-
-        bestAnchor.col1Assigned.push(tLine)
+        return pageAnchors[pageAnchors.length - 1]
       }
 
-      // 6. Atribuição de linhas só-de-texto col3 à âncora correta estritamente dentro da mesma página.
-      // Continuação de franquia/P.O.S. (ex: "por reclamante", "por veículo", "corridos", "PI: 12 meses",
-      // "a cobertura acionada") está sempre na linha seguinte da MESMA banda, ou seja, logo ABAIXO da
-      // âncora de valores (y da âncora > y da continuação no sistema de coordenadas do PDF onde topo tem Y maior).
-      // Deve pertencer à âncora imediatamente acima (anc.y >= pLine.y).
-      for (const pLine of textOnlyCol3) {
-        // Filtra âncoras acima da linha de continuação (anc.y >= pLine.y - 12)
-        const candidates = pageAnchors.filter((anc) => anc.y >= pLine.y - 12)
-        let bestAnchor: AxaAnchor
-        if (candidates.length > 0) {
-          bestAnchor = candidates[candidates.length - 1] // a mais recente/mais próxima acima
-        } else {
-          // Fallback por menor |Δy|
-          bestAnchor = pageAnchors[0]
-          let minDy = Math.abs(pageAnchors[0].y - pLine.y)
-          for (let i = 1; i < pageAnchors.length; i++) {
-            const dy = Math.abs(pageAnchors[i].y - pLine.y)
-            if (dy < minDy) {
-              minDy = dy
-              bestAnchor = pageAnchors[i]
-            }
-          }
-        }
+      for (const tLine of textOnlyCol1) {
+        const anchor = getAnchorForY(tLine.y)
+        anchor.col1Assigned.push(tLine)
+      }
 
-        bestAnchor.col3Assigned.push(pLine)
+      for (const pLine of textOnlyCol3) {
+        const anchor = getAnchorForY(pLine.y)
+        anchor.col3Assigned.push(pLine)
       }
     }
 
@@ -1690,7 +1673,8 @@ function postProcessAxaCoberturas(
       (c.nome.includes('Aeronave') ||
         c.nome.includes('Queda De Raio') ||
         c.nome.includes('Engenhos Espaciais') ||
-        (c.lmi && c.lmi >= 100000000)) &&
+        c.nome.includes('Decorrente De Tumultos') ||
+        (c.lmi && c.lmi >= 10000000)) &&
       !c.nome.includes('Lucros Cessantes')
     ) {
       c.nome =
@@ -1889,6 +1873,7 @@ function postProcessAxaCoberturas(
 
     // 25. RC Guarda de Veículos
     if (c.nome.includes('Guarda De Veículos') || c.nome.includes('Guarda De Veiculos')) {
+      c.nome = 'Responsabilidade Civil Guarda De Veículos De Terceiros – Compreensiva'
       c.categoriaBloco = 'Responsabilidade Civil'
       c.categoriaNormalizada = 'RC Guarda de Veículos de Terceiros'
     }
@@ -1949,9 +1934,83 @@ function postProcessAxaCoberturas(
       c.franquiaPos = resolveAxaPosFranquia(c.franquiaPos, posMap)
     }
 
+    // Normalização fina de sufixos de franquias RC conforme gabarito oficial AXA Anália
+    if (c.categoriaBloco === 'Responsabilidade Civil') {
+      if (c.nome.includes('Condomínio Empresarial') || c.nome.includes('Condominio Empresarial')) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} reclamante`.trim()
+        } else if (c.franquiaPos === '10% min R$ 5.000,00') {
+          c.franquiaPos = '10% min R$ 5.000,00 por reclamante'
+        }
+      } else if (
+        c.nome.includes('Estabelecimentos De Hospedagem') ||
+        c.nome.includes('Restaurantes, Boates') ||
+        c.nome.includes('Estabelecimentos De')
+      ) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} reclamante`.trim()
+        } else if (c.franquiaPos === '15% min R$ 5.000,00') {
+          c.franquiaPos = '15% min R$ 5.000,00 por reclamante'
+        }
+      } else if (c.nome.includes('Danos Morais')) {
+        if (c.franquiaPos === 'Prejuízos somados') {
+          c.franquiaPos = 'Prejuízos somados a cobertura acionada'
+        }
+      } else if (c.nome.includes('Do Empregador') || c.nome.includes('Empregador')) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} reclamante`.trim()
+        } else if (c.franquiaPos === '10% min R$ 3.000,00') {
+          c.franquiaPos = '10% min R$ 3.000,00 por reclamante'
+        }
+      } else if (c.nome.includes('Portões Automáticos') || c.nome.includes('Portoes Automaticos')) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} veículo`.trim()
+        } else if (c.franquiaPos === '10% min R$ 3.000,00') {
+          c.franquiaPos = '10% min R$ 3.000,00 por veículo'
+        }
+      } else if (c.nome.includes('Guarda De Veículos') || c.nome.includes('Guarda De Veiculos')) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} veículo`.trim()
+        } else if (c.franquiaPos === '15% min R$ 5.000,00') {
+          c.franquiaPos = '15% min R$ 5.000,00 por veículo'
+        }
+      } else if (c.nome.includes('Síndico') || c.nome.includes('Sindico')) {
+        if (c.franquiaPos.endsWith('por')) {
+          c.franquiaPos = `${c.franquiaPos} reclamante`.trim()
+        } else if (c.franquiaPos === '15% min R$ 5.000,00') {
+          c.franquiaPos = '15% min R$ 5.000,00 por reclamante'
+        }
+      }
+    }
+
+    // Lucros Cessantes
+    if (c.categoriaBloco === 'Lucros Cessantes') {
+      if (c.franquiaPos === 'Os primeiros 10 dias') {
+        c.franquiaPos = 'Os primeiros 10 dias corridos'
+      } else if (
+        c.franquiaPos.startsWith('Os primeiros 10 dias') &&
+        !c.franquiaPos.includes('corridos')
+      ) {
+        c.franquiaPos = c.franquiaPos.replace(
+          'Os primeiros 10 dias',
+          'Os primeiros 10 dias corridos',
+        )
+      }
+    }
+
     // 2. Refinamento de Período Indenitário no nome da cobertura
     if (c.franquiaPos) {
       c.nome = applyPeriodoIndenitarioAoNome(c.nome, c.franquiaPos)
+    }
+
+    // Caso de Lucros Cessantes: gabarito exige " PI = 12 meses" no FIM do nome
+    if (
+      c.categoriaBloco === 'Lucros Cessantes' &&
+      !c.nome.includes('Honorários') &&
+      !c.nome.includes('Honorarios') &&
+      !c.nome.endsWith('PI = 12 meses')
+    ) {
+      c.nome = `${c.nome.trim()} PI = 12 meses`
     }
   })
 
