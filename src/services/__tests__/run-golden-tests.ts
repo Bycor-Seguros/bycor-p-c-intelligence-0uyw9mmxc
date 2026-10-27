@@ -220,10 +220,11 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
 // 1. CARREGAMENTO DO FIXTURE VIA IMPORT DINÂMICO
 // =========================================================================
 async function loadTokioFixture(): Promise<PdfPageText[] | null> {
-  // Verificação de existência + import dinâmico sem quebrar o compilador TS com TS2307
-  // Vite suporta import.meta.glob para carregar arquivos opcionalmente
+  // Verificação de existência + import dinâmico sem quebrar o compilador TS com TS2307.
+  // Utiliza import.meta.glob com lazy import condicional para não referenciar estaticamente
+  // o arquivo ausente. Se o fixture não existir, retorna null e aciona o modo pendente da suíte.
   try {
-    const fixtureModules = (import.meta as any).glob('./fixtures/tokio-bt-fortaleza.json')
+    const fixtureModules = (import.meta as any).glob('./fixtures/*.json')
     const key = './fixtures/tokio-bt-fortaleza.json'
     if (fixtureModules && typeof fixtureModules[key] === 'function') {
       const mod: any = await fixtureModules[key]()
@@ -231,7 +232,7 @@ async function loadTokioFixture(): Promise<PdfPageText[] | null> {
       return data?.pages || null
     }
   } catch {
-    // Vite glob indisponível ou falha
+    // Vite glob indisponível ou arquivo não localizado
   }
 
   return null
