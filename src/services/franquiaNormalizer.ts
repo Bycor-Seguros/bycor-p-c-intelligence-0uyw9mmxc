@@ -136,10 +136,10 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
       base = 'prejuízos indenizáveis'
     }
 
-    // Procura MÍNIMO em R$
+    // Procura MÍNIMO em R$ (ex: "com mínimo de R$ 1.500,00", "minimo r$ 500,00", "min R$ 2.500,00")
     let minimoVal: number | null = null
     const matchMin = norm.match(
-      /(?:com\s+)?m[ií]n(?:imo)?\s*(?:de)?\s*(?:r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
+      /(?:com\s+)?m[ií]n(?:imo)?(?:\s*de)?(?:\s*r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
     )
     if (matchMin) {
       minimoVal = parseValorRs(matchMin[1])

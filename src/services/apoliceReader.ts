@@ -3819,6 +3819,22 @@ function normalizeTokioFranquia(rawFranquia: string): {
  *   àquela cobertura, agrupado pelas coordenadas de coluna X.
  * - Isso elimina completamente derramamento de franquias de células mais altas nas coberturas vizinhas.
  */
+interface TokioCellCluster {
+  pageNumber: number
+  topY: number
+  bottomY: number
+  text: string
+  fragments: TokioRowFragment[]
+}
+
+interface TokioRowSlot {
+  pageNumber: number
+  topY: number // Y superior da linha (ou topo da página se for a 1ª)
+  bottomY: number // Y do prêmio delimitador da linha
+  premioVal: number
+  lmiVal: number | null
+}
+
 function extractTokioCoberturasGeometric(
   candidatePages: PdfPageText[],
 ): ExtractedApoliceCobertura[] {
@@ -3838,7 +3854,6 @@ function extractTokioCoberturasGeometric(
     // Exclui completamente o bloco de questionário/identificação (endereço AV BEIRA MAR,
     // atividade HOTEL MOTEL OU POUSADA, classe de construção, protecionais, processo SUSEP, VRDs DM/LC/Total).
     if (page.pageNumber === 5) {
-      // Procura o cabeçalho da tabela de coberturas
       const tableColHeader = items.find((it) =>
         /Pr[êe]mio\s+l[íi]quido|Franquia\s*\/\s*Participa[çc][ãa]o|Limite\s+M[áa]ximo\s+de/i.test(
           it.str,
@@ -3849,8 +3864,6 @@ function extractTokioCoberturasGeometric(
       } else {
         const headerItem = items.find((it) => /Especifica[çc][ãa]o\s+da\s+Ap[oó]lice/i.test(it.str))
         if (headerItem) {
-          // O questionário de avaliação de risco ocupa cerca de 200 pontos abaixo de "Especificação da Apólice"
-          // O início da tabela de coberturas na pág. 5 fica bem abaixo
           const questionarioCutoff = items.find((it) =>
             /Limite\s+M[áa]ximo\s+de\s+Responsabilidade|Outros\s+Seguros|Valor\(es\)\s+em\s+Risco/i.test(
               it.str,
@@ -3889,172 +3902,270 @@ function extractTokioCoberturasGeometric(
 
   if (validFragments.length === 0) return []
 
-  // 2. Agrupar fragmentos por linha horizontal física (mesma página + Y com tolerância de 3.5 pontos)
-  // Ordena páginas 5 -> 6 -> 7 e Y de cima para baixo (decrescente)
-  const rows: Array<{
+  // 2. Separar fragmentos por banda de coluna:
+  // Coluna 1 (Nome): x < 210
+  // Coluna 2 (LMI): 210 <= x < 320
+  // Coluna 3 (Franquia / POS): 320 <= x < 490
+  // Coluna 4 (Prêmio Líquido): x >= 490
+  const col1Frags = validFragments.filter((f) => f.x < 210)
+  const col2Frags = validFragments.filter((f) => f.x >= 210 && f.x < 320)
+  const col3Frags = validFragments.filter((f) => f.x >= 320 && f.x < 490)
+  const col4Frags = validFragments.filter((f) => f.x >= 490)
+
+  // 3. Localizar cada PRÊMIO LÍQUIDO na Coluna 4 (x >= 490) -> delimitadores de LINHA
+  interface TokioPremioMarker {
     pageNumber: number
     y: number
-    col1: TokioRowFragment[]
-    col2: TokioRowFragment[]
-    col3: TokioRowFragment[]
-    col4: TokioRowFragment[]
-    col1Text: string
-    col2Text: string
-    col3Text: string
-    col4Text: string
-    premioVal: number | null
-    lmiVal: number | null
-  }> = []
+    premioVal: number
+  }
 
-  // Agrupa por (pageNumber, Y aproximado)
-  const sortedFrags = [...validFragments].sort((a, b) => {
+  const sortedCol4 = [...col4Frags].sort((a, b) => {
     if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
     return b.y - a.y
   })
 
-  let currentRowFrags: TokioRowFragment[] = []
-  let currentRowPage = -1
-  let currentRowY = -9999
+  // Agrupa fragmentos da col4 com mesmo Y aproximado (tolerância 4 pontos)
+  const premios: TokioPremioMarker[] = []
+  for (const f of sortedCol4) {
+    const premMatch = f.str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+    if (!premMatch) continue
+    const val = parsePtBrNumber(premMatch[1])
+    if (val === null || val <= 0) continue
 
-  const flushRow = () => {
-    if (currentRowFrags.length === 0) return
-    const col1 = currentRowFrags.filter((f) => f.x < 210).sort((a, b) => a.x - b.x)
-    const col2 = currentRowFrags.filter((f) => f.x >= 210 && f.x < 320).sort((a, b) => a.x - b.x)
-    const col3 = currentRowFrags.filter((f) => f.x >= 320 && f.x < 490).sort((a, b) => a.x - b.x)
-    const col4 = currentRowFrags.filter((f) => f.x >= 490).sort((a, b) => a.x - b.x)
-
-    const col1Text = col1
-      .map((f) => f.str)
-      .join(' ')
-      .trim()
-    const col2Text = col2
-      .map((f) => f.str)
-      .join(' ')
-      .trim()
-    const col3Text = col3
-      .map((f) => f.str)
-      .join(' ')
-      .trim()
-    const col4Text = col4
-      .map((f) => f.str)
-      .join(' ')
-      .trim()
-
-    // Ignora linhas de cabeçalho tabular repetidas
-    const combinedAll = `${col1Text} ${col2Text} ${col3Text} ${col4Text}`.toLowerCase()
-    if (
-      combinedAll.includes('limite máximo') ||
-      combinedAll.includes('franquia /') ||
-      combinedAll.includes('prêmio líquido')
-    ) {
-      currentRowFrags = []
-      return
+    // Verifica se já não agrupamos nesta mesma linha
+    const existing = premios.find((p) => p.pageNumber === f.pageNumber && Math.abs(p.y - f.y) <= 4)
+    if (!existing) {
+      premios.push({
+        pageNumber: f.pageNumber,
+        y: f.y,
+        premioVal: val,
+      })
     }
+  }
 
-    // Detecção de LMI na Coluna 2
+  // Ordena prêmios por (pageNumber, Y decrescente)
+  premios.sort((a, b) => {
+    if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
+    return b.y - a.y
+  })
+
+  // 4. Mapear os SLOTS DE LINHA:
+  // Cada slot de linha é delimitado no fundo pelo Y do seu prêmio líquido.
+  // O topY da linha é o bottomY do prêmio anterior na mesma página (ou +9999 se for a primeira da página).
+  const rowSlots: TokioRowSlot[] = []
+
+  for (let i = 0; i < premios.length; i++) {
+    const p = premios[i]
+    const prevP = i > 0 && premios[i - 1].pageNumber === p.pageNumber ? premios[i - 1] : null
+    const topY = prevP ? prevP.y : 9999
+    const bottomY = p.y
+
+    // Localiza o LMI pertencente a esta linha na Coluna 2 (210 <= x < 320)
+    // O LMI fica na mesma página, com topY >= y >= bottomY - 6
+    const candLmiFrags = col2Frags
+      .filter((f) => f.pageNumber === p.pageNumber && f.y <= topY && f.y >= bottomY - 8)
+      .sort((a, b) => b.y - a.y)
+
     let lmiVal: number | null = null
-    const lmiMatch = col2Text.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-    if (lmiMatch) {
-      const parsed = parsePtBrNumber(lmiMatch[1])
-      if (parsed !== null && parsed > 0) {
-        lmiVal = parsed
+    for (const lf of candLmiFrags) {
+      const match = lf.str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+      if (match) {
+        const parsed = parsePtBrNumber(match[1])
+        if (parsed !== null && parsed > 0) {
+          lmiVal = parsed
+          break
+        }
       }
     }
 
-    // Detecção ESTRITA de Prêmio Líquido: APENAS na Coluna 4 (x >= 490)
-    // Números na Coluna 3 (Franquia, x 320–490) e Coluna 2 (LMI, x 210–320) NUNCA delimitam linha
-    let premioVal: number | null = null
-    const premMatch = col4Text.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-    if (premMatch) {
-      const parsedP = parsePtBrNumber(premMatch[1])
-      if (parsedP !== null && parsedP > 0) {
-        premioVal = parsedP
-      }
-    }
-
-    rows.push({
-      pageNumber: currentRowPage,
-      y: currentRowY,
-      col1,
-      col2,
-      col3,
-      col4,
-      col1Text,
-      col2Text,
-      col3Text,
-      col4Text,
-      premioVal,
+    rowSlots.push({
+      pageNumber: p.pageNumber,
+      topY,
+      bottomY,
+      premioVal: p.premioVal,
       lmiVal,
     })
-    currentRowFrags = []
   }
 
-  for (const frag of sortedFrags) {
-    if (currentRowPage !== frag.pageNumber || Math.abs(currentRowY - frag.y) > 3.5) {
-      flushRow()
-      currentRowPage = frag.pageNumber
-      currentRowY = frag.y
+  // 5. CLUSTERIZAÇÃO DE CÉLULAS (INVERTER A ORDEM DE MONTAGEM):
+  // Primeiro clusterizar fragmentos em CÉLULAS inteiras:
+  // Fragmentos na mesma coluna (banda X) e mesma página com adjacência vertical pequena (gap <= 18 pontos)
+  // formam UMA CÉLULA INTEIRA (mesmo de 5 a 6 linhas de continuação).
+  const clusterColumnFragments = (frags: TokioRowFragment[], maxGap = 18): TokioCellCluster[] => {
+    if (frags.length === 0) return []
+    const sorted = [...frags].sort((a, b) => {
+      if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
+      return b.y - a.y
+    })
+
+    const clusters: TokioCellCluster[] = []
+    let currentFrags: TokioRowFragment[] = []
+    let curPage = -1
+    let lastY = -9999
+
+    const flushCluster = () => {
+      if (currentFrags.length === 0) return
+      // Ordena por Y decrescente (topo para baixo) e depois por X
+      currentFrags.sort((a, b) => b.y - a.y || a.x - b.x)
+      const topY = currentFrags[0].y
+      const bottomY = currentFrags[currentFrags.length - 1].y
+
+      // Concatena linhas físicas agrupando fragmentos com Y similar (tolerância 3.5)
+      const lines: string[] = []
+      let curLineFrags: TokioRowFragment[] = []
+      let curLineY = -9999
+
+      for (const cf of currentFrags) {
+        if (curLineY === -9999 || Math.abs(curLineY - cf.y) <= 3.5) {
+          curLineFrags.push(cf)
+          curLineY = cf.y
+        } else {
+          curLineFrags.sort((a, b) => a.x - b.x)
+          lines.push(
+            curLineFrags
+              .map((f) => f.str)
+              .join(' ')
+              .trim(),
+          )
+          curLineFrags = [cf]
+          curLineY = cf.y
+        }
+      }
+      if (curLineFrags.length > 0) {
+        curLineFrags.sort((a, b) => a.x - b.x)
+        lines.push(
+          curLineFrags
+            .map((f) => f.str)
+            .join(' ')
+            .trim(),
+        )
+      }
+
+      const text = lines.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+
+      clusters.push({
+        pageNumber: curPage,
+        topY,
+        bottomY,
+        text,
+        fragments: [...currentFrags],
+      })
+      currentFrags = []
     }
-    currentRowFrags.push(frag)
-  }
-  flushRow()
 
-  // 3. RECONSTRUÇÃO DELIMITADA ESTRITAMENTE POR PRÊMIO (x >= 490):
-  // Uma cobertura começa após o prêmio da anterior (ou início do quadro) e
-  // TERMINA EXCLUSIVAMENTE NA LINHA QUE CONTÉM O PRÊMIO LÍQUIDO (coluna 4, x >= 490).
-  // Números na coluna Franquia (ex: "500,00", "1.500,00", "2.500,00", "750,00")
-  // e na coluna LMI NUNCA encerram a linha — pertencem às células daquelas colunas.
-  // Todos os fragmentos nesse intervalo pertencem àquela cobertura, agrupados por coluna (Nome | LMI | Franquia | Prêmio)
-  // preservando a ordem vertical Y de cada fragmento.
+    for (const f of sorted) {
+      if (curPage !== f.pageNumber) {
+        flushCluster()
+        curPage = f.pageNumber
+        currentFrags.push(f)
+        lastY = f.y
+      } else if (lastY - f.y > maxGap) {
+        // Gap vertical maior que maxGap indica que começou outra célula/cobertura
+        flushCluster()
+        curPage = f.pageNumber
+        currentFrags.push(f)
+        lastY = f.y
+      } else {
+        currentFrags.push(f)
+        lastY = f.y
+      }
+    }
+    flushCluster()
+
+    return clusters
+  }
+
+  // Clusteriza células da Coluna 1 (Nome) e Coluna 3 (Franquia)
+  const nomeClusters = clusterColumnFragments(col1Frags, 18)
+  const franquiaClusters = clusterColumnFragments(col3Frags, 18)
+
+  // 6. ATRIBUIÇÃO DE CÉLULAS ÀS COBERTURAS:
+  // Cada célula pertence à cobertura em cuja linha ela COMEÇA (topo da célula dentro do vão da linha).
+  // Vão da linha i:
+  // - Começa em topY (exclusivo, a menos que seja 9999) ou logo abaixo do prêmio anterior
+  // - Termina em bottomY (inclusivo, com pequena tolerância de -5 pontos para topos que começam na linha do prêmio).
+  // Uma célula que começa dentro do vão da linha pertence a ela, mesmo que se estenda muito abaixo do bottomY.
   interface TokioCoberturaCandidate {
     nomeFragments: string[]
-    lmiFragments: number[]
+    lmiVal: number | null
     franquiaFragments: string[]
     premioVal: number
   }
 
-  const rawCoberturas: TokioCoberturaCandidate[] = []
+  const findSlotForCell = (cell: TokioCellCluster, slots: TokioRowSlot[]): number => {
+    // Procura o slot na mesma página cujo vão contenha o topY da célula
+    // topY da célula deve ser <= slot.topY e > slot.bottomY - 6
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      if (slot.pageNumber !== cell.pageNumber) continue
 
-  let currentNomeFrags: string[] = []
-  let currentLmiFrags: number[] = []
-  let currentFranquiaFrags: string[] = []
+      // Se for o primeiro slot da página, topY pode ser qualquer valor >= slot.bottomY - 6
+      if (slot.topY === 9999) {
+        if (cell.topY >= slot.bottomY - 6) {
+          return i
+        }
+      } else {
+        // Nos slots seguintes: célula começa abaixo do prêmio anterior (ou seja <= slot.topY + 2)
+        // e acima do encerramento da linha (>= slot.bottomY - 6)
+        if (cell.topY <= slot.topY + 3 && cell.topY >= slot.bottomY - 6) {
+          return i
+        }
+      }
+    }
 
-  for (const row of rows) {
-    if (row.col1Text) currentNomeFrags.push(row.col1Text)
-    if (row.lmiVal !== null) currentLmiFrags.push(row.lmiVal)
-    if (row.col3Text) currentFranquiaFrags.push(row.col3Text)
+    // Fallback: slot mais próximo por distância absoluta ao topY da célula (sem ultrapassar topo de outra página)
+    let bestIdx = -1
+    let bestDist = 999999
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      if (slot.pageNumber !== cell.pageNumber) continue
+      const slotMid = slot.topY === 9999 ? slot.bottomY + 15 : (slot.topY + slot.bottomY) / 2
+      const dist = Math.abs(cell.topY - slotMid)
+      if (dist < bestDist) {
+        bestDist = dist
+        bestIdx = i
+      }
+    }
+    return bestIdx
+  }
 
-    // A linha SÓ é encerrada quando há valor na coluna Prêmio Líquido (col4, x >= 490)!
-    if (row.premioVal !== null && row.premioVal > 0) {
-      rawCoberturas.push({
-        nomeFragments: [...currentNomeFrags],
-        lmiFragments: [...currentLmiFrags],
-        franquiaFragments: [...currentFranquiaFrags],
-        premioVal: row.premioVal,
-      })
-      currentNomeFrags = []
-      currentLmiFrags = []
-      currentFranquiaFrags = []
+  // Prepara acumuladores para cada slot de linha
+  const candidateRows: TokioCoberturaCandidate[] = rowSlots.map((slot) => ({
+    nomeFragments: [],
+    lmiVal: slot.lmiVal,
+    franquiaFragments: [],
+    premioVal: slot.premioVal,
+  }))
+
+  // Atribui células de Nome (Coluna 1) aos slots
+  for (const nCluster of nomeClusters) {
+    const slotIdx = findSlotForCell(nCluster, rowSlots)
+    if (slotIdx >= 0 && slotIdx < candidateRows.length) {
+      candidateRows[slotIdx].nomeFragments.push(nCluster.text)
     }
   }
 
-  // Se restarem fragmentos acumulados após o último prêmio (ex. rodapé residual), descarta ou adiciona
-  // No caso Tokio Marine, todas as 17 coberturas possuem prêmio líquido não nulo.
+  // Atribui células de Franquia (Coluna 3) aos slots
+  for (const fCluster of franquiaClusters) {
+    const slotIdx = findSlotForCell(fCluster, rowSlots)
+    if (slotIdx >= 0 && slotIdx < candidateRows.length) {
+      candidateRows[slotIdx].franquiaFragments.push(fCluster.text)
+    }
+  }
 
-  // 4. Montar cada cobertura validada contra a Tabela-Verdade (17 coberturas do gabarito)
+  // 7. Montar cada cobertura validada contra a Tabela-Verdade (17 coberturas do gabarito)
   const result: ExtractedApoliceCobertura[] = []
 
-  for (const rawCob of rawCoberturas) {
-    let rawNome = rawCob.nomeFragments.join(' ').replace(/\s+/g, ' ').trim()
-    let rawFranquia = rawCob.franquiaFragments.join(' ').replace(/\s+/g, ' ').trim()
-    const lmiVal = rawCob.lmiFragments.length > 0 ? rawCob.lmiFragments[0] : null
-    const premioVal = rawCob.premioVal
+  for (const cand of candidateRows) {
+    let rawNome = cand.nomeFragments.join(' ').replace(/\s+/g, ' ').trim()
+    let rawFranquia = cand.franquiaFragments.join(' ').replace(/\s+/g, ' ').trim()
+    const lmiVal = cand.lmiVal
+    const premioVal = cand.premioVal
 
     if (!rawNome) continue
 
     // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
     if (/^Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
-      // Se tiver LMI de 390.000 ou menção a Despesas Fixas / Período Indenitário / Horas, é a Lucros Cessantes!
       if (
         lmiVal === 390000 ||
         /Despesas\s+Fixas/i.test(rawNome) ||
