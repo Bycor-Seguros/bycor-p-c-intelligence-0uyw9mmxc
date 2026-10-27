@@ -14,8 +14,9 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "preview": "vite preview",
-    "test": "echo \"there are no tests for this project\" && exit 0",
-    "test:watch": "echo \"there are no tests for this project\" && exit 0"
+    "extract:tokio": "node scripts/extract-tokio-fixture.js",
+    "test": "node scripts/run-tests.js",
+    "test:watch": "node scripts/run-tests.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
