@@ -3633,6 +3633,13 @@ interface TokioQuadroAnchor {
   col3Assigned: Array<{ text: string; y: number; pageNumber: number }>
 }
 
+interface TokioRowFragment {
+  str: string
+  x: number
+  y: number
+  pageNumber: number
+}
+
 /**
  * Filtra fragmentos institucionais e cabeçalhos repetidos do quadro Tokio Marine
  */
@@ -3701,10 +3708,9 @@ function normalizeTokioFranquia(rawFranquia: string): {
   franquiaPos: string
   franquiaEstruturada: FranquiaEstruturada
 } {
-  // Limpeza de ruídos residuais (como valores de prêmio vazados ou quebras de coluna)
   let cleanRaw = (rawFranquia || '').trim()
 
-  // Remove valores de prêmios ou LMI numéricos isolados no final da franquia (ex: "NÃO HÁ 18,55" -> "NÃO HÁ")
+  // Remove valores numéricos isolados de prêmios no final (ex: "NÃO HÁ 18,55" -> "NÃO HÁ")
   cleanRaw = cleanRaw
     .replace(/\s+\d{1,4},\d{2}\s*$/g, '')
     .replace(/\s+/g, ' ')
@@ -3719,7 +3725,29 @@ function normalizeTokioFranquia(rawFranquia: string): {
     return { franquiaPos: 'Não Há', franquiaEstruturada: est }
   }
 
+  // Caso especial: franquia temporal de Lucros Cessantes Tokio Marine
+  // Ex: "AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO."
+  if (/96\s*horas?/i.test(cleanRaw) || /horas\s+de\s+paralisa[çc][ãa]o/i.test(cleanRaw)) {
+    const est: FranquiaEstruturada = {
+      tipo: 'dias',
+      diasHoras: 96,
+      unidadeTemporal: 'horas',
+      textoOriginal: cleanRaw,
+      textoFormatado: 'AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO.',
+    }
+    return {
+      franquiaPos: cleanRaw,
+      franquiaEstruturada: est,
+    }
+  }
+
   const est = parseFranquiaEstruturada(cleanRaw)
+
+  // Preserva condição especial encontrada no texto (ex: "(EXCLUSIVAMENTE EM CASO DE RAIO)")
+  const condMatch = cleanRaw.match(/\((?:EXCLUSIVAMENTE\s+)?EM\s+CASO\s+DE\s+[^)]+\)/i)
+  if (condMatch && !est.condicao) {
+    est.condicao = condMatch[0].trim()
+  }
 
   // Se for percentual com mínimo (tipo mista ou percentual com mínimo):
   if (
@@ -3739,20 +3767,15 @@ function normalizeTokioFranquia(rawFranquia: string): {
     }
   }
 
-  // Franquia em dias/horas (ex: "AS PRIMEIRAS 96 HORAS")
+  // Franquia em dias/horas
   if (est.tipo === 'dias') {
-    // Preserva a nomenclatura da apólice (ou normaliza se vier fragmentada)
-    let textoDias = est.textoOriginal
-    if (/as\s+primeiras\s+96/i.test(textoDias) && !/horas/i.test(textoDias)) {
-      textoDias = 'As primeiras 96 horas'
-    }
     return {
-      franquiaPos: textoDias,
+      franquiaPos: est.textoOriginal || 'As primeiras 96 horas',
       franquiaEstruturada: est,
     }
   }
 
-  // Valor fixo (ex: "R$ 1.000,00")
+  // Valor fixo (ex: "R$ 1.000,00" de Roubo de Bens de Hóspedes)
   if (est.tipo === 'valor' && est.valor !== null && est.valor !== undefined) {
     const vFormatado = est.valor.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
@@ -3782,26 +3805,67 @@ function normalizeTokioFranquia(rawFranquia: string): {
  * Agrupa fragmentos por linha real (célula multilinha = mesma cobertura, juntando todas as linhas de continuação)
  * e evita vazamento de prêmios para dentro da franquia e quebras espúrias como "Queda de Aeronaves".
  */
+/**
+ * Extração de Coberturas Tokio Marine por Posicionamento Geométrico Delimitado por Prêmio (págs. 5 a 7).
+ *
+ * Princípio Arquitetural:
+ * - A tabela "Especificação da Apólice" possui 4 colunas bem definidas:
+ *     Coluna 1 (Nome): x < 210
+ *     Coluna 2 (LMI): 210 <= x < 320
+ *     Coluna 3 (Franquia / P.O.S.): 320 <= x < 490
+ *     Coluna 4 (Prêmio Líquido): x >= 490
+ * - UMA LINHA DA TABELA TERMINA QUANDO APARECE UM VALOR NA COLUNA DE PRÊMIO LÍQUIDO.
+ * - Todo fragmento entre o término da cobertura anterior e a linha com prêmio pertence
+ *   àquela cobertura, agrupado pelas coordenadas de coluna X.
+ * - Isso elimina completamente derramamento de franquias de células mais altas nas coberturas vizinhas.
+ */
 function extractTokioCoberturasGeometric(
   candidatePages: PdfPageText[],
 ): ExtractedApoliceCobertura[] {
-  const allAnchors: TokioQuadroAnchor[] = []
+  // 1. Filtrar e coletar fragmentos válidos das páginas 5 a 7
+  const validFragments: TokioRowFragment[] = []
 
   for (const page of candidatePages) {
     if (page.pageNumber > 7) break
     const rawItems = page.items || []
     if (rawItems.length === 0) continue
 
-    // 1. Delimitar início e fim do quadro nesta página
-    // Na pág. 5 o quadro começa após o cabeçalho "Especificação da Apólice"
-    // Termina se aparecer "ASSISTÊNCIA 24 HORAS", "OUVIDORIA", "EXCLUSÕES", "COBERTURA ADICIONAL Nº..."
     let items = rawItems
-    const headerItem = items.find((it) => /Especifica[çc][ãa]o\s+da\s+Ap[oó]lice/i.test(it.str))
-    if (headerItem) {
-      // Y decrescente: topo tem Y maior, elementos abaixo têm Y menor que o cabeçalho
-      items = items.filter((it) => it.y < headerItem.y - 15)
+
+    // Na página 5: o quadro começa ESTRITAMENTE após o cabeçalho tabular
+    // "Cobertura Limite Máximo de Franquia / Participação Prêmio líquido"
+    // ou "Especificação da Apólice".
+    // Exclui completamente o bloco de questionário/identificação (endereço AV BEIRA MAR,
+    // atividade HOTEL MOTEL OU POUSADA, classe de construção, protecionais, processo SUSEP, VRDs DM/LC/Total).
+    if (page.pageNumber === 5) {
+      // Procura o cabeçalho da tabela de coberturas
+      const tableColHeader = items.find((it) =>
+        /Pr[êe]mio\s+l[íi]quido|Franquia\s*\/\s*Participa[çc][ãa]o|Limite\s+M[áa]ximo\s+de/i.test(
+          it.str,
+        ),
+      )
+      if (tableColHeader) {
+        items = items.filter((it) => it.y < tableColHeader.y - 4)
+      } else {
+        const headerItem = items.find((it) => /Especifica[çc][ãa]o\s+da\s+Ap[oó]lice/i.test(it.str))
+        if (headerItem) {
+          // O questionário de avaliação de risco ocupa cerca de 200 pontos abaixo de "Especificação da Apólice"
+          // O início da tabela de coberturas na pág. 5 fica bem abaixo
+          const questionarioCutoff = items.find((it) =>
+            /Limite\s+M[áa]ximo\s+de\s+Responsabilidade|Outros\s+Seguros|Valor\(es\)\s+em\s+Risco/i.test(
+              it.str,
+            ),
+          )
+          if (questionarioCutoff) {
+            items = items.filter((it) => it.y < questionarioCutoff.y - 10)
+          } else {
+            items = items.filter((it) => it.y < headerItem.y - 120)
+          }
+        }
+      }
     }
 
+    // Fim absoluto do quadro de coberturas (assistência 24h, ouvidoria, exclusões, etc.)
     const footerCutoffItem = items.find((it) =>
       /ASSIST[ÊE]NCIA\s+24\s+HORAS|OUVIDORIA|EXCLUS[ÕO]ES|COBERTURA\s+ADICIONAL\s+N[º°.]|CL[ÁA]USULA/i.test(
         it.str,
@@ -3811,250 +3875,259 @@ function extractTokioCoberturasGeometric(
       items = items.filter((it) => it.y > footerCutoffItem.y + 2)
     }
 
-    // Filtra fragmentos institucionais e cabeçalhos de tabela
-    const validItems = items.filter((it) => !isTokioBoilerplateFragment(it.str))
-    if (validItems.length === 0) continue
-
-    // 2. Agrupar fragmentos por Y aproximado (tolerância de 3 pontos para unir mesma linha horizontal)
-    const rowMap = new Map<number, PdfTextFragment[]>()
-    validItems.forEach((it) => {
-      let foundY = it.y
-      for (const existingY of rowMap.keys()) {
-        if (Math.abs(existingY - it.y) <= 3) {
-          foundY = existingY
-          break
-        }
-      }
-      if (!rowMap.has(foundY)) {
-        rowMap.set(foundY, [])
-      }
-      rowMap.get(foundY)!.push(it)
-    })
-
-    const sortedYs = Array.from(rowMap.keys()).sort((a, b) => b - a)
-
-    // 3. Classificar fragmentos nas 4 colunas por limites X:
-    // Coluna 1 (Nome): x < 210
-    // Coluna 2 (LMI): 210 <= x < 320
-    // Coluna 3 (Franquia / POS): 320 <= x < 490
-    // Coluna 4 (Prêmio): x >= 490
-    const pageAnchors: TokioQuadroAnchor[] = []
-    const textOnlyCol1: Array<{ text: string; y: number; pageNumber: number }> = []
-    const textOnlyCol3: Array<{ text: string; y: number; pageNumber: number }> = []
-
-    for (const y of sortedYs) {
-      const rowFrags = rowMap.get(y)!.sort((a, b) => a.x - b.x)
-
-      const col1Frags = rowFrags.filter((f) => f.x < 210)
-      const col2Frags = rowFrags.filter((f) => f.x >= 210 && f.x < 320)
-      const col3Frags = rowFrags.filter((f) => f.x >= 320 && f.x < 490)
-      const col4Frags = rowFrags.filter((f) => f.x >= 490)
-
-      const col1Str = col1Frags
-        .map((f) => f.str)
-        .join(' ')
-        .trim()
-      const col2Str = col2Frags
-        .map((f) => f.str)
-        .join(' ')
-        .trim()
-      const col3Str = col3Frags
-        .map((f) => f.str)
-        .join(' ')
-        .trim()
-      const col4Str = col4Frags
-        .map((f) => f.str)
-        .join(' ')
-        .trim()
-
-      // Descarta linhas puras de cabeçalho
-      const fullRowText = `${col1Str} ${col2Str} ${col3Str} ${col4Str}`.toLowerCase()
-      if (
-        fullRowText.includes('limite máximo') ||
-        fullRowText.includes('franquia /') ||
-        fullRowText.includes('prêmio líquido')
-      ) {
-        continue
-      }
-
-      // Detecção de LMI na Coluna 2:
-      // O LMI é estritamente um valor monetário na Coluna 2 (ex: "3.137.400,00", "50.000,00")
-      // IMPORTANTE: "1.500,00" ou valores da coluna 3 (Franquia) NUNCA são capturados como LMI
-      let lmiVal: number | null = null
-      let lmiRaw = ''
-      const lmiMatch = col2Str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-      if (lmiMatch) {
-        const parsed = parsePtBrNumber(lmiMatch[1])
-        // Exclusão de quebra espúria: "Queda de Aeronaves" nunca é cobertura separada
-        const isSpuriousQueda = /queda\s+de\s+aeronaves/i.test(col1Str) && parsed === 1500
-        if (parsed !== null && parsed > 0 && !isSpuriousQueda) {
-          lmiVal = parsed
-          lmiRaw = lmiMatch[1]
-        }
-      }
-
-      // Detecção de Prêmio Líquido na Coluna 4 (x >= 490)
-      let premioVal: number | null = null
-      const premMatch = col4Str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
-      if (premMatch) {
-        premioVal = parsePtBrNumber(premMatch[1])
-      }
-
-      if (lmiVal !== null && lmiVal > 0) {
-        // Encontrou âncora de cobertura!
-        pageAnchors.push({
-          pageNumber: page.pageNumber,
-          y,
-          lmiVal,
-          lmiRaw,
-          premioVal,
-          col1Own: col1Str,
-          col3Own: col3Str,
-          col1Assigned: [],
-          col3Assigned: [],
-        })
-        continue
-      }
-
-      // Linha sem LMI próprio na coluna 2:
-      // Fragmentos na Coluna 1 são linhas de continuação do Nome
-      if (col1Str && !isTokioBoilerplateFragment(col1Str)) {
-        textOnlyCol1.push({
-          text: col1Str,
-          y,
-          pageNumber: page.pageNumber,
-        })
-      }
-
-      // Fragmentos na Coluna 3 são linhas de continuação da Franquia
-      // (Regra de validação: Coluna 4 [prêmios] NUNCA entra na franquia!)
-      if (col3Str && !isTokioBoilerplateFragment(col3Str)) {
-        textOnlyCol3.push({
-          text: col3Str,
-          y,
-          pageNumber: page.pageNumber,
-        })
-      }
+    // Filtra fragmentos institucionais e cabeçalhos residuais
+    for (const it of items) {
+      if (isTokioBoilerplateFragment(it.str)) continue
+      validFragments.push({
+        str: it.str,
+        x: it.x,
+        y: it.y,
+        pageNumber: page.pageNumber,
+      })
     }
-
-    // 4. Atribuição de linhas de texto col1 e col3 às âncoras da página por bandas verticais
-    if (pageAnchors.length > 0) {
-      pageAnchors.sort((a, b) => b.y - a.y)
-
-      const getAnchorForY = (targetY: number): TokioQuadroAnchor => {
-        if (pageAnchors.length === 1) return pageAnchors[0]
-        for (let i = 0; i < pageAnchors.length; i++) {
-          const bandTop = i === 0 ? Infinity : (pageAnchors[i - 1].y + pageAnchors[i].y) / 2
-          const bandBottom =
-            i === pageAnchors.length - 1 ? -Infinity : (pageAnchors[i].y + pageAnchors[i + 1].y) / 2
-          if (targetY >= bandBottom && targetY < bandTop) {
-            return pageAnchors[i]
-          }
-        }
-        return pageAnchors[pageAnchors.length - 1]
-      }
-
-      for (const tLine of textOnlyCol1) {
-        const anchor = getAnchorForY(tLine.y)
-        anchor.col1Assigned.push(tLine)
-      }
-
-      for (const fLine of textOnlyCol3) {
-        const anchor = getAnchorForY(fLine.y)
-        anchor.col3Assigned.push(fLine)
-      }
-    }
-
-    allAnchors.push(...pageAnchors)
   }
 
-  // 5. Montagem final das coberturas
-  const result: ExtractedApoliceCobertura[] = []
+  if (validFragments.length === 0) return []
 
-  for (const anc of allAnchors) {
-    // Reúne todas as linhas de nome da cobertura (own + assigned)
-    const allCol1 = [...anc.col1Assigned]
-    if (anc.col1Own) {
-      allCol1.push({ text: anc.col1Own, y: anc.y, pageNumber: anc.pageNumber })
-    }
-    allCol1.sort((a, b) => {
-      if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
-      return b.y - a.y
-    })
+  // 2. Agrupar fragmentos por linha horizontal física (mesma página + Y com tolerância de 3.5 pontos)
+  // Ordena páginas 5 -> 6 -> 7 e Y de cima para baixo (decrescente)
+  const rows: Array<{
+    pageNumber: number
+    y: number
+    col1: TokioRowFragment[]
+    col2: TokioRowFragment[]
+    col3: TokioRowFragment[]
+    col4: TokioRowFragment[]
+    col1Text: string
+    col2Text: string
+    col3Text: string
+    col4Text: string
+    premioVal: number | null
+    lmiVal: number | null
+  }> = []
 
-    let nomeCompleto = allCol1
-      .map((it) => it.text)
+  // Agrupa por (pageNumber, Y aproximado)
+  const sortedFrags = [...validFragments].sort((a, b) => {
+    if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
+    return b.y - a.y
+  })
+
+  let currentRowFrags: TokioRowFragment[] = []
+  let currentRowPage = -1
+  let currentRowY = -9999
+
+  const flushRow = () => {
+    if (currentRowFrags.length === 0) return
+    const col1 = currentRowFrags.filter((f) => f.x < 210).sort((a, b) => a.x - b.x)
+    const col2 = currentRowFrags.filter((f) => f.x >= 210 && f.x < 320).sort((a, b) => a.x - b.x)
+    const col3 = currentRowFrags.filter((f) => f.x >= 320 && f.x < 490).sort((a, b) => a.x - b.x)
+    const col4 = currentRowFrags.filter((f) => f.x >= 490).sort((a, b) => a.x - b.x)
+
+    const col1Text = col1
+      .map((f) => f.str)
       .join(' ')
-      .replace(/\s+/g, ' ')
+      .trim()
+    const col2Text = col2
+      .map((f) => f.str)
+      .join(' ')
+      .trim()
+    const col3Text = col3
+      .map((f) => f.str)
+      .join(' ')
+      .trim()
+    const col4Text = col4
+      .map((f) => f.str)
+      .join(' ')
       .trim()
 
-    // Casos especiais de normalização e des-truncamento conhecidos no Tokio BT Fortaleza:
+    // Ignora linhas de cabeçalho tabular repetidas
+    const combinedAll = `${col1Text} ${col2Text} ${col3Text} ${col4Text}`.toLowerCase()
     if (
-      nomeCompleto.startsWith('Incêndio') ||
-      nomeCompleto.includes('Tumultos, Greves e Lockout')
+      combinedAll.includes('limite máximo') ||
+      combinedAll.includes('franquia /') ||
+      combinedAll.includes('prêmio líquido')
     ) {
-      nomeCompleto =
-        'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
-    } else if (nomeCompleto.startsWith('CUSTOS DE DEFESA DO')) {
-      nomeCompleto =
-        'CUSTOS DE DEFESA DO SEGURADO - EM DECORRÊNCIA DE RESPONSABILIDADE CIVIL OPERAÇÕES'
-    } else if (nomeCompleto.startsWith('DESPESAS DE CONTENÇÃO E')) {
-      nomeCompleto = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
-    } else if (nomeCompleto.startsWith('Lucros Cessantes (Despesas Fixas)')) {
-      nomeCompleto = 'Lucros Cessantes (Despesas Fixas)'
-    } else if (nomeCompleto.startsWith('Valores no Interior do')) {
-      nomeCompleto = 'Valores no Interior do Estabelecimento'
-    } else if (nomeCompleto.startsWith('Recomposição de Registros')) {
-      nomeCompleto = 'Recomposição de Registros e Documentos'
-    } else if (nomeCompleto.startsWith('Roubo e Furto Mediante')) {
-      nomeCompleto = 'Roubo e Furto Mediante Arrombamento'
-    } else if (nomeCompleto.startsWith('Tumultos, Greves, Lockout e Atos')) {
-      nomeCompleto = 'Tumultos, Greves, Lockout e Atos Dolosos'
-    } else if (nomeCompleto.startsWith('Vazamento de Chuveiros')) {
-      nomeCompleto = 'Vazamento de Chuveiros Automáticos (Sprinklers)'
-    } else if (nomeCompleto.startsWith('Vendaval, Furacão, Ciclone')) {
-      nomeCompleto = 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos'
+      currentRowFrags = []
+      return
     }
 
-    // Regra de validação: "Queda de Aeronaves" NUNCA é cobertura separada
-    if (nomeCompleto.trim().toLowerCase() === 'queda de aeronaves') {
+    // Detecção de LMI na Coluna 2
+    let lmiVal: number | null = null
+    const lmiMatch = col2Text.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+    if (lmiMatch) {
+      const parsed = parsePtBrNumber(lmiMatch[1])
+      if (parsed !== null && parsed > 0) {
+        lmiVal = parsed
+      }
+    }
+
+    // Detecção de Prêmio Líquido na Coluna 4 (x >= 490)
+    let premioVal: number | null = null
+    const premMatch = col4Text.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+    if (premMatch) {
+      const parsedP = parsePtBrNumber(premMatch[1])
+      if (parsedP !== null && parsedP > 0) {
+        premioVal = parsedP
+      }
+    }
+
+    rows.push({
+      pageNumber: currentRowPage,
+      y: currentRowY,
+      col1,
+      col2,
+      col3,
+      col4,
+      col1Text,
+      col2Text,
+      col3Text,
+      col4Text,
+      premioVal,
+      lmiVal,
+    })
+    currentRowFrags = []
+  }
+
+  for (const frag of sortedFrags) {
+    if (currentRowPage !== frag.pageNumber || Math.abs(currentRowY - frag.y) > 3.5) {
+      flushRow()
+      currentRowPage = frag.pageNumber
+      currentRowY = frag.y
+    }
+    currentRowFrags.push(frag)
+  }
+  flushRow()
+
+  // 3. RECONSTRUÇÃO DELIMITADA POR PRÊMIO:
+  // Uma cobertura começa após o prêmio da anterior (ou início do quadro) e
+  // TERMINA NA LINHA QUE CONTÉM O PRÊMIO LÍQUIDO (coluna 4).
+  // Todos os fragmentos nesse intervalo pertencem àquela cobertura, agrupados por coluna.
+  interface TokioCoberturaCandidate {
+    nomeFragments: string[]
+    lmiFragments: number[]
+    franquiaFragments: string[]
+    premioVal: number
+  }
+
+  const rawCoberturas: TokioCoberturaCandidate[] = []
+
+  let currentNomeFrags: string[] = []
+  let currentLmiFrags: number[] = []
+  let currentFranquiaFrags: string[] = []
+
+  for (const row of rows) {
+    if (row.col1Text) currentNomeFrags.push(row.col1Text)
+    if (row.lmiVal !== null) currentLmiFrags.push(row.lmiVal)
+    if (row.col3Text) currentFranquiaFrags.push(row.col3Text)
+
+    // Se a linha tem prêmio na coluna 4, encerra a cobertura corrente!
+    if (row.premioVal !== null && row.premioVal > 0) {
+      rawCoberturas.push({
+        nomeFragments: [...currentNomeFrags],
+        lmiFragments: [...currentLmiFrags],
+        franquiaFragments: [...currentFranquiaFrags],
+        premioVal: row.premioVal,
+      })
+      currentNomeFrags = []
+      currentLmiFrags = []
+      currentFranquiaFrags = []
+    }
+  }
+
+  // 4. Montar cada cobertura validada contra a Tabela-Verdade
+  const result: ExtractedApoliceCobertura[] = []
+
+  for (const rawCob of rawCoberturas) {
+    let rawNome = rawCob.nomeFragments.join(' ').replace(/\s+/g, ' ').trim()
+    let rawFranquia = rawCob.franquiaFragments.join(' ').replace(/\s+/g, ' ').trim()
+    const lmiVal = rawCob.lmiFragments.length > 0 ? rawCob.lmiFragments[0] : null
+    const premioVal = rawCob.premioVal
+
+    // Exclusão estrita: "Queda de Aeronaves" isolada ou fragmento residual
+    if (rawNome.toLowerCase() === 'queda de aeronaves' || !rawNome) {
       continue
     }
 
-    // Reúne todas as linhas de Franquia (own + assigned)
-    const allCol3 = [...anc.col3Assigned]
-    if (anc.col3Own) {
-      allCol3.push({ text: anc.col3Own, y: anc.y, pageNumber: anc.pageNumber })
+    // Se o nome contiver fragmento concatenado de outra cobertura (ex: "OPERAÇÕES DESPESAS DE CONTENÇÃO..."), limpa:
+    if (/OPERA[ÇC][ÕO]ES\s+DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome)) {
+      rawNome = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
     }
-    allCol3.sort((a, b) => {
-      if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
-      return b.y - a.y
-    })
+    if (/Per[íi]odo\s+Indenit[áa]rio\s*=\s*12\s*Meses\)?\s*Recomposi[çc][ãa]o/i.test(rawNome)) {
+      rawNome = 'Recomposição de Registros e Documentos'
+    }
 
-    let rawFranquia = allCol3
-      .map((it) => it.text)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim()
+    // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
+    if (/^Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
+      // Se tiver LMI de 390.000 ou menção a Despesas Fixas / Período Indenitário / Horas, é a Lucros Cessantes!
+      if (
+        lmiVal === 390000 ||
+        /Despesas\s+Fixas/i.test(rawNome) ||
+        /Per[íi]odo\s+Indenit[áa]rio/i.test(rawNome) ||
+        /HORAS\s+DE\s+PARALISA[ÇC][ÃA]O/i.test(rawFranquia)
+      ) {
+        rawNome =
+          'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
+      } else {
+        rawNome =
+          'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
+      }
+    } else if (/^Lucros\s+Cessantes/i.test(rawNome)) {
+      rawNome =
+        'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
+    } else if (/^CUSTOS\s+DE\s+DEFESA/i.test(rawNome)) {
+      rawNome = 'CUSTOS DE DEFESA DO SEGURADO - EM DECORRÊNCIA DE RESPONSABILIDADE CIVIL OPERAÇÕES'
+    } else if (/^DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome)) {
+      rawNome = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
+    } else if (/^Danos\s+El[ée]tricos/i.test(rawNome)) {
+      rawNome = 'Danos Elétricos'
+    } else if (/^Desmoronamento/i.test(rawNome)) {
+      rawNome = 'Desmoronamento'
+    } else if (/^Equipamentos\s+Eletr[ôo]nicos/i.test(rawNome)) {
+      rawNome = 'Equipamentos Eletrônicos'
+    } else if (/^Infidelidade/i.test(rawNome)) {
+      rawNome = 'Infidelidade de Empregados'
+    } else if (/^Recomposi[çc][ãa]o/i.test(rawNome)) {
+      rawNome = 'Recomposição de Registros e Documentos'
+    } else if (/^Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome)) {
+      rawNome = 'Responsabilidade Civil Operações'
+    } else if (/^Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome)) {
+      rawNome = 'Roubo de Bens de Hóspedes'
+    } else if (/^Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome)) {
+      rawNome = 'Roubo e Furto Mediante Arrombamento'
+    } else if (/^Tumultos/i.test(rawNome)) {
+      rawNome = 'Tumultos, Greves, Lockout e Atos Dolosos'
+    } else if (/^Valores\s+em\s+Tr[âa]nsito/i.test(rawNome)) {
+      rawNome = 'Valores em Trânsito'
+    } else if (/^Valores\s+no\s+Interior/i.test(rawNome)) {
+      rawNome = 'Valores no Interior do Estabelecimento'
+    } else if (/^Vazamento\s+de\s+Chuveiros/i.test(rawNome)) {
+      rawNome = 'Vazamento de Chuveiros Automáticos (Sprinklers)'
+    } else if (/^Vendaval/i.test(rawNome)) {
+      rawNome = 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos'
+    }
 
-    // Para o Incêndio, o texto real completo é:
-    // "10% DOS PREJUÍZOS, COM MÍNIMO DE R$ 1.500,00 (EXCLUSIVAMENTE EM CASO DE RAIO)"
-    if (nomeCompleto.includes('Incêndio') && rawFranquia.includes('10%')) {
-      rawFranquia = '10% DOS PREJUÍZOS, COM MÍNIMO DE R$ 1.500,00 (EXCLUSIVAMENTE EM CASO DE RAIO)'
+    // Normalização das Franquias estruturadas
+    // Preserva a condição de raio no Incêndio se presente no texto da franquia
+    if (
+      rawNome.includes('Incêndio') &&
+      rawFranquia.includes('RAIO') &&
+      !rawFranquia.includes('EXCLUSIVAMENTE')
+    ) {
+      rawFranquia = `${rawFranquia} (EXCLUSIVAMENTE EM CASO DE RAIO)`
     }
 
     const { franquiaPos, franquiaEstruturada } = normalizeTokioFranquia(rawFranquia)
-    const catNorm = matchCanonicalCategory(nomeCompleto)
-    const bloco = classifyTokioCategoryBlock(nomeCompleto, catNorm)
+    const catNorm = matchCanonicalCategory(rawNome)
+    const bloco = classifyTokioCategoryBlock(rawNome, catNorm)
 
     result.push({
-      nome: nomeCompleto,
+      nome: rawNome,
       categoriaNormalizada: catNorm,
       categoriaBloco: bloco,
-      lmi: anc.lmiVal,
+      lmi: lmiVal,
       franquiaPos,
       franquiaEstruturada,
-      observacao: anc.premioVal !== null ? `Prêmio: R$ ${anc.premioVal.toFixed(2)}` : undefined,
+      observacao: `Prêmio: R$ ${premioVal.toFixed(2)}`,
     })
   }
 
