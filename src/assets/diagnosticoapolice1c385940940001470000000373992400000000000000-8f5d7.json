@@ -1,6 +1,6 @@
 {
   "seguradora": "Tokio Marine Seguradora S.A.",
-  "numeroApolice": "1C385940940001470000000373992400000000000000",
+  "numeroApolice": "03739924",
   "proposta": "15772067",
   "ramo": "01.18 Empresarial",
   "vigencia": {
@@ -10,7 +10,7 @@
   "segurado": {
     "nome": "BT FORTALEZA HOTEIS LTDA",
     "cnpj": "38.594.094/0001-47",
-    "endereco": ""
+    "endereco": "AV BEIRA MAR, 3470 - 740 - MEIRELES - 60165-120 - FORTALEZA - CE"
   },
   "corretor": {
     "nome": "BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA",
@@ -32,134 +32,145 @@
     "vrdTotalLc": 390000,
     "vrdTotalDmPlusLc": 3527400,
     "lmiIncendioBasica": 3137400,
-    "formaContratacao": "1º Risco Absoluto"
+    "formaContratacao": "1º Risco Relativo",
+    "observacaoFormaContratacao": "DM (VRD R$ 3.137.400,00 > teto R$ 2.500.000,00): 1º Risco Relativo (P.O.S.: Rateio se VRD < 80% do VRA, cláusula 10.1) | LC (LMI R$ 390.000,00 <= teto R$ 2.000.000,00): 1º Risco Absoluto (cláusula 10.3) | Demais coberturas adicionais: 1º Risco Absoluto"
   },
   "coberturas": [
     {
-      "nome": "Incêndio (Inclusive Decorrente de",
+      "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
       "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
       "categoriaBloco": "Danos Materiais",
       "lmi": 3137400,
-      "franquiaPos": "10% DOS 779,98 Tumultos, Greves e Lockout), Raio, PREJUÍZOS, COM Explosão, Implosão, Fumaça e MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.500,00",
+      "observacao": "Prêmio: R$ 779.98"
     },
     {
-      "nome": "Queda de Aeronaves",
-      "categoriaNormalizada": "Queda de Aeronaves",
-      "categoriaBloco": "Danos Materiais",
-      "lmi": 1500,
-      "franquiaPos": "Não Há"
-    },
-    {
-      "nome": "CUSTOS DE DEFESA DO",
+      "nome": "CUSTOS DE DEFESA DO SEGURADO - EM DECORRÊNCIA DE RESPONSABILIDADE CIVIL OPERAÇÕES",
       "categoriaNormalizada": "CUSTOS DE DEFESA DO",
       "categoriaBloco": "Responsabilidade Civil",
       "lmi": 6000,
-      "franquiaPos": "NÃO HÁ   18,55"
+      "franquiaPos": "NÃO HÁ",
+      "observacao": "Prêmio: R$ 18.55"
     },
     {
-      "nome": "DESPESAS DE CONTENÇÃO E",
+      "nome": "DESPESAS DE CONTENÇÃO E SALVAMENTO",
       "categoriaNormalizada": "Despesas de Salvamento e Contenção",
       "categoriaBloco": "Danos Materiais",
       "lmi": 50000,
-      "franquiaPos": "10% DOS 76,23 SALVAMENTO PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 76.23"
     },
     {
       "nome": "Danos Elétricos",
       "categoriaNormalizada": "Danos Elétricos",
       "categoriaBloco": "Danos Materiais",
       "lmi": 30000,
-      "franquiaPos": "15% DOS 261,81 PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "15% min R$ 1.500,00",
+      "observacao": "Prêmio: R$ 261.81"
     },
     {
       "nome": "Desmoronamento",
       "categoriaNormalizada": "Desmoronamento",
       "categoriaBloco": "Danos Materiais",
       "lmi": 10000,
-      "franquiaPos": "20% DOS 32,97 PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "20% min R$ 5.000,00",
+      "observacao": "Prêmio: R$ 32.97"
     },
     {
       "nome": "Equipamentos Eletrônicos",
       "categoriaNormalizada": "Equipamentos Eletrônicos",
       "categoriaBloco": "Danos Materiais",
       "lmi": 5000,
-      "franquiaPos": "10% DOS 36,26 PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 500,00",
+      "observacao": "Prêmio: R$ 36.26"
     },
     {
       "nome": "Infidelidade de Empregados",
       "categoriaNormalizada": "Fidelidade de Funcionários",
       "categoriaBloco": "Danos Materiais",
       "lmi": 50000,
-      "franquiaPos": "10% DOS 310,06 PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.500,00",
+      "observacao": "Prêmio: R$ 310.06"
     },
     {
-      "nome": "Lucros Cessantes (Despesas Fixas),",
+      "nome": "Lucros Cessantes (Despesas Fixas)",
       "categoriaNormalizada": "Lucros Cessantes / Perda de Receita",
       "categoriaBloco": "Lucros Cessantes",
       "lmi": 390000,
-      "franquiaPos": "AS PRIMEIRAS 96 217,74"
+      "franquiaPos": "As primeiras 96 horas",
+      "observacao": "Prêmio: R$ 217.74"
     },
     {
-      "nome": "Recomposição de Registros e",
+      "nome": "Recomposição de Registros e Documentos",
       "categoriaNormalizada": "Recomposição de Registros/Documentos",
       "categoriaBloco": "Danos Materiais",
       "lmi": 10000,
-      "franquiaPos": "10% DOS 32,97 Documentos PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 500,00",
+      "observacao": "Prêmio: R$ 32.97"
     },
     {
       "nome": "Responsabilidade Civil Operações",
       "categoriaNormalizada": "Responsabilidade Civil Operações",
       "categoriaBloco": "Responsabilidade Civil",
       "lmi": 30000,
-      "franquiaPos": "NÃO HÁ   69,67"
+      "franquiaPos": "NÃO HÁ",
+      "observacao": "Prêmio: R$ 69.67"
     },
     {
       "nome": "Roubo de Bens de Hóspedes",
       "categoriaNormalizada": "Roubo/Furto de Bens/Valores de Hóspedes",
       "categoriaBloco": "Danos Materiais",
       "lmi": 50000,
-      "franquiaPos": "R$ 1.000,00   91,95"
+      "franquiaPos": "R$ 1.000,00",
+      "observacao": "Prêmio: R$ 91.95"
     },
     {
-      "nome": "Roubo e Furto Mediante",
+      "nome": "Roubo e Furto Mediante Arrombamento",
       "categoriaNormalizada": "Roubo e Furto Mediante",
       "categoriaBloco": "Danos Materiais",
       "lmi": 5000,
-      "franquiaPos": "10% DOS 44,05 Arrombamento PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 44.05"
     },
     {
-      "nome": "Tumultos, Greves, Lockout e Atos",
+      "nome": "Tumultos, Greves, Lockout e Atos Dolosos",
       "categoriaNormalizada": "Tumultos/Greves/Lock-out/Vandalismo",
       "categoriaBloco": "Danos Materiais",
       "lmi": 10000,
-      "franquiaPos": "10% DOS 32,97 Dolosos PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 32.97"
     },
     {
       "nome": "Valores em Trânsito",
       "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
       "categoriaBloco": "Danos Materiais",
       "lmi": 10000,
-      "franquiaPos": "10% DOS 393,97 PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 393.97"
     },
     {
-      "nome": "Valores no Interior do",
+      "nome": "Valores no Interior do Estabelecimento",
       "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
       "categoriaBloco": "Danos Materiais",
       "lmi": 5000,
-      "franquiaPos": "10% DOS 196,96 Estabelecimento PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 196.96"
     },
     {
-      "nome": "Vazamento de Chuveiros",
+      "nome": "Vazamento de Chuveiros Automáticos (Sprinklers)",
       "categoriaNormalizada": "Vazamento de Chuveiros",
       "categoriaBloco": "Danos Materiais",
       "lmi": 100000,
-      "franquiaPos": "10% DOS 32,97 Automáticos (Sprinklers) PREJUÍZOS, COM MÍNIMO DE R$"
+      "franquiaPos": "10% min R$ 500,00",
+      "observacao": "Prêmio: R$ 32.97"
     },
     {
-      "nome": "Vendaval, Furacão, Ciclone,",
+      "nome": "Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos",
       "categoriaNormalizada": "Vendaval/Granizo/Ciclone/Fumaça",
       "categoriaBloco": "Danos Materiais",
       "lmi": 10000,
-      "franquiaPos": "15% DOS 79,27 Tornado, Granizo e Impacto de PREJUÍZOS, COM Veículos MÍNIMO DE R$"
+      "franquiaPos": "15% min R$ 1.000,00",
+      "observacao": "Prêmio: R$ 79.27"
     }
   ],
   "diagnostico": {
@@ -185,97 +196,92 @@
     },
     "coberturasLidas": [
       {
-        "nome": "Incêndio (Inclusive Decorrente de",
+        "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
         "lmi": 3137400,
-        "franquia": "10% DOS 779,98 Tumultos, Greves e Lockout), Raio, PREJUÍZOS, COM Explosão, Implosão, Fumaça e MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.500,00"
       },
       {
-        "nome": "Queda de Aeronaves",
-        "lmi": 1500,
-        "franquia": "Não Há"
-      },
-      {
-        "nome": "CUSTOS DE DEFESA DO",
+        "nome": "CUSTOS DE DEFESA DO SEGURADO - EM DECORRÊNCIA DE RESPONSABILIDADE CIVIL OPERAÇÕES",
         "lmi": 6000,
-        "franquia": "NÃO HÁ   18,55"
+        "franquia": "NÃO HÁ"
       },
       {
-        "nome": "DESPESAS DE CONTENÇÃO E",
+        "nome": "DESPESAS DE CONTENÇÃO E SALVAMENTO",
         "lmi": 50000,
-        "franquia": "10% DOS 76,23 SALVAMENTO PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.000,00"
       },
       {
         "nome": "Danos Elétricos",
         "lmi": 30000,
-        "franquia": "15% DOS 261,81 PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "15% min R$ 1.500,00"
       },
       {
         "nome": "Desmoronamento",
         "lmi": 10000,
-        "franquia": "20% DOS 32,97 PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "20% min R$ 5.000,00"
       },
       {
         "nome": "Equipamentos Eletrônicos",
         "lmi": 5000,
-        "franquia": "10% DOS 36,26 PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 500,00"
       },
       {
         "nome": "Infidelidade de Empregados",
         "lmi": 50000,
-        "franquia": "10% DOS 310,06 PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.500,00"
       },
       {
-        "nome": "Lucros Cessantes (Despesas Fixas),",
+        "nome": "Lucros Cessantes (Despesas Fixas)",
         "lmi": 390000,
-        "franquia": "AS PRIMEIRAS 96 217,74"
+        "franquia": "As primeiras 96 horas"
       },
       {
-        "nome": "Recomposição de Registros e",
+        "nome": "Recomposição de Registros e Documentos",
         "lmi": 10000,
-        "franquia": "10% DOS 32,97 Documentos PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 500,00"
       },
       {
         "nome": "Responsabilidade Civil Operações",
         "lmi": 30000,
-        "franquia": "NÃO HÁ   69,67"
+        "franquia": "NÃO HÁ"
       },
       {
         "nome": "Roubo de Bens de Hóspedes",
         "lmi": 50000,
-        "franquia": "R$ 1.000,00   91,95"
+        "franquia": "R$ 1.000,00"
       },
       {
-        "nome": "Roubo e Furto Mediante",
+        "nome": "Roubo e Furto Mediante Arrombamento",
         "lmi": 5000,
-        "franquia": "10% DOS 44,05 Arrombamento PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.000,00"
       },
       {
-        "nome": "Tumultos, Greves, Lockout e Atos",
+        "nome": "Tumultos, Greves, Lockout e Atos Dolosos",
         "lmi": 10000,
-        "franquia": "10% DOS 32,97 Dolosos PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.000,00"
       },
       {
         "nome": "Valores em Trânsito",
         "lmi": 10000,
-        "franquia": "10% DOS 393,97 PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.000,00"
       },
       {
-        "nome": "Valores no Interior do",
+        "nome": "Valores no Interior do Estabelecimento",
         "lmi": 5000,
-        "franquia": "10% DOS 196,96 Estabelecimento PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 1.000,00"
       },
       {
-        "nome": "Vazamento de Chuveiros",
+        "nome": "Vazamento de Chuveiros Automáticos (Sprinklers)",
         "lmi": 100000,
-        "franquia": "10% DOS 32,97 Automáticos (Sprinklers) PREJUÍZOS, COM MÍNIMO DE R$"
+        "franquia": "10% min R$ 500,00"
       },
       {
-        "nome": "Vendaval, Furacão, Ciclone,",
+        "nome": "Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos",
         "lmi": 10000,
-        "franquia": "15% DOS 79,27 Tornado, Granizo e Impacto de PREJUÍZOS, COM Veículos MÍNIMO DE R$"
+        "franquia": "15% min R$ 1.000,00"
       }
     ],
-    "linhasCoberturasLidas": 18,
-    "timestamp": "2026-10-26T21:18:33.488Z"
+    "linhasCoberturasLidas": 17,
+    "timestamp": "2026-10-27T01:30:00.000Z"
   }
 }

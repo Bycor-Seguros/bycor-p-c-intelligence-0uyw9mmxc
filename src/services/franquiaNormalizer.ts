@@ -19,7 +19,9 @@ export interface FranquiaEstruturada {
   unidadeTemporal?: 'dias' | 'horas' | 'meses' | null
   gatilhoRateio?: string | null // ex: "Rateio se VRD < 80% do VRA (cláusula 10.1)"
   sufixoAplicacao?: string | null // ex: "por reclamante", "por veículo", "por evento"
+  condicao?: string | null // ex: "(EXCLUSIVAMENTE EM CASO DE RAIO)"
   textoOriginal: string
+  textoFormatado?: string // ex: "10% min R$ 1.500,00" ou "Não Há" ou "R$ 1.000,00"
 }
 
 /**
@@ -154,6 +156,26 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
 
     const tipo: FranquiaTipo = minimoVal !== null || maximoVal !== null ? 'mista' : 'percentual'
 
+    // Extrai condição entre parênteses (ex: "(EXCLUSIVAMENTE EM CASO DE RAIO)")
+    const condMatch = original.match(/\((?:EXCLUSIVAMENTE\s+)?EM\s+CASO\s+DE\s+[^)]+\)/i)
+    const condicao = condMatch ? condMatch[0].trim() : null
+
+    // Formata exibição resumida "X% min R$Y" quando houver mínimo
+    let textoFormatado = `${pctVal}%`
+    if (minimoVal !== null) {
+      const minStr = minimoVal.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+      textoFormatado = `${pctVal}% min R$ ${minStr}`
+    } else if (maximoVal !== null) {
+      const maxStr = maximoVal.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+      textoFormatado = `${pctVal}% máx R$ ${maxStr}`
+    }
+
     return {
       tipo,
       percentual: pctVal,
@@ -162,7 +184,9 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
       maximo: maximoVal,
       gatilhoRateio,
       sufixoAplicacao,
+      condicao,
       textoOriginal: original,
+      textoFormatado,
     }
   }
 
