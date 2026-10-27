@@ -3989,9 +3989,13 @@ function extractTokioCoberturasGeometric(
 
   // 5. CLUSTERIZAÇÃO DE CÉLULAS (INVERTER A ORDEM DE MONTAGEM):
   // Primeiro clusterizar fragmentos em CÉLULAS inteiras:
-  // Fragmentos na mesma coluna (banda X) e mesma página com adjacência vertical pequena (gap <= 18 pontos)
-  // formam UMA CÉLULA INTEIRA (mesmo de 5 a 6 linhas de continuação).
-  const clusterColumnFragments = (frags: TokioRowFragment[], maxGap = 18): TokioCellCluster[] => {
+  // Regra adaptativa: um cluster quebra somente se (gap > 30pt) OU
+  // (o novo fragmento casa início de nova célula: /^(?:\d+%\s*DOS|NÃO\s*H[ÁA]|AS\s*PRIMEIRAS|R\$\s*[\d\.,]+)/i).
+  // O gap vertical intra-célula na Tokio BT Fortaleza atinge ~26-30pt na coluna de franquia.
+  const clusterColumnFragments = (
+    frags: TokioRowFragment[],
+    opts?: { isFranquia?: boolean },
+  ): TokioCellCluster[] => {
     if (frags.length === 0) return []
     const sorted = [...frags].sort((a, b) => {
       if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
@@ -4053,21 +4057,28 @@ function extractTokioCoberturasGeometric(
       currentFrags = []
     }
 
+    const newCellPattern = /^(?:\d+%\s*DOS|NÃO\s*H[ÁA]|AS\s*PRIMEIRAS|R\$\s*[\d.,]+)/i
+
     for (const f of sorted) {
       if (curPage !== f.pageNumber) {
         flushCluster()
         curPage = f.pageNumber
         currentFrags.push(f)
         lastY = f.y
-      } else if (lastY - f.y > maxGap) {
-        // Gap vertical maior que maxGap indica que começou outra célula/cobertura
-        flushCluster()
-        curPage = f.pageNumber
-        currentFrags.push(f)
-        lastY = f.y
       } else {
-        currentFrags.push(f)
-        lastY = f.y
+        const gap = lastY - f.y
+        const startsNewCell = opts?.isFranquia ? newCellPattern.test(f.str.trim()) : false
+
+        if (gap > 30 || (startsNewCell && currentFrags.length > 0)) {
+          // Quebra adaptativa: gap > 30pt OU novo fragmento é cabeçalho de nova franquia
+          flushCluster()
+          curPage = f.pageNumber
+          currentFrags.push(f)
+          lastY = f.y
+        } else {
+          currentFrags.push(f)
+          lastY = f.y
+        }
       }
     }
     flushCluster()
@@ -4076,11 +4087,13 @@ function extractTokioCoberturasGeometric(
   }
 
   // Clusteriza células da Coluna 1 (Nome) e Coluna 3 (Franquia)
-  const nomeClusters = clusterColumnFragments(col1Frags, 18)
-  const franquiaClusters = clusterColumnFragments(col3Frags, 18)
+  const nomeClusters = clusterColumnFragments(col1Frags)
+  const franquiaClusters = clusterColumnFragments(col3Frags, { isFranquia: true })
 
   // 6. ATRIBUIÇÃO DE CÉLULAS ÀS COBERTURAS:
   // Cada célula pertence à cobertura em cuja linha ela COMEÇA (topo da célula dentro do vão da linha).
+  // A célula INTEIRA de franquia pertence à cobertura cujo vão de linha contém o TOPO REAL da célula
+  // (a linha do "X% DOS"), nunca a da célula amputada.
   // Vão da linha i:
   // - Começa em topY (exclusivo, a menos que seja 9999) ou logo abaixo do prêmio anterior
   // - Termina em bottomY (inclusivo, com pequena tolerância de -5 pontos para topos que começam na linha do prêmio).
@@ -4090,30 +4103,29 @@ function extractTokioCoberturasGeometric(
     lmiVal: number | null
     franquiaFragments: string[]
     premioVal: number
+    slotPage: number
+    slotTopY: number
+    slotBottomY: number
   }
 
   const findSlotForCell = (cell: TokioCellCluster, slots: TokioRowSlot[]): number => {
-    // Procura o slot na mesma página cujo vão contenha o topY da célula
-    // topY da célula deve ser <= slot.topY e > slot.bottomY - 6
+    // Procura o slot na mesma página cujo vão contenha o topY REAL da célula
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i]
       if (slot.pageNumber !== cell.pageNumber) continue
 
-      // Se for o primeiro slot da página, topY pode ser qualquer valor >= slot.bottomY - 6
       if (slot.topY === 9999) {
         if (cell.topY >= slot.bottomY - 6) {
           return i
         }
       } else {
-        // Nos slots seguintes: célula começa abaixo do prêmio anterior (ou seja <= slot.topY + 2)
-        // e acima do encerramento da linha (>= slot.bottomY - 6)
         if (cell.topY <= slot.topY + 3 && cell.topY >= slot.bottomY - 6) {
           return i
         }
       }
     }
 
-    // Fallback: slot mais próximo por distância absoluta ao topY da célula (sem ultrapassar topo de outra página)
+    // Fallback: slot mais próximo por distância absoluta ao topY da célula na mesma página
     let bestIdx = -1
     let bestDist = 999999
     for (let i = 0; i < slots.length; i++) {
@@ -4129,12 +4141,15 @@ function extractTokioCoberturasGeometric(
     return bestIdx
   }
 
-  // Prepara acumuladores para cada slot de linha
+  // Prepara acumuladores para cada slot de linha delimitado por prêmio
   const candidateRows: TokioCoberturaCandidate[] = rowSlots.map((slot) => ({
     nomeFragments: [],
     lmiVal: slot.lmiVal,
     franquiaFragments: [],
     premioVal: slot.premioVal,
+    slotPage: slot.pageNumber,
+    slotTopY: slot.topY,
+    slotBottomY: slot.bottomY,
   }))
 
   // Atribui células de Nome (Coluna 1) aos slots
@@ -4145,11 +4160,50 @@ function extractTokioCoberturasGeometric(
     }
   }
 
-  // Atribui células de Franquia (Coluna 3) aos slots
+  // Atribui células de Franquia (Coluna 3) aos slots pelo TOPO REAL
   for (const fCluster of franquiaClusters) {
     const slotIdx = findSlotForCell(fCluster, rowSlots)
     if (slotIdx >= 0 && slotIdx < candidateRows.length) {
       candidateRows[slotIdx].franquiaFragments.push(fCluster.text)
+    }
+  }
+
+  // Recuperação de slots sem nome: NUNCA descartar slot com prêmio próprio.
+  // Se um slot ficou sem nome, tenta capturar o cluster de nome adjacente mais próximo da mesma página.
+  for (let i = 0; i < candidateRows.length; i++) {
+    const cand = candidateRows[i]
+    if (cand.nomeFragments.length === 0) {
+      // 1. Tenta herdar cluster de nome vizinho se o vizinho tiver múltiplos
+      if (
+        i > 0 &&
+        candidateRows[i - 1].slotPage === cand.slotPage &&
+        candidateRows[i - 1].nomeFragments.length > 1
+      ) {
+        const stolen = candidateRows[i - 1].nomeFragments.pop()
+        if (stolen) cand.nomeFragments.push(stolen)
+      } else if (
+        i + 1 < candidateRows.length &&
+        candidateRows[i + 1].slotPage === cand.slotPage &&
+        candidateRows[i + 1].nomeFragments.length > 1
+      ) {
+        const stolen = candidateRows[i + 1].nomeFragments.shift()
+        if (stolen) cand.nomeFragments.push(stolen)
+      } else {
+        // 2. Busca o cluster de nome da mesma página mais próximo pelo Y do prêmio do slot
+        let closestNome = ''
+        let minDist = 999999
+        for (const nc of nomeClusters) {
+          if (nc.pageNumber !== cand.slotPage) continue
+          const dist = Math.abs(nc.topY - cand.slotBottomY)
+          if (dist < minDist) {
+            minDist = dist
+            closestNome = nc.text
+          }
+        }
+        if (closestNome) {
+          cand.nomeFragments.push(closestNome)
+        }
+      }
     }
   }
 
@@ -4162,55 +4216,52 @@ function extractTokioCoberturasGeometric(
     const lmiVal = cand.lmiVal
     const premioVal = cand.premioVal
 
-    if (!rawNome) continue
-
     // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
-    if (/^Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
-      if (
-        lmiVal === 390000 ||
-        /Despesas\s+Fixas/i.test(rawNome) ||
-        /Per[íi]odo\s+Indenit[áa]rio/i.test(rawNome) ||
-        /HORAS\s+DE\s+PARALISA[ÇC][ÃA]O/i.test(rawFranquia)
-      ) {
-        rawNome =
-          'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
-      } else {
-        rawNome =
-          'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
-      }
-    } else if (/^Lucros\s+Cessantes/i.test(rawNome)) {
+    if (/CUSTOS\s+DE\s+DEFESA/i.test(rawNome)) {
+      rawNome = 'CUSTOS DE DEFESA DO SEGURADO - RC OPERAÇÕES'
+    } else if (/DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome)) {
+      rawNome = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
+    } else if (/Danos\s+El[ée]tricos/i.test(rawNome)) {
+      rawNome = 'Danos Elétricos'
+    } else if (/Desmoronamento/i.test(rawNome)) {
+      rawNome = 'Desmoronamento'
+    } else if (/Equipamentos\s+Eletr[ôo]nicos/i.test(rawNome)) {
+      rawNome = 'Equipamentos Eletrônicos, Eletroeletrônicos e Eletrônicos Portáteis'
+    } else if (/Infidelidade/i.test(rawNome)) {
+      rawNome = 'Infidelidade de Empregados'
+    } else if (
+      /Lucros\s+Cessantes/i.test(rawNome) ||
+      lmiVal === 390000 ||
+      /Despesas\s+Fixas/i.test(rawNome) ||
+      /Per[íi]odo\s+Indenit[áa]rio/i.test(rawNome) ||
+      /HORAS\s+DE\s+PARALISA[ÇC][ÃA]O/i.test(rawFranquia)
+    ) {
       rawNome =
         'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
-    } else if (/^CUSTOS\s+DE\s+DEFESA/i.test(rawNome)) {
-      rawNome = 'CUSTOS DE DEFESA DO SEGURADO - EM DECORRÊNCIA DE RESPONSABILIDADE CIVIL OPERAÇÕES'
-    } else if (/^DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome)) {
-      rawNome = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
-    } else if (/^Danos\s+El[ée]tricos/i.test(rawNome)) {
-      rawNome = 'Danos Elétricos'
-    } else if (/^Desmoronamento/i.test(rawNome)) {
-      rawNome = 'Desmoronamento'
-    } else if (/^Equipamentos\s+Eletr[ôo]nicos/i.test(rawNome)) {
-      rawNome = 'Equipamentos Eletrônicos'
-    } else if (/^Infidelidade/i.test(rawNome)) {
-      rawNome = 'Infidelidade de Empregados'
-    } else if (/^Recomposi[çc][ãa]o/i.test(rawNome)) {
+    } else if (/Recomposi[çc][ãa]o/i.test(rawNome)) {
       rawNome = 'Recomposição de Registros e Documentos'
-    } else if (/^Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome)) {
+    } else if (/Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome)) {
       rawNome = 'Responsabilidade Civil Operações'
-    } else if (/^Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome)) {
+    } else if (/Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome)) {
       rawNome = 'Roubo de Bens de Hóspedes'
-    } else if (/^Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome)) {
+    } else if (/Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome)) {
       rawNome = 'Roubo e Furto Mediante Arrombamento'
-    } else if (/^Tumultos/i.test(rawNome)) {
+    } else if (
+      /Tumultos,\s*Greves,\s*Lockout\s*e\s*Atos\s*Dolosos/i.test(rawNome) ||
+      (lmiVal === 10000 && /Lockout/i.test(rawNome) && !/Inc[êe]ndio/i.test(rawNome))
+    ) {
       rawNome = 'Tumultos, Greves, Lockout e Atos Dolosos'
-    } else if (/^Valores\s+em\s+Tr[âa]nsito/i.test(rawNome)) {
+    } else if (/Valores\s+em\s+Tr[âa]nsito/i.test(rawNome)) {
       rawNome = 'Valores em Trânsito'
-    } else if (/^Valores\s+no\s+Interior/i.test(rawNome)) {
+    } else if (/Valores\s+no\s+Interior/i.test(rawNome)) {
       rawNome = 'Valores no Interior do Estabelecimento'
-    } else if (/^Vazamento\s+de\s+Chuveiros/i.test(rawNome)) {
-      rawNome = 'Vazamento de Chuveiros Automáticos (Sprinklers)'
-    } else if (/^Vendaval/i.test(rawNome)) {
+    } else if (/Vendaval/i.test(rawNome)) {
       rawNome = 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos'
+    } else if (/Sprinklers|Chuveiros|Equipamentos\s+Autom[áa]ticos/i.test(rawNome)) {
+      rawNome = 'Equipamentos Automáticos de Combate a Incêndio (Sprinklers)'
+    } else if (/Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
+      rawNome =
+        'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
     }
 
     // Normalização das Franquias estruturadas:
