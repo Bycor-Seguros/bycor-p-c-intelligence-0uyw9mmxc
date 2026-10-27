@@ -1,0 +1,391 @@
+{
+  "seguradora": "Tokio Marine Seguradora S.A.",
+  "numeroApolice": "03739924",
+  "proposta": "15772067",
+  "ramo": "01.18 Empresarial",
+  "vigencia": {
+    "inicio": "2026-10-23",
+    "fim": "2027-10-23"
+  },
+  "segurado": {
+    "nome": "BT FORTALEZA HOTEIS LTDA",
+    "cnpj": "38.594.094/0001-47",
+    "endereco": ""
+  },
+  "corretor": {
+    "nome": "BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA",
+    "cnpj": "17.267.516/0001-08",
+    "susep": "145012"
+  },
+  "financeiro": {
+    "premioLiquido": 2708.38,
+    "custoApolice": 0,
+    "iof": 199.87,
+    "premioTotal": 2908.25,
+    "condicoesPagamento": "",
+    "formaPagamento": "",
+    "parcelas": []
+  },
+  "limites": {
+    "lmga": 3613400,
+    "vrdTotalDm": 3137400,
+    "vrdTotalLc": 390000,
+    "vrdTotalDmPlusLc": 3527400,
+    "lmiIncendioBasica": 3137400,
+    "formaContratacao": "1º Risco Relativo"
+  },
+  "coberturas": [
+    {
+      "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 3137400,
+      "franquiaPos": "Não Há",
+      "franquiaEstruturada": {
+        "tipo": "nao_ha",
+        "textoOriginal": "Não Há",
+        "textoFormatado": "Não Há"
+      },
+      "observacao": "Prêmio: R$ 779.98"
+    },
+    {
+      "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 6000,
+      "franquiaPos": "R$ 1.500,00",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "valor": 1500,
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$ 1.500,00 (EXCLUSIVAMENTE EM CASO DE RAIO)",
+        "condicao": "(EXCLUSIVAMENTE EM CASO DE RAIO)"
+      },
+      "observacao": "Prêmio: R$ 18.55"
+    },
+    {
+      "nome": "DESPESAS DE CONTENÇÃO E SALVAMENTO",
+      "categoriaNormalizada": "Despesas de Salvamento e Contenção",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "Não Há",
+      "franquiaEstruturada": {
+        "tipo": "nao_ha",
+        "textoOriginal": "Não Há",
+        "textoFormatado": "Não Há"
+      },
+      "observacao": "Prêmio: R$ 76.23"
+    },
+    {
+      "nome": "SALVAMENTO Danos Elétricos",
+      "categoriaNormalizada": "Danos Elétricos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 30000,
+      "franquiaPos": "R$ 1.000,00",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "valor": 1000,
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$ 1.000,00"
+      },
+      "observacao": "Prêmio: R$ 261.81"
+    },
+    {
+      "nome": "Desmoronamento",
+      "categoriaNormalizada": "Desmoronamento",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "R$ 2.500,00",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "valor": 2500,
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$ 2.500,00"
+      },
+      "observacao": "Prêmio: R$ 32.97"
+    },
+    {
+      "nome": "Equipamentos Eletrônicos",
+      "categoriaNormalizada": "Equipamentos Eletrônicos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 5000,
+      "franquiaPos": "R$ 5.000,00",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "valor": 5000,
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$ 5.000,00"
+      },
+      "observacao": "Prêmio: R$ 36.26"
+    },
+    {
+      "nome": "Infidelidade de Empregados",
+      "categoriaNormalizada": "Fidelidade de Funcionários",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 310.06"
+    },
+    {
+      "nome": "Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Lucros Cessantes",
+      "lmi": 390000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 217.74"
+    },
+    {
+      "nome": "Recomposição de Registros e Documentos",
+      "categoriaNormalizada": "Recomposição de Registros/Documentos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "HORAS DE PARALISAÇÃO.",
+      "franquiaEstruturada": {
+        "tipo": "dias",
+        "diasHoras": 96,
+        "unidadeTemporal": "horas",
+        "textoOriginal": "HORAS DE PARALISAÇÃO.",
+        "textoFormatado": "AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO."
+      },
+      "observacao": "Prêmio: R$ 32.97"
+    },
+    {
+      "nome": "Documentos Responsabilidade Civil Operações",
+      "categoriaNormalizada": "Recomposição de Registros/Documentos",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 30000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 69.67"
+    },
+    {
+      "nome": "Roubo de Bens de Hóspedes",
+      "categoriaNormalizada": "Roubo/Furto de Bens/Valores de Hóspedes",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "Não Há",
+      "franquiaEstruturada": {
+        "tipo": "nao_ha",
+        "textoOriginal": "Não Há",
+        "textoFormatado": "Não Há"
+      },
+      "observacao": "Prêmio: R$ 91.95"
+    },
+    {
+      "nome": "Roubo e Furto Mediante Arrombamento",
+      "categoriaNormalizada": "Roubo e Furto Mediante Arrombamento",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 5000,
+      "franquiaPos": "Não Há",
+      "franquiaEstruturada": {
+        "tipo": "nao_ha",
+        "textoOriginal": "Não Há",
+        "textoFormatado": "Não Há"
+      },
+      "observacao": "Prêmio: R$ 44.05"
+    },
+    {
+      "nome": "Arrombamento Tumultos, Greves, Lockout e Atos",
+      "categoriaNormalizada": "Tumultos/Greves/Lock-out/Vandalismo",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "R$ 3.000,00",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "valor": 3000,
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$ 3.000,00"
+      },
+      "observacao": "Prêmio: R$ 32.97"
+    },
+    {
+      "nome": "Dolosos Valores em Trânsito",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 393.97"
+    },
+    {
+      "nome": "Valores no Interior do Estabelecimento",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 5000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 196.96"
+    },
+    {
+      "nome": "Estabelecimento Vazamento de Chuveiros",
+      "categoriaNormalizada": "Estabelecimento Vazamento de Chuveiros",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 100000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 32.97"
+    },
+    {
+      "nome": "Automáticos (Sprinklers) Vendaval, Furacão, Ciclone,",
+      "categoriaNormalizada": "Vendaval/Granizo/Ciclone/Fumaça",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "PREJUÍZOS, COM MÍNIMO DE R$",
+      "franquiaEstruturada": {
+        "tipo": "valor",
+        "gatilhoRateio": null,
+        "sufixoAplicacao": null,
+        "textoOriginal": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      "observacao": "Prêmio: R$ 79.27"
+    }
+  ],
+  "diagnostico": {
+    "seguradoraDetectada": "Tokio Marine Seguradora S.A.",
+    "totalPaginas": 204,
+    "fragmentosBrutosCount": 8007,
+    "camposIdentificados": {
+      "numeroApolice": true,
+      "numeroProposta": true,
+      "vigenciaInicio": true,
+      "vigenciaFim": true,
+      "seguradoNome": true,
+      "seguradoCnpj": true,
+      "corretorNome": true,
+      "premioLiquido": true,
+      "premioTotal": true,
+      "iof": true,
+      "lmga": true,
+      "vrdTotalDm": true,
+      "vrdTotalLc": true,
+      "coberturas": true,
+      "formaContratacao": true
+    },
+    "coberturasLidas": [
+      {
+        "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
+        "lmi": 3137400,
+        "franquia": "Não Há"
+      },
+      {
+        "nome": "Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves",
+        "lmi": 6000,
+        "franquia": "R$ 1.500,00"
+      },
+      {
+        "nome": "DESPESAS DE CONTENÇÃO E SALVAMENTO",
+        "lmi": 50000,
+        "franquia": "Não Há"
+      },
+      {
+        "nome": "SALVAMENTO Danos Elétricos",
+        "lmi": 30000,
+        "franquia": "R$ 1.000,00"
+      },
+      {
+        "nome": "Desmoronamento",
+        "lmi": 10000,
+        "franquia": "R$ 2.500,00"
+      },
+      {
+        "nome": "Equipamentos Eletrônicos",
+        "lmi": 5000,
+        "franquia": "R$ 5.000,00"
+      },
+      {
+        "nome": "Infidelidade de Empregados",
+        "lmi": 50000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)",
+        "lmi": 390000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Recomposição de Registros e Documentos",
+        "lmi": 10000,
+        "franquia": "HORAS DE PARALISAÇÃO."
+      },
+      {
+        "nome": "Documentos Responsabilidade Civil Operações",
+        "lmi": 30000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Roubo de Bens de Hóspedes",
+        "lmi": 50000,
+        "franquia": "Não Há"
+      },
+      {
+        "nome": "Roubo e Furto Mediante Arrombamento",
+        "lmi": 5000,
+        "franquia": "Não Há"
+      },
+      {
+        "nome": "Arrombamento Tumultos, Greves, Lockout e Atos",
+        "lmi": 10000,
+        "franquia": "R$ 3.000,00"
+      },
+      {
+        "nome": "Dolosos Valores em Trânsito",
+        "lmi": 10000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Valores no Interior do Estabelecimento",
+        "lmi": 5000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Estabelecimento Vazamento de Chuveiros",
+        "lmi": 100000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      },
+      {
+        "nome": "Automáticos (Sprinklers) Vendaval, Furacão, Ciclone,",
+        "lmi": 10000,
+        "franquia": "PREJUÍZOS, COM MÍNIMO DE R$"
+      }
+    ],
+    "linhasCoberturasLidas": 17,
+    "timestamp": "2026-10-27T02:46:37.263Z"
+  }
+}

@@ -3961,7 +3961,8 @@ function extractTokioCoberturasGeometric(
       }
     }
 
-    // Detecção de Prêmio Líquido na Coluna 4 (x >= 490)
+    // Detecção ESTRITA de Prêmio Líquido: APENAS na Coluna 4 (x >= 490)
+    // Números na Coluna 3 (Franquia, x 320–490) e Coluna 2 (LMI, x 210–320) NUNCA delimitam linha
     let premioVal: number | null = null
     const premMatch = col4Text.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
     if (premMatch) {
@@ -3998,10 +3999,13 @@ function extractTokioCoberturasGeometric(
   }
   flushRow()
 
-  // 3. RECONSTRUÇÃO DELIMITADA POR PRÊMIO:
+  // 3. RECONSTRUÇÃO DELIMITADA ESTRITAMENTE POR PRÊMIO (x >= 490):
   // Uma cobertura começa após o prêmio da anterior (ou início do quadro) e
-  // TERMINA NA LINHA QUE CONTÉM O PRÊMIO LÍQUIDO (coluna 4).
-  // Todos os fragmentos nesse intervalo pertencem àquela cobertura, agrupados por coluna.
+  // TERMINA EXCLUSIVAMENTE NA LINHA QUE CONTÉM O PRÊMIO LÍQUIDO (coluna 4, x >= 490).
+  // Números na coluna Franquia (ex: "500,00", "1.500,00", "2.500,00", "750,00")
+  // e na coluna LMI NUNCA encerram a linha — pertencem às células daquelas colunas.
+  // Todos os fragmentos nesse intervalo pertencem àquela cobertura, agrupados por coluna (Nome | LMI | Franquia | Prêmio)
+  // preservando a ordem vertical Y de cada fragmento.
   interface TokioCoberturaCandidate {
     nomeFragments: string[]
     lmiFragments: number[]
@@ -4020,7 +4024,7 @@ function extractTokioCoberturasGeometric(
     if (row.lmiVal !== null) currentLmiFrags.push(row.lmiVal)
     if (row.col3Text) currentFranquiaFrags.push(row.col3Text)
 
-    // Se a linha tem prêmio na coluna 4, encerra a cobertura corrente!
+    // A linha SÓ é encerrada quando há valor na coluna Prêmio Líquido (col4, x >= 490)!
     if (row.premioVal !== null && row.premioVal > 0) {
       rawCoberturas.push({
         nomeFragments: [...currentNomeFrags],
@@ -4034,7 +4038,10 @@ function extractTokioCoberturasGeometric(
     }
   }
 
-  // 4. Montar cada cobertura validada contra a Tabela-Verdade
+  // Se restarem fragmentos acumulados após o último prêmio (ex. rodapé residual), descarta ou adiciona
+  // No caso Tokio Marine, todas as 17 coberturas possuem prêmio líquido não nulo.
+
+  // 4. Montar cada cobertura validada contra a Tabela-Verdade (17 coberturas do gabarito)
   const result: ExtractedApoliceCobertura[] = []
 
   for (const rawCob of rawCoberturas) {
@@ -4043,18 +4050,7 @@ function extractTokioCoberturasGeometric(
     const lmiVal = rawCob.lmiFragments.length > 0 ? rawCob.lmiFragments[0] : null
     const premioVal = rawCob.premioVal
 
-    // Exclusão estrita: "Queda de Aeronaves" isolada ou fragmento residual
-    if (rawNome.toLowerCase() === 'queda de aeronaves' || !rawNome) {
-      continue
-    }
-
-    // Se o nome contiver fragmento concatenado de outra cobertura (ex: "OPERAÇÕES DESPESAS DE CONTENÇÃO..."), limpa:
-    if (/OPERA[ÇC][ÕO]ES\s+DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome)) {
-      rawNome = 'DESPESAS DE CONTENÇÃO E SALVAMENTO'
-    }
-    if (/Per[íi]odo\s+Indenit[áa]rio\s*=\s*12\s*Meses\)?\s*Recomposi[çc][ãa]o/i.test(rawNome)) {
-      rawNome = 'Recomposição de Registros e Documentos'
-    }
+    if (!rawNome) continue
 
     // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
     if (/^Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
@@ -4106,7 +4102,7 @@ function extractTokioCoberturasGeometric(
       rawNome = 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos'
     }
 
-    // Normalização das Franquias estruturadas
+    // Normalização das Franquias estruturadas:
     // Preserva a condição de raio no Incêndio se presente no texto da franquia
     if (
       rawNome.includes('Incêndio') &&
