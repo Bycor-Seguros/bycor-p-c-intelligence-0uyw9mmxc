@@ -437,6 +437,51 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
     URL.revokeObjectURL(url)
   }
 
+  // Baixar JSON com fragmentos brutos e coordenadas (x, y, width, height, texto) para diagnóstico técnico e fixtures
+  const handleExportarDiagnosticoFragmentos = () => {
+    if (!extractionResult?.paginas) return
+
+    const sanitizedBase = (selectedFile?.name || 'documento')
+      .replace(/\.pdf$/i, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+
+    const payload = {
+      metadata: {
+        sourcePdf: selectedFile?.name || 'documento.pdf',
+        extractedAt: new Date().toISOString(),
+        totalPagesInPdf: extractionResult.paginas.length,
+        pagesIncluded: extractionResult.paginas.map((p) => p.pageNumber),
+      },
+      pages: extractionResult.paginas.map((p) => ({
+        pageNumber: p.pageNumber,
+        text: p.text,
+        lines: p.lines,
+        items: (p.items || []).map((it) => ({
+          x: it.x,
+          y: it.y,
+          width: it.width,
+          height: it.height,
+          texto: it.str,
+          str: it.str,
+          fontName: it.fontName,
+          isBold: it.isBold,
+        })),
+      })),
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `diagnostico-fragmentos-${sanitizedBase}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // Criar novo empreendimento para novo cliente
   const handleCriarNovoEmpreendimento = async (): Promise<string | null> => {
     const nomeFinal = (novoEmpNome || seguradoNome).trim()
@@ -833,6 +878,25 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
                 • <strong>Preservação da Base:</strong> Avisa antes de sobrescrever apólices já
                 cadastradas.
               </p>
+            </div>
+
+            {/* Rodapé discreto de diagnóstico técnico no upload */}
+            <div className="pt-2 flex items-center justify-between border-t border-gray-100">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!selectedFile || !extractionResult}
+                onClick={handleExportarDiagnosticoFragmentos}
+                className="h-7 text-[11px] px-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 disabled:opacity-40"
+                title="Exporta fragmentos brutos com coordenadas para golden tests e diagnóstico (habilitado com PDF carregado)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Exportar diagnóstico de fragmentos</span>
+              </Button>
+              <span className="text-[10px] text-gray-400">
+                {selectedFile ? selectedFile.name : 'Nenhum PDF carregado'}
+              </span>
             </div>
           </div>
         )}
@@ -1480,22 +1544,37 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
             )}
 
             {/* Rodapé de Ações */}
-            <div className="pt-2 flex items-center justify-end gap-2 border-t border-gray-200">
+            <div className="pt-2 flex items-center justify-between gap-2 border-t border-gray-200">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                onClick={() => onOpenChange(false)}
-                className="text-xs h-9 px-4"
+                disabled={!selectedFile || !extractionResult}
+                onClick={handleExportarDiagnosticoFragmentos}
+                className="h-8 text-[11px] px-2.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 flex items-center gap-1.5"
+                title="Exporta fragmentos brutos com coordenadas para golden tests e diagnóstico"
               >
-                Cancelar
+                <Download className="w-3.5 h-3.5" />
+                <span>Exportar diagnóstico de fragmentos</span>
               </Button>
-              <Button
-                type="submit"
-                className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-9 px-5 shadow-sm"
-              >
-                Confirmar e Gravar no Portfólio
-              </Button>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpenChange(false)}
+                  className="text-xs h-9 px-4"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-9 px-5 shadow-sm"
+                >
+                  Confirmar e Gravar no Portfólio
+                </Button>
+              </div>
             </div>
           </form>
         )}
