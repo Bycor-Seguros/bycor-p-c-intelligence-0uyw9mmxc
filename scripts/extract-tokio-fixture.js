@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
+import { MessageChannel } from 'node:worker_threads'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
@@ -15,11 +16,39 @@ const rootDir = path.resolve(__dirname, '..')
 const pdfPath = path.join(rootDir, 'src/assets/apoliceempresatokiobtfortaleza26-copia-6714c.pdf')
 const outputPath = path.join(rootDir, 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json')
 
+import https from 'node:https'
+
 async function fetchCdn(url) {
   console.log(`Buscando ${url}...`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Falha ao baixar ${url}: ${res.statusText}`)
-  return await res.text()
+  return new Promise((resolve, reject) => {
+    https
+      .get(
+        url,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            Accept: '*/*',
+          },
+        },
+        (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            let nextUrl = res.headers.location
+            if (nextUrl.startsWith('/')) {
+              const u = new URL(url)
+              nextUrl = `${u.protocol}//${u.host}${nextUrl}`
+            }
+            return resolve(fetchCdn(nextUrl))
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode} para ${url}`))
+          }
+          const chunks = []
+          res.on('data', (c) => chunks.push(c))
+          res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+        },
+      )
+      .on('error', reject)
+  })
 }
 
 async function run() {
@@ -28,12 +57,24 @@ async function run() {
     throw new Error(`PDF não encontrado em ${pdfPath}`)
   }
 
-  // Baixa pdf.js build clássica
-  const pdfJsCode = await fetchCdn('https://unpkg.com/pdfjs-dist@2.16.105/legacy/build/pdf.js')
-  const workerCode = await fetchCdn('https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.js')
+  const cacheDir = path.resolve(rootDir, '.cache')
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+  const pdfJsCachePath = path.join(cacheDir, 'pdf.legacy.2.16.105.js')
+
+  let pdfJsCode
+  if (fs.existsSync(pdfJsCachePath)) {
+    console.log('Usando PDF.js legado do cache...')
+    pdfJsCode = fs.readFileSync(pdfJsCachePath, 'utf8')
+  } else {
+    console.log('Baixando PDF.js legacy build...')
+    pdfJsCode = await fetchCdn('https://unpkg.com/pdfjs-dist@2.16.105/legacy/build/pdf.js')
+    fs.writeFileSync(pdfJsCachePath, pdfJsCode, 'utf8')
+  }
 
   const sandbox = {
     console,
+    process,
+    Buffer,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -46,6 +87,8 @@ async function run() {
     URL,
     Map,
     Set,
+    RegExp,
+    JSON,
     String,
     Number,
     Boolean,
@@ -54,20 +97,21 @@ async function run() {
     TypeError,
     RangeError,
     globalThis: null,
-    window: null,
-    self: null,
+    window: {},
   }
-  sandbox.globalThis = sandbox
   sandbox.window = sandbox
+  sandbox.global = sandbox
   sandbox.self = sandbox
 
-  const context = vm.createContext(sandbox)
-  vm.runInContext(pdfJsCode, context)
+  vm.createContext(sandbox)
+  vm.runInContext(pdfJsCode, sandbox)
 
-  const pdfjsLib = sandbox.pdfjsLib || sandbox.window.pdfjsLib
+  const pdfjsLib = sandbox.pdfjsLib || sandbox.window.pdfjsLib || sandbox['pdfjs-dist/build/pdf']
   if (!pdfjsLib) {
     throw new Error('pdfjsLib não foi instanciado no sandbox')
   }
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ''
 
   const pdfData = new Uint8Array(fs.readFileSync(pdfPath))
   console.log(`PDF carregado: ${pdfData.byteLength} bytes`)
