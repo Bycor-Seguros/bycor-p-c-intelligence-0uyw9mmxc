@@ -61,15 +61,7 @@ async function run() {
   if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
   const pdfJsCachePath = path.join(cacheDir, 'pdf.legacy.2.16.105.js')
 
-  let pdfJsCode
-  if (fs.existsSync(pdfJsCachePath)) {
-    console.log('Usando PDF.js legado do cache...')
-    pdfJsCode = fs.readFileSync(pdfJsCachePath, 'utf8')
-  } else {
-    console.log('Baixando PDF.js legacy build...')
-    pdfJsCode = await fetchCdn('https://unpkg.com/pdfjs-dist@2.16.105/legacy/build/pdf.js')
-    fs.writeFileSync(pdfJsCachePath, pdfJsCode, 'utf8')
-  }
+  let pdfJsCode = fs.readFileSync(pdfJsCachePath, 'utf8')
 
   const sandbox = {
     console,
@@ -125,10 +117,10 @@ async function run() {
   const pdf = await loadingTask.promise
   console.log(`Total de páginas: ${pdf.numPages}`)
 
-  // Extrai especificamente págs 5, 6, 7 (e páginas 1 a 7 para contexto de apólice completa)
+  // Extrai especificamente págs 5, 6, 7
   const extractedPages = []
 
-  for (let i = 1; i <= Math.min(pdf.numPages, 7); i++) {
+  for (let i = 5; i <= 7; i++) {
     const page = await pdf.getPage(i)
     const textContent = await page.getTextContent()
 
@@ -159,11 +151,12 @@ async function run() {
         /bold/i.test(combinedFontDesc)
 
       pageFragments.push({
-        str: item.str,
         x,
         y,
         width,
         height,
+        texto: item.str,
+        str: item.str,
         fontName: rawFontName || resolvedFontFamily || undefined,
         isBold,
       })
