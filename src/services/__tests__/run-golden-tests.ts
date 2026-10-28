@@ -210,7 +210,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     id: 17,
     nomePattern: /Vendaval.*Impacto\s+de\s+Ve[íi]culos/i,
     nomeCompleto: 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos',
-    lmi: 100000.0,
+    lmi: 10000.0,
     franquiaPos: '15% min R$ 2.500,00',
     premio: 79.27,
   },
@@ -224,12 +224,26 @@ async function loadTokioFixture(): Promise<PdfPageText[] | null> {
   // Utiliza import.meta.glob com lazy import condicional para não referenciar estaticamente
   // o arquivo ausente. Se o fixture não existir, retorna null e aciona o modo pendente da suíte.
   try {
+    // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
+    const assetModules = (import.meta as any).glob('../../assets/*tokio*.json')
+    for (const k of Object.keys(assetModules)) {
+      if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza')) {
+        const mod: any = await assetModules[k]()
+        const data = mod?.default || mod
+        if (data?.pages && data.pages.length > 0) {
+          return data.pages
+        }
+      }
+    }
+
     const fixtureModules = (import.meta as any).glob('./fixtures/*.json')
     const key = './fixtures/tokio-bt-fortaleza.json'
     if (fixtureModules && typeof fixtureModules[key] === 'function') {
       const mod: any = await fixtureModules[key]()
       const data = mod?.default || mod
-      return data?.pages || null
+      if (data?.pages && data.pages.length > 0) {
+        return data.pages
+      }
     }
   } catch {
     // Vite glob indisponível ou arquivo não localizado

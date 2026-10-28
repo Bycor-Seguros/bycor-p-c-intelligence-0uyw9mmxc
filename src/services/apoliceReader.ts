@@ -3736,7 +3736,7 @@ function normalizeTokioFranquia(rawFranquia: string): {
       textoFormatado: 'AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO.',
     }
     return {
-      franquiaPos: cleanRaw,
+      franquiaPos: 'AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO.',
       franquiaEstruturada: est,
     }
   }
@@ -3784,6 +3784,17 @@ function normalizeTokioFranquia(rawFranquia: string): {
     return {
       franquiaPos: `R$ ${vFormatado}`,
       franquiaEstruturada: est,
+    }
+  }
+
+  // Nomenclatura para ausência de franquia: normaliza para "Não Há"
+  if (est.tipo === 'isenta' || !est.textoOriginal || /n[ãa]o\s+h[áa]/i.test(est.textoOriginal)) {
+    return {
+      franquiaPos: 'Não Há',
+      franquiaEstruturada: {
+        ...est,
+        textoFormatado: 'Não Há',
+      },
     }
   }
 
@@ -3903,14 +3914,42 @@ function extractTokioCoberturasGeometric(
   if (validFragments.length === 0) return []
 
   // 2. Separar fragmentos por banda de coluna:
-  // Coluna 1 (Nome): x < 210
-  // Coluna 2 (LMI): 210 <= x < 320
+  // Coluna 1 (Nome): x < 240 (títulos longos e indentados)
+  // Coluna 2 (LMI): 240 <= x < 320 OU fragmento que começa com LMI na coluna 2/3
   // Coluna 3 (Franquia / POS): 320 <= x < 490
   // Coluna 4 (Prêmio Líquido): x >= 490
-  const col1Frags = validFragments.filter((f) => f.x < 210)
-  const col2Frags = validFragments.filter((f) => f.x >= 210 && f.x < 320)
-  const col3Frags = validFragments.filter((f) => f.x >= 320 && f.x < 490)
-  const col4Frags = validFragments.filter((f) => f.x >= 490)
+  //
+  // Atenção especial: fragmentos que contêm simultaneamente "LMI Franquia"
+  // (ex: "3.137.400,00 10% DOS", "10.000,00 20% DOS", "390.000,00 AS PRIMEIRAS 96")
+  // devem desdobrar a parte LMI para Coluna 2 e a parte Franquia para Coluna 3!
+  const splitFragments: TokioRowFragment[] = []
+
+  for (const f of validFragments) {
+    // Se o fragmento estiver na faixa de transição LMI/Franquia (240 <= x < 350)
+    // e casar o padrão "^(R?\$?\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+(.+)$"
+    const splitMatch = f.str.match(/^((?:R\$\s*)?[\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([A-Za-zÀ-ÿ0-9%].+)$/)
+    if (splitMatch && f.x >= 240 && f.x < 350) {
+      splitFragments.push({
+        str: splitMatch[1].trim(),
+        x: f.x,
+        y: f.y,
+        pageNumber: f.pageNumber,
+      })
+      splitFragments.push({
+        str: splitMatch[2].trim(),
+        x: 353, // Coordenada padrão de Coluna 3
+        y: f.y,
+        pageNumber: f.pageNumber,
+      })
+    } else {
+      splitFragments.push(f)
+    }
+  }
+
+  const col1Frags = splitFragments.filter((f) => f.x < 240)
+  const col2Frags = splitFragments.filter((f) => f.x >= 240 && f.x < 340 && /^(?:R\$\s*)?[\d]{1,3}(?:\.[\d]{3})*,\d{2}$/.test(f.str.trim()))
+  const col3Frags = splitFragments.filter((f) => (f.x >= 340 && f.x < 490) || (f.x >= 320 && f.x < 490 && !/^(?:R\$\s*)?[\d]{1,3}(?:\.[\d]{3})*,\d{2}$/.test(f.str.trim())))
+  const col4Frags = splitFragments.filter((f) => f.x >= 490)
 
   // 3. Localizar cada PRÊMIO LÍQUIDO na Coluna 4 (x >= 490) -> delimitadores de LINHA
   interface TokioPremioMarker {
@@ -3961,12 +4000,16 @@ function extractTokioCoberturasGeometric(
     const bottomY = p.y
 
     // Localiza o LMI pertencente a esta linha na Coluna 2 (210 <= x < 320)
-    // O LMI fica na mesma página, com topY >= y >= bottomY - 6
+    // No PDF Tokio Marine, o LMI está na mesma linha física do primeiro texto da cobertura (topo da linha)
+    // ou na linha do prêmio:
+    // Na pág 5/6/7, topY até bottomY - 8.
+    // Especial: se o item for Lucros Cessantes (390.000,00) ou Incêndio (3.137.400,00)
     const candLmiFrags = col2Frags
-      .filter((f) => f.pageNumber === p.pageNumber && f.y <= topY && f.y >= bottomY - 8)
+      .filter((f) => f.pageNumber === p.pageNumber && f.y <= (topY === 9999 ? 9999 : topY + 4) && f.y >= bottomY - 8)
       .sort((a, b) => b.y - a.y)
 
     let lmiVal: number | null = null
+    // Busca o fragmento de LMI cujo Y é mais próximo do topo da linha ou do prêmio
     for (const lf of candLmiFrags) {
       const match = lf.str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
       if (match) {
@@ -3974,6 +4017,24 @@ function extractTokioCoberturasGeometric(
         if (parsed !== null && parsed > 0) {
           lmiVal = parsed
           break
+        }
+      }
+    }
+
+    // Se não encontrou na Coluna 2 pura (alguns LMIs foram parar em x levemente diferente ou mesclados)
+    if (lmiVal === null) {
+      const fallbackLmi = validFragments.find(
+        (f) =>
+          f.pageNumber === p.pageNumber &&
+          f.x >= 200 &&
+          f.x < 350 &&
+          Math.abs(f.y - bottomY) <= 15 &&
+          /(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/.test(f.str),
+      )
+      if (fallbackLmi) {
+        const m = fallbackLmi.str.match(/(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,\d{2})/)
+        if (m) {
+          lmiVal = parsePtBrNumber(m[1])
         }
       }
     }
@@ -4143,11 +4204,36 @@ function extractTokioCoberturasGeometric(
     slotBottomY: number
   }
 
-  const findSlotForCell = (cell: TokioCellCluster, slots: TokioRowSlot[]): number => {
+  const findSlotForCell = (
+    cell: TokioCellCluster,
+    slots: TokioRowSlot[],
+    isFranquia?: boolean,
+  ): number => {
+    // Na tabela Tokio Marine, cada linha de cobertura tem seu início visual no topo da linha
+    // e o prêmio delimitador no seu fundo (ou na primeira linha do item).
+    // Para células de franquia (que começam na mesma altura que o nome e LMI),
+    // atribuir ao slot cujo vão de linha contém o TOPO REAL da célula:
+    // slot.topY (exclusive) até slot.bottomY (inclusive, com tolerância de até -10pt abaixo do prêmio).
+    if (isFranquia) {
+      // 1. Tenta correspondência direta por inclusão do topo real da célula
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i]
+        if (slot.pageNumber !== cell.pageNumber) continue
+
+        // Se topY for 9999 (primeira linha da página): qualquer coisa >= slot.bottomY - 10
+        // Se houver topY anterior: cell.topY <= slot.topY + 4 e cell.topY >= slot.bottomY - 10
+        const inSlot =
+          slot.topY === 9999
+            ? cell.topY >= slot.bottomY - 10
+            : cell.topY <= slot.topY + 4 && cell.topY >= slot.bottomY - 10
+
+        if (inSlot) {
+          return i
+        }
+      }
+    }
+
     // (2) ATRIBUIÇÃO POR SOBREPOSIÇÃO:
-    // Para cada slot da mesma página, calcular overlap = interseção entre o vão da célula [bottomY, topY]
-    // e o vão do slot [slot.bottomY, slot.topY + 6] (slot com topY 9999: usar [slot.bottomY, slot.bottomY + 30]).
-    // Escolher o slot de MAIOR overlap; se todos forem 0, manter o fallback (slot mais próximo por distância ao slotMid).
     let bestOverlap = 0
     let bestSlotIdx = -1
 
@@ -4156,7 +4242,7 @@ function extractTokioCoberturasGeometric(
       if (slot.pageNumber !== cell.pageNumber) continue
 
       const sBottom = slot.bottomY
-      const sTop = slot.topY === 9999 ? slot.bottomY + 30 : slot.topY + 6
+      const sTop = slot.topY === 9999 ? slot.bottomY + 40 : slot.topY + 6
       const cBottom = cell.bottomY
       const cTop = cell.topY
 
@@ -4174,14 +4260,14 @@ function extractTokioCoberturasGeometric(
       return bestSlotIdx
     }
 
-    // Fallback: slot mais próximo por distância absoluta ao slotMid na mesma página
+    // Fallback: slot mais próximo por distância absoluta ao topY ou slotMid na mesma página
     let bestIdx = -1
     let bestDist = 999999
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i]
       if (slot.pageNumber !== cell.pageNumber) continue
-      const slotMid = slot.topY === 9999 ? slot.bottomY + 15 : (slot.topY + slot.bottomY) / 2
-      const dist = Math.abs(cell.topY - slotMid)
+      const refY = slot.topY === 9999 ? slot.bottomY : (slot.topY + slot.bottomY) / 2
+      const dist = Math.abs(cell.topY - refY)
       if (dist < bestDist) {
         bestDist = dist
         bestIdx = i
@@ -4211,7 +4297,7 @@ function extractTokioCoberturasGeometric(
 
   // Atribui células de Franquia (Coluna 3) aos slots pelo TOPO REAL
   for (const fCluster of franquiaClusters) {
-    const slotIdx = findSlotForCell(fCluster, rowSlots)
+    const slotIdx = findSlotForCell(fCluster, rowSlots, true)
     if (slotIdx >= 0 && slotIdx < candidateRows.length) {
       candidateRows[slotIdx].franquiaFragments.push(fCluster.text)
     }
@@ -4306,8 +4392,8 @@ function extractTokioCoberturasGeometric(
       rawNome = 'Valores no Interior do Estabelecimento'
     } else if (/Vendaval/i.test(rawNome)) {
       rawNome = 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos'
-    } else if (/Sprinklers|Chuveiros|Equipamentos\s+Autom[áa]ticos/i.test(rawNome)) {
-      rawNome = 'Equipamentos Automáticos de Combate a Incêndio (Sprinklers)'
+    } else if (/Sprinklers|Chuveiros|Equipamentos\s+Autom[áa]ticos|Vazamento\s+de\s+Chuveiros/i.test(rawNome)) {
+      rawNome = 'Vazamento de Chuveiros Automáticos (Sprinklers)'
     } else if (/Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome)) {
       rawNome =
         'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
@@ -4317,7 +4403,7 @@ function extractTokioCoberturasGeometric(
     // Preserva a condição de raio no Incêndio se presente no texto da franquia
     if (
       rawNome.includes('Incêndio') &&
-      rawFranquia.includes('RAIO') &&
+      /RAIO/i.test(rawFranquia) &&
       !rawFranquia.includes('EXCLUSIVAMENTE')
     ) {
       rawFranquia = `${rawFranquia} (EXCLUSIVAMENTE EM CASO DE RAIO)`
