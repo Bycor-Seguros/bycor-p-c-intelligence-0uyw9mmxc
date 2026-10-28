@@ -4083,6 +4083,41 @@ function extractTokioCoberturasGeometric(
     }
     flushCluster()
 
+    // (1) RECUPERAÇÃO DE CÉLULA PARTIDA para a coluna de franquia (opts.isFranquia):
+    // Para cada cluster cujo texto NÃO começa com cabeçalho de célula, se existir cluster acima
+    // NA MESMA PÁGINA cujo bottomY dista menos de 45pt do topY deste, e o texto do cluster de cima
+    // contém cabeçalho percentual (\d+%\s*DOS) mas AINDA NÃO contém valor "R$ <número>",
+    // MESCLE este cluster no de cima (concatene texto, bottomY do de baixo).
+    // Não aplicar merge quando o cluster de cima já tem valor R$ (aí o de baixo é franquia nova de valor fixo).
+    if (opts?.isFranquia && clusters.length > 1) {
+      const mergedClusters: TokioCellCluster[] = []
+      const cellHeaderPattern = /^(?:\d+%\s*DOS|NÃO\s*H[ÁA]|AS\s*PRIMEIRAS|R\$\s*[\d.,]+)/i
+      const percentHeaderPattern = /\d+%\s*DOS/i
+      const hasRealMoneyValue = /R\$\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2}/i
+
+      for (const cur of clusters) {
+        const startsWithHeader = cellHeaderPattern.test(cur.text.trim())
+
+        if (!startsWithHeader && mergedClusters.length > 0) {
+          const prev = mergedClusters[mergedClusters.length - 1]
+          const isSamePage = prev.pageNumber === cur.pageNumber
+          const yDist = prev.bottomY - cur.topY
+          const prevHasPercent = percentHeaderPattern.test(prev.text)
+          const prevHasMoney = hasRealMoneyValue.test(prev.text)
+
+          if (isSamePage && yDist >= -5 && yDist < 45 && prevHasPercent && !prevHasMoney) {
+            // Mescla no cluster de cima
+            prev.text = `${prev.text} ${cur.text}`.replace(/\s+/g, ' ').trim()
+            prev.bottomY = cur.bottomY
+            prev.fragments.push(...cur.fragments)
+            continue
+          }
+        }
+        mergedClusters.push(cur)
+      }
+      return mergedClusters
+    }
+
     return clusters
   }
 
@@ -4109,23 +4144,37 @@ function extractTokioCoberturasGeometric(
   }
 
   const findSlotForCell = (cell: TokioCellCluster, slots: TokioRowSlot[]): number => {
-    // Procura o slot na mesma página cujo vão contenha o topY REAL da célula
+    // (2) ATRIBUIÇÃO POR SOBREPOSIÇÃO:
+    // Para cada slot da mesma página, calcular overlap = interseção entre o vão da célula [bottomY, topY]
+    // e o vão do slot [slot.bottomY, slot.topY + 6] (slot com topY 9999: usar [slot.bottomY, slot.bottomY + 30]).
+    // Escolher o slot de MAIOR overlap; se todos forem 0, manter o fallback (slot mais próximo por distância ao slotMid).
+    let bestOverlap = 0
+    let bestSlotIdx = -1
+
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i]
       if (slot.pageNumber !== cell.pageNumber) continue
 
-      if (slot.topY === 9999) {
-        if (cell.topY >= slot.bottomY - 6) {
-          return i
-        }
-      } else {
-        if (cell.topY <= slot.topY + 3 && cell.topY >= slot.bottomY - 6) {
-          return i
-        }
+      const sBottom = slot.bottomY
+      const sTop = slot.topY === 9999 ? slot.bottomY + 30 : slot.topY + 6
+      const cBottom = cell.bottomY
+      const cTop = cell.topY
+
+      const overlapStart = Math.max(cBottom, sBottom)
+      const overlapEnd = Math.min(cTop, sTop)
+      const overlap = Math.max(0, overlapEnd - overlapStart)
+
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap
+        bestSlotIdx = i
       }
     }
 
-    // Fallback: slot mais próximo por distância absoluta ao topY da célula na mesma página
+    if (bestOverlap > 0 && bestSlotIdx >= 0) {
+      return bestSlotIdx
+    }
+
+    // Fallback: slot mais próximo por distância absoluta ao slotMid na mesma página
     let bestIdx = -1
     let bestDist = 999999
     for (let i = 0; i < slots.length; i++) {

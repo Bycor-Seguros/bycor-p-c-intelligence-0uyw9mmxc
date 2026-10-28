@@ -17,6 +17,7 @@
     "postinstall": "node scripts/extract-tokio-fixture.js || true",
     "extract:tokio": "node scripts/extract-tokio-fixture.js",
     "test": "node scripts/run-tests.js",
+    "test:golden": "node scripts/run-tests.js",
     "test:watch": "node scripts/run-tests.js"
   },
   "dependencies": {
