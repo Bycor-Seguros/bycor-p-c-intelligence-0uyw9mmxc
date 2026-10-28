@@ -14,7 +14,10 @@ async function run() {
   console.log('Inicializando ambiente de teste Vite/Node...')
 
   // Gera fixture compacto se ainda não tiver páginas
-  const fixturePath = path.resolve(rootDir, 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json')
+  const fixturePath = path.resolve(
+    rootDir,
+    'src/services/__tests__/fixtures/tokio-bt-fortaleza.json',
+  )
   let needGen = false
   try {
     if (!fs.existsSync(fixturePath)) {

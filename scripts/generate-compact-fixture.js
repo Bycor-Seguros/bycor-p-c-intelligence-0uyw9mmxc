@@ -5,8 +5,14 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
-const bigJsonPath = path.resolve(rootDir, 'src/assets/diagnostico-fragmentos-apoliceempresatokiobtfortaleza26-copia1-ff6f9.json')
-const destFixturePath = path.resolve(rootDir, 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json')
+const bigJsonPath = path.resolve(
+  rootDir,
+  'src/assets/diagnostico-fragmentos-apoliceempresatokiobtfortaleza26-copia1-ff6f9.json',
+)
+const destFixturePath = path.resolve(
+  rootDir,
+  'src/services/__tests__/fixtures/tokio-bt-fortaleza.json',
+)
 
 console.log('Lendo JSON de fragmentos...')
 const raw = fs.readFileSync(bigJsonPath, 'utf8')

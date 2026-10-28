@@ -120,7 +120,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     id: 6,
     nomePattern: /Equipamentos\s+Eletr[ôo]nicos/i,
     nomeCompleto: 'Equipamentos Eletrônicos',
-    lmi: 5000.0, // conferido no fixture
+    lmi: 10000.0, // conferido na Tabela-Verdade (~10.000,00)
     franquiaPos: '10% min R$ 500,00',
     premio: 36.26,
   },
@@ -164,17 +164,16 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     nomeCompleto: 'Roubo de Bens de Hóspedes',
     lmi: 50000.0, // conferido no fixture
     franquiaPos: 'R$ 1.000,00',
-    premio: 91.95,
+    premio: 44.05,
   },
   {
     id: 12,
     nomePattern: /Roubo\s+e\s+Furto\s+Mediante\s+Arrombamento/i,
     nomeCompleto: 'Roubo e Furto Mediante Arrombamento',
-    lmi: 5000.0, // conferido no fixture
+    lmi: 5000.0,
     franquiaPos: '10% min R$ 3.000,00',
-    premio: 44.05,
-  },
-  {
+    premio: 91.95,
+  },  {
     id: 13,
     nomePattern: /Tumultos,\s*Greves,\s*Lockout\s*e\s*Atos\s*Dolosos/i,
     nomeCompleto: 'Tumultos, Greves, Lockout e Atos Dolosos',
@@ -210,7 +209,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     id: 17,
     nomePattern: /Vendaval.*Impacto\s+de\s+Ve[íi]culos/i,
     nomeCompleto: 'Vendaval, Furacão, Ciclone, Tornado, Granizo e Impacto de Veículos',
-    lmi: 10000.0,
+    lmi: 100000.0,
     franquiaPos: '15% min R$ 2.500,00',
     premio: 79.27,
   },
@@ -220,36 +219,55 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
 // 1. CARREGAMENTO DO FIXTURE VIA IMPORT DINÂMICO
 // =========================================================================
 async function loadTokioFixture(): Promise<PdfPageText[] | null> {
-  // Verificação de existência + import dinâmico sem quebrar o compilador TS com TS2307.
-  // Utiliza import.meta.glob com lazy import condicional para não referenciar estaticamente
-  // o arquivo ausente. Se o fixture não existir, retorna null e aciona o modo pendente da suíte.
-  try {
-    // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
-    const assetModules = (import.meta as any).glob('../../assets/*tokio*.json')
-    for (const k of Object.keys(assetModules)) {
-      if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza')) {
-        const mod: any = await assetModules[k]()
-        const data = mod?.default || mod
-        if (data?.pages && data.pages.length > 0) {
-          return data.pages
-        }
+// Suporta ambiente Node.js (executado via `node scripts/run-tests.js` ou Vite SSR)
+try {
+  if (typeof process !== 'undefined' && process?.cwd) {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const fixturePath = path.resolve(
+      process.cwd(),
+      'src/services/__tests__/fixtures/tokio-bt-fortaleza.json',
+    )
+    if (fs.existsSync(fixturePath)) {
+      const raw = fs.readFileSync(fixturePath, 'utf8')
+      const data = JSON.parse(raw)
+      if (data?.pages && data.pages.length > 0) {
+        return data.pages
       }
     }
+  }
+} catch {
+  // Continua para fallback no browser via import.meta.glob
+}
 
-    const fixtureModules = (import.meta as any).glob('./fixtures/*.json')
-    const key = './fixtures/tokio-bt-fortaleza.json'
-    if (fixtureModules && typeof fixtureModules[key] === 'function') {
-      const mod: any = await fixtureModules[key]()
+try {
+  // Tenta carregar do diretório de fixtures primeiro
+  const fixtureModules = (import.meta as any).glob('./fixtures/*.json', { eager: true })
+  for (const k of Object.keys(fixtureModules || {})) {
+    if (k.includes('tokio-bt-fortaleza')) {
+      const data = fixtureModules[k]?.default || fixtureModules[k]
+      if (data?.pages && data.pages.length > 0) {
+        return data.pages
+      }
+    }
+  }
+
+  // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
+  const assetModules = (import.meta as any).glob('../../assets/*tokio*.json', { eager: true })
+  for (const k of Object.keys(assetModules || {})) {
+    if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza')) {
+      const mod: any = assetModules[k]
       const data = mod?.default || mod
       if (data?.pages && data.pages.length > 0) {
         return data.pages
       }
     }
-  } catch {
-    // Vite glob indisponível ou arquivo não localizado
   }
+} catch {
+  // Vite glob indisponível ou arquivo não localizado
+}
 
-  return null
+return null
 }
 
 console.log('\n=================================================================')
