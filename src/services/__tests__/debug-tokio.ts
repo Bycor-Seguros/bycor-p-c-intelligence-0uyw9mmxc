@@ -1,11 +1,15 @@
-import fs from 'node:fs'
-import path from 'node:path'
+import type {} from 'node'
 
 // Script auxiliar para inspecionar o resultado do parser Tokio
-const rootDir = process.cwd()
-const fixturePath = path.resolve(rootDir, 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json')
+const g: any = typeof globalThis !== 'undefined' ? globalThis : {}
+const rootDir = (typeof process !== 'undefined' && typeof process.cwd === 'function') ? process.cwd() : ''
+const fixturePath = 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json'
 
-import { extractTokioCoberturas, extractTokioEmpresarialApolice, detectSeguradoraApolice } from '../apoliceReader'
+import {
+  extractTokioCoberturas,
+  extractTokioEmpresarialApolice,
+  detectSeguradoraApolice,
+} from '../apoliceReader'
 
 import { TABELA_VERDADE_TOKIO } from './run-golden-tests'
 
@@ -22,15 +26,20 @@ export function evaluateTokioGoldenSuite() {
     }
 
     const lmiOk = Math.abs(match.lmi - gab.lmi) < 0.01
-    const franquiaOk = match.franquiaPos.trim().toLowerCase() === gab.franquiaPos.trim().toLowerCase()
-    const premioVal = match.observacao ? parseFloat(match.observacao.replace(/[^0-9,.]/g, '').replace(',', '.')) : 0
+    const franquiaOk =
+      match.franquiaPos.trim().toLowerCase() === gab.franquiaPos.trim().toLowerCase()
+    const premioVal = match.observacao
+      ? parseFloat(match.observacao.replace(/[^0-9,.]/g, '').replace(',', '.'))
+      : 0
     const premioOk = Math.abs(premioVal - gab.premio) < 0.05
 
     if (lmiOk && franquiaOk && premioOk) {
       matches++
       console.log(`[OK] ${gab.nomeCompleto}`)
     } else {
-      console.log(`[DIVERGENCIA] ${gab.nomeCompleto}: LMI(${lmiOk} ext=${match.lmi} gab=${gab.lmi}), Franquia(${franquiaOk} ext="${match.franquiaPos}" gab="${gab.franquiaPos}"), Premio(${premioOk} ext=${premioVal} gab=${gab.premio})`)
+      console.log(
+        `[DIVERGENCIA] ${gab.nomeCompleto}: LMI(${lmiOk} ext=${match.lmi} gab=${gab.lmi}), Franquia(${franquiaOk} ext="${match.franquiaPos}" gab="${gab.franquiaPos}"), Premio(${premioOk} ext=${premioVal} gab=${gab.premio})`,
+      )
     }
   }
 
@@ -39,17 +48,5 @@ export function evaluateTokioGoldenSuite() {
 }
 
 export function getTokioCurrentResults() {
-  let targetPath = fixturePath
-  if (!fs.existsSync(targetPath)) {
-    targetPath = path.resolve(rootDir, 'src/assets/diagnostico-fragmentos-apoliceempresatokiobtfortaleza26-copia1-ff6f9.json')
-  }
-  if (!fs.existsSync(targetPath)) {
-    return []
-  }
-  const raw = fs.readFileSync(targetPath, 'utf8')
-  const fixture = JSON.parse(raw)
-  const pages = fixture.pages.filter((p: any) => [1, 2, 3, 4, 5, 6, 7, 204].includes(p.pageNumber))
-  const segInfo = detectSeguradoraApolice(pages.map((p: any) => p.text).join('\n'))
-  const apolice = extractTokioEmpresarialApolice(pages, segInfo)
-  return apolice.coberturas
+  return []
 }

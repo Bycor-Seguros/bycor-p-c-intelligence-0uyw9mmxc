@@ -2,6 +2,7 @@ injectWorkspacePackages: false
 allowBuilds:
   '@swc/core': true
   esbuild: true
+  node: true
 
 minimumReleaseAgeExclude:
   - date-fns@4.4.0

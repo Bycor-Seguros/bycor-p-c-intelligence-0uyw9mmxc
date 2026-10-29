@@ -131,6 +131,9 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      node:
+        specifier: 26.12.1
+        version: 26.12.1
       pocketbase:
         specifier: ~0.26.9
         version: 0.26.9
@@ -1888,9 +1891,17 @@ packages:
       react: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
       react-dom: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
 
+  node-bin-setup@1.1.4:
+    resolution: {integrity: sha512-vWNHOne0ZUavArqPP5LJta50+S8R261Fr5SvGul37HbEDcowvLjwdvd0ZeSr0r2lTSrPxl6okq9QUw8BFGiAxA==}
+
   node-releases@2.0.57:
     resolution: {integrity: sha512-kQK9LGGFiHtrWiNhZtA7Qbw17AQz+dmsEKODRIVTXA9+e5MS/2gZEBhYJt13GrAz5/IOZKddH/0Z3TP/Zgo+yw==}
     engines: {node: '>=18'}
+
+  node@26.12.1:
+    resolution: {integrity: sha512-SQVeTwweXXfQfpe5gM1648UTnN640HYyqdu06+NxQjkr8d+ppo8exq5BmhS3lk+wYLwVPrqfIAuwGrM7txcBfg==}
+    engines: {npm: '>=5.0.0'}
+    hasBin: true
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -3723,7 +3734,13 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
+  node-bin-setup@1.1.4: {}
+
   node-releases@2.0.57: {}
+
+  node@26.12.1:
+    dependencies:
+      node-bin-setup: 1.1.4
 
   normalize-path@3.0.0: {}
 

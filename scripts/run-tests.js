@@ -30,6 +30,22 @@ async function run() {
     needGen = true
   }
 
+  // Executa backup garantido se ainda não existir backup completo
+  try {
+    const bakPath = path.resolve(rootDir, 'scripts/apoliceReader.v0.0.79.bak')
+    const srcPath = path.resolve(rootDir, 'src/services/apoliceReader.ts')
+    if (!fs.existsSync(bakPath) || fs.statSync(bakPath).size < 1000) {
+      fs.copyFileSync(srcPath, bakPath)
+      console.log(
+        'Backup scripts/apoliceReader.v0.0.79.bak criado com sucesso:',
+        fs.statSync(bakPath).size,
+        'bytes',
+      )
+    }
+  } catch (e) {
+    console.error('Erro ao criar backup:', e)
+  }
+
   if (needGen) {
     console.log('Executando geração do fixture compacto...')
     await import('./generate-compact-fixture.js')

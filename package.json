@@ -14,8 +14,8 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "preview": "vite preview",
-    "postinstall": "node scripts/extract-tokio-fixture.js || true",
-    "extract:tokio": "node scripts/extract-tokio-fixture.js",
+    "postinstall": "node scripts/generate-compact-fixture.js || true",
+    "extract:tokio": "node scripts/generate-compact-fixture.js",
     "test": "node scripts/run-tests.js",
     "test:golden": "node scripts/run-tests.js",
     "test:watch": "node scripts/run-tests.js"
@@ -59,6 +59,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "next-themes": "^0.4.6",
+    "node": "26.12.1",
     "pocketbase": "~0.26.9",
     "react": "^19.2.7",
     "react-day-picker": "^9.14.0",

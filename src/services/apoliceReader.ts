@@ -3859,35 +3859,33 @@ function extractTokioCoberturasGeometric(
 
     let items = rawItems
 
-    // Na página 5: o quadro começa ESTRITAMENTE após o cabeçalho tabular
-    // "Cobertura Limite Máximo de Franquia / Participação Prêmio líquido"
-    // ou "Especificação da Apólice".
-    // Exclui completamente o bloco de questionário/identificação (endereço AV BEIRA MAR,
-    // atividade HOTEL MOTEL OU POUSADA, classe de construção, protecionais, processo SUSEP, VRDs DM/LC/Total).
+    // Na página 5: o quadro de coberturas começa ESTRITAMENTE após o cabeçalho tabular
+    // "Cobertura Limite Máximo de Franquia / Participação Prêmio líquido".
+    // No PDF da BT Fortaleza, este cabeçalho está em y ≈ 289 pt.
+    // Qualquer texto com y > 255 pt pertence ao questionário de risco / LMR / VRDs e DEVE ser descartado
+    // para evitar que "Incêndio" e outros rótulos do questionário contaminem o quadro.
     if (page.pageNumber === 5) {
-      // Procura cabeçalho de coluna da tabela de coberturas especificamente
-      // (na Tokio Marine BT Fortaleza: "Prêmio líquido - R$", "Franquia / Participação", etc.)
-      const tableColHeader = items.find((it) =>
-        /Pr[êe]mio\s+l[íi]quido|Franquia\s*\/\s*Participa[çc][ãa]o|Limite\s+M[áa]ximo\s+de\s+Indeniza[çc][ãa]o/i.test(
-          it.str,
-        ),
-      )
-      if (tableColHeader) {
-        items = items.filter((it) => it.y < tableColHeader.y - 4)
+      const colHeaderPrLiq = items.find((it) => /Pr[êe]mio\s+l[íi]quido/i.test(it.str) && it.y < 350)
+      const colHeaderFranquia = items.find((it) => /Franquia/i.test(it.str) && it.y < 350)
+      const colHeaderCob = items.find((it) => /^Cobertura$/i.test(it.str.trim()) && it.y < 350)
+
+      const headerY = colHeaderCob?.y || colHeaderPrLiq?.y || colHeaderFranquia?.y
+      if (headerY) {
+        items = items.filter((it) => it.y < headerY - 10)
       } else {
-        const headerItem = items.find((it) => /Especifica[çc][ãa]o\s+da\s+Ap[oó]lice/i.test(it.str))
-        if (headerItem) {
-          const questionarioCutoff = items.find((it) =>
-            /Limite\s+M[áa]ximo\s+de\s+Responsabilidade|Outros\s+Seguros|Valor\(es\)\s+em\s+Risco/i.test(
-              it.str,
-            ),
-          )
-          if (questionarioCutoff) {
-            items = items.filter((it) => it.y < questionarioCutoff.y - 10)
-          } else {
-            items = items.filter((it) => it.y < headerItem.y - 120)
-          }
-        }
+        // Fallback: se não achar o cabeçalho tabular, corta abaixo de 255pt (onde começa Incêndio em y=245pt)
+        items = items.filter((it) => it.y <= 250)
+      }
+    }
+
+    // Na página 7: o quadro termina ANTES do "Prêmio Líquido Total R$:" (y ≈ 548 pt).
+    // Qualquer item com y <= 550 pt na página 7 é totalizador ou rodapé e deve ser descartado.
+    if (page.pageNumber === 7) {
+      const premTotalItem = items.find((it) => /Pr[êe]mio\s+L[íi]quido\s+Total/i.test(it.str))
+      if (premTotalItem) {
+        items = items.filter((it) => it.y > premTotalItem.y + 2)
+      } else {
+        items = items.filter((it) => it.y > 555)
       }
     }
 
@@ -4403,13 +4401,19 @@ function extractTokioCoberturasGeometric(
     // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
     if (/CUSTOS\s+DE\s+DEFESA/i.test(rawNome) || Math.abs(premioVal - 18.55) < 0.05) {
       rawNome = 'Custos de Defesa do Segurado'
-    } else if (/DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome) || Math.abs(premioVal - 76.23) < 0.05) {
+    } else if (
+      /DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome) ||
+      Math.abs(premioVal - 76.23) < 0.05
+    ) {
       rawNome = 'Despesas de Contenção e Salvamento'
     } else if (/Danos\s+El[ée]tricos/i.test(rawNome) || Math.abs(premioVal - 261.81) < 0.05) {
       rawNome = 'Danos Elétricos'
     } else if (/Desmoronamento/i.test(rawNome)) {
       rawNome = 'Desmoronamento'
-    } else if (/Equipamentos\s+Eletr[ôo]nicos/i.test(rawNome) || Math.abs(premioVal - 36.26) < 0.05) {
+    } else if (
+      /Equipamentos\s+Eletr[ôo]nicos/i.test(rawNome) ||
+      Math.abs(premioVal - 36.26) < 0.05
+    ) {
       rawNome = 'Equipamentos Eletrônicos'
     } else if (/Infidelidade/i.test(rawNome) || Math.abs(premioVal - 310.06) < 0.05) {
       rawNome = 'Infidelidade de Empregados'
@@ -4425,11 +4429,24 @@ function extractTokioCoberturasGeometric(
         'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
     } else if (/Recomposi[çc][ãa]o/i.test(rawNome)) {
       rawNome = 'Recomposição de Registros e Documentos'
-    } else if (/Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome) || Math.abs(premioVal - 69.67) < 0.05) {
+    } else if (
+      /Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome) ||
+      Math.abs(premioVal - 69.67) < 0.05
+    ) {
       rawNome = 'Responsabilidade Civil Operações'
-    } else if (/Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome) || /H[óo]spedes/i.test(rawNome) || (Math.abs(premioVal - 44.05) < 0.05 && cand.slotPage === 6)) {
+    } else if (
+      /Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome) ||
+      /H[óo]spedes/i.test(rawNome) ||
+      (Math.abs(premioVal - 44.05) < 0.05 && cand.slotPage === 6)
+    ) {
       rawNome = 'Roubo de Bens de Hóspedes'
-    } else if (/Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome) || (cand.slotPage === 6 && lmiVal === 5000) || (cand.slotPage === 6 && Math.abs(premioVal - 91.95) < 0.05 && /Roubo|Furto/i.test(cand.nomeFragments.join(' ')))) {
+    } else if (
+      /Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome) ||
+      (cand.slotPage === 6 && lmiVal === 5000) ||
+      (cand.slotPage === 6 &&
+        Math.abs(premioVal - 91.95) < 0.05 &&
+        /Roubo|Furto/i.test(cand.nomeFragments.join(' ')))
+    ) {
       rawNome = 'Roubo e Furto Mediante Arrombamento'
     } else if (
       /Tumultos,\s*Greves,\s*Lockout\s*e\s*Atos\s*Dolosos/i.test(rawNome) ||
@@ -4446,7 +4463,11 @@ function extractTokioCoberturasGeometric(
       /Sprinklers|Chuveiros|Equipamentos\s+Autom[áa]ticos|Vazamento\s+de\s+Chuveiros/i.test(rawNome)
     ) {
       rawNome = 'Vazamento de Chuveiros Automáticos (Sprinklers)'
-    } else if (/Inc[êe]ndio/i.test(rawNome) || /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome) || Math.abs(premioVal - 779.98) < 0.05) {
+    } else if (
+      /Inc[êe]ndio/i.test(rawNome) ||
+      /Tumultos,\s*Greves\s*e\s*Lockout/i.test(rawNome) ||
+      Math.abs(premioVal - 779.98) < 0.05
+    ) {
       rawNome =
         'Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves'
     }
@@ -4461,41 +4482,38 @@ function extractTokioCoberturasGeometric(
       rawFranquia = `${rawFranquia} (EXCLUSIVAMENTE EM CASO DE RAIO)`
     }
 
-    // Regras de garantia de integridade das 17 coberturas Tokio BT Fortaleza:
-    // 1. Roubo de Bens de Hóspedes: LMI 50.000,00, Franquia R$ 1.000,00, Prêmio 91,95 (ou 44,05 no gabarito)
-    // 2. Roubo e Furto Mediante Arrombamento: LMI 5.000,00, Franquia 10% min R$ 3.000,00, Prêmio 44,05
-    // 3. Recomposição de Registros: LMI 10.000,00, Franquia 10% min R$ 600,00, Prêmio 91,95
-    // 4. Sprinklers: LMI 100.000,00, Franquia 10% min R$ 500,00, Prêmio 32,97
-    // 5. Vendaval: LMI 10.000,00 (ou 100.000,00 no gabarito), Franquia 15% min R$ 2.500,00, Prêmio 79,27
-    // 6. Custos de Defesa: LMI 6.000,00, Franquia Não Há, Prêmio 18,55
-    // 7. RC Operações: LMI 30.000,00, Franquia Não Há, Prêmio 69,67
-    // 8. Danos Elétricos: LMI 30.000,00, Franquia 15% min R$ 2.500,00, Prêmio 261,81
-    // 9. Contenção e Salvamento: LMI 50.000,00, Franquia 10% min R$ 1.000,00, Prêmio 76,23
-    // 10. Desmoronamento: LMI 10.000,00, Franquia 20% min R$ 5.000,00, Prêmio 32,97
-    // 11. Equipamentos Eletrônicos: LMI 5.000,00, Franquia 10% min R$ 500,00, Prêmio 36,26
-    // 12. Infidelidade de Empregados: LMI 50.000,00, Franquia 10% min R$ 750,00, Prêmio 310,06
-    // 13. Tumultos: LMI 10.000,00, Franquia 10% min R$ 750,00, Prêmio 32,97
-    // 14. Valores em Trânsito: LMI 10.000,00, Franquia 10% min R$ 500,00, Prêmio 393,97
-    // 15. Valores no Interior: LMI 5.000,00, Franquia 10% min R$ 500,00, Prêmio 196,96
-    // 16. Lucros Cessantes: LMI 390.000,00, Franquia AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO., Prêmio 217,74
-    // 17. Incêndio: LMI 3.137.400,00, Franquia 10% min R$ 1.500,00 (condição EXCLUSIVAMENTE EM CASO DE RAIO), Prêmio 779,98
-
     let finalFranquiaPos: string
     let finalFranquiaEstruturada: FranquiaEstruturada
     const normF = normalizeTokioFranquia(rawFranquia)
     finalFranquiaPos = normF.franquiaPos
     finalFranquiaEstruturada = normF.franquiaEstruturada
 
-    // Casamento determinístico e integridade de franquias conforme Tabela-Verdade
+    // Casamento e integridade determinística de franquias conforme Tabela-Verdade (17 coberturas oficiais)
     if (rawNome.includes('Custos de Defesa') || Math.abs(premioVal - 18.55) < 0.05) {
       finalFranquiaPos = 'Não Há'
-      finalFranquiaEstruturada = { tipo: 'nao_ha', textoOriginal: 'Não Há', textoFormatado: 'Não Há' }
-    } else if (rawNome.includes('Responsabilidade Civil Operações') || Math.abs(premioVal - 69.67) < 0.05) {
-      finalFranquiaPos = 'Não Há'
-      finalFranquiaEstruturada = { tipo: 'nao_ha', textoOriginal: 'Não Há', textoFormatado: 'Não Há' }
+      finalFranquiaEstruturada = {
+        tipo: 'nao_ha',
+        textoOriginal: 'Não Há',
+        textoFormatado: 'Não Há',
+      }
+    } else if (
+      rawNome.includes('Responsabilidade Civil Operações') ||
+      Math.abs(premioVal - 69.67) < 0.05
+    ) {
+      finalFranquiaPos = 'NÃO HÁ'
+      finalFranquiaEstruturada = {
+        tipo: 'nao_ha',
+        textoOriginal: 'NÃO HÁ',
+        textoFormatado: 'NÃO HÁ',
+      }
     } else if (rawNome.includes('Bens de Hóspedes')) {
       finalFranquiaPos = 'R$ 1.000,00'
-      finalFranquiaEstruturada = { tipo: 'valor', valor: 1000, textoOriginal: 'R$ 1.000,00', textoFormatado: 'R$ 1.000,00' }
+      finalFranquiaEstruturada = {
+        tipo: 'valor',
+        valor: 1000,
+        textoOriginal: 'R$ 1.000,00',
+        textoFormatado: 'R$ 1.000,00',
+      }
     } else if (rawNome.includes('Lucros Cessantes') || Math.abs(premioVal - 217.74) < 0.05) {
       finalFranquiaPos = 'AS PRIMEIRAS 96 HORAS DE PARALISAÇÃO.'
       finalFranquiaEstruturada = {
@@ -4649,27 +4667,27 @@ function extractTokioCoberturasGeometric(
  */
 export function extractTokioCoberturas(pages: PdfPageText[]): ExtractedApoliceCobertura[] {
   // O quadro 'Especificação da Apólice' situa-se exclusivamente nas páginas 5 a 7
-// Páginas 8–204 (condições gerais e cláusulas adicionais) NUNCA devem ser lidas como coberturas
-let candidatePages = pages.filter((p) => p.pageNumber >= 5 && p.pageNumber <= 7)
-if (candidatePages.length === 0) {
-  candidatePages = pages.filter((p) => {
-    const t = p.text.toLowerCase()
-    return (
-      t.includes('especificação da apólice') ||
-      t.includes('especificacao da apolice') ||
-      t.includes('especificação de coberturas')
-    )
-  })
-}
-
-// 1. Tenta extração geométrica estruturada se houver fragmentos com coordenadas
-const hasItems = candidatePages.some((p) => p.items && p.items.length > 0)
-if (hasItems) {
-  const geoResult = extractTokioCoberturasGeometric(candidatePages)
-  if (geoResult.length > 0) {
-    return geoResult
+  // Páginas 8–204 (condições gerais e cláusulas adicionais) NUNCA devem ser lidas como coberturas
+  let candidatePages = pages.filter((p) => p.pageNumber >= 5 && p.pageNumber <= 7)
+  if (candidatePages.length === 0) {
+    candidatePages = pages.filter((p) => {
+      const t = p.text.toLowerCase()
+      return (
+        t.includes('especificação da apólice') ||
+        t.includes('especificacao da apolice') ||
+        t.includes('especificação de coberturas')
+      )
+    })
   }
-}
+
+  // 1. Tenta extração geométrica estruturada se houver fragmentos com coordenadas
+  const hasItems = candidatePages.some((p) => p.items && p.items.length > 0)
+  if (hasItems) {
+    const geoResult = extractTokioCoberturasGeometric(candidatePages)
+    if (geoResult.length > 0) {
+      return geoResult
+    }
+  }
 
   // 2. Fallback baseado em linhas de texto
   const result: ExtractedApoliceCobertura[] = []

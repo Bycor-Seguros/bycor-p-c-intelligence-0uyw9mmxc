@@ -173,7 +173,8 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     lmi: 5000.0,
     franquiaPos: '10% min R$ 3.000,00',
     premio: 91.95,
-  },  {
+  },
+  {
     id: 13,
     nomePattern: /Tumultos,\s*Greves,\s*Lockout\s*e\s*Atos\s*Dolosos/i,
     nomeCompleto: 'Tumultos, Greves, Lockout e Atos Dolosos',
@@ -219,55 +220,60 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
 // 1. CARREGAMENTO DO FIXTURE VIA IMPORT DINÂMICO
 // =========================================================================
 async function loadTokioFixture(): Promise<PdfPageText[] | null> {
-// Suporta ambiente Node.js (executado via `node scripts/run-tests.js` ou Vite SSR)
-try {
-  if (typeof process !== 'undefined' && process?.cwd) {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const fixturePath = path.resolve(
-      process.cwd(),
-      'src/services/__tests__/fixtures/tokio-bt-fortaleza.json',
-    )
-    if (fs.existsSync(fixturePath)) {
-      const raw = fs.readFileSync(fixturePath, 'utf8')
-      const data = JSON.parse(raw)
-      if (data?.pages && data.pages.length > 0) {
-        return data.pages
+  // Suporta ambiente Node.js (executado via `node scripts/run-tests.js` ou Vite SSR)
+  try {
+    const g: any = typeof globalThis !== 'undefined' ? globalThis : {}
+    const proc = g.process
+    if (proc && typeof proc.cwd === 'function') {
+      const fsModName = 'node:fs'
+      const pathModName = 'node:path'
+      const fs = await import(/* @vite-ignore */ fsModName)
+      const path = await import(/* @vite-ignore */ pathModName)
+      const fixturePath = path.resolve(
+        proc.cwd(),
+        'src/services/__tests__/fixtures/tokio-bt-fortaleza.json',
+      )
+      if (fs.existsSync(fixturePath)) {
+        const raw = fs.readFileSync(fixturePath, 'utf8')
+        const data = JSON.parse(raw)
+        if (data?.pages && data.pages.length > 0) {
+          return data.pages
+        }
       }
     }
+  } catch {
+    // Continua para fallback no browser via import.meta.glob
   }
-} catch {
-  // Continua para fallback no browser via import.meta.glob
-}
 
-try {
-  // Tenta carregar do diretório de fixtures primeiro
-  const fixtureModules = (import.meta as any).glob('./fixtures/*.json', { eager: true })
-  for (const k of Object.keys(fixtureModules || {})) {
-    if (k.includes('tokio-bt-fortaleza')) {
-      const data = fixtureModules[k]?.default || fixtureModules[k]
-      if (data?.pages && data.pages.length > 0) {
-        return data.pages
+  try {
+    // Tenta carregar do diretório de fixtures primeiro
+    const fixtureModules = (import.meta as any).glob('./fixtures/*.json', { eager: true })
+    for (const k of Object.keys(fixtureModules || {})) {
+      if (k.includes('tokio-bt-fortaleza')) {
+        const data = fixtureModules[k]?.default || fixtureModules[k]
+        if (data?.pages && data.pages.length > 0) {
+          return data.pages
+        }
       }
     }
-  }
 
-  // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
-  const assetModules = (import.meta as any).glob('../../assets/*tokio*.json', { eager: true })
-  for (const k of Object.keys(assetModules || {})) {
-    if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza')) {
-      const mod: any = assetModules[k]
-      const data = mod?.default || mod
-      if (data?.pages && data.pages.length > 0) {
-        return data.pages
+    // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
+    const assetModules = (import.meta as any).glob('../../assets/*tokio*.json', { eager: true })
+    for (const k of Object.keys(assetModules || {})) {
+      if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza') || k.includes('tokio')) {
+        const mod: any = assetModules[k]
+        const data = mod?.default || mod
+        if (data?.pages && data.pages.length > 0) {
+          const targetPages = [1, 2, 3, 4, 5, 6, 7, 204]
+          return data.pages.filter((p: any) => targetPages.includes(p.pageNumber))
+        }
       }
     }
+  } catch {
+    // Vite glob indisponível ou arquivo não localizado
   }
-} catch {
-  // Vite glob indisponível ou arquivo não localizado
-}
 
-return null
+  return null
 }
 
 console.log('\n=================================================================')
