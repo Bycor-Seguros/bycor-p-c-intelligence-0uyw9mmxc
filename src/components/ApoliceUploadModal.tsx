@@ -31,6 +31,8 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import {
   Dialog,
@@ -100,6 +102,55 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
   // Sucessão antecessora identificada
   const [antecessoraIdentificada, setAntecessoraIdentificada] = useState<ApoliceMinima | null>(null)
 
+  // Funções de manipulação das coberturas editáveis
+  const handleUpdateCobertura = (
+    index: number,
+    field: 'nome' | 'categoriaBloco' | 'categoriaNormalizada' | 'lmi' | 'franquiaPos' | 'premio',
+    value: any,
+  ) => {
+    setCoberturas((prev) => {
+      const next = [...prev]
+      const target = { ...next[index] }
+      if (field === 'nome') {
+        target.nome = value
+        if (!target.categoriaNormalizada || target.categoriaNormalizada === target.nome) {
+          target.categoriaNormalizada = value
+        }
+      } else if (field === 'categoriaBloco') {
+        target.categoriaBloco = value
+      } else if (field === 'categoriaNormalizada') {
+        target.categoriaNormalizada = value
+      } else if (field === 'lmi') {
+        target.lmi = value
+      } else if (field === 'franquiaPos') {
+        target.franquiaPos = value
+      } else if (field === 'premio') {
+        target.premio = value
+      }
+      next[index] = target
+      return next
+    })
+  }
+
+  const handleDeleteCobertura = (index: number) => {
+    setCoberturas((prev) => prev.filter((_, idx) => idx !== index))
+  }
+
+  const handleAddManualCobertura = () => {
+    setCoberturas((prev) => [
+      ...prev,
+      {
+        nome: '',
+        categoriaNormalizada: '',
+        categoriaBloco: 'Danos Materiais',
+        lmi: null,
+        franquiaPos: '',
+        premio: null,
+        _isCustom: true,
+      },
+    ])
+  }
+
   // Campos do formulário de pré-visualização (editáveis)
   const [seguradoraNome, setSeguradoraNome] = useState('')
   const [seguradoraCnpj, setSeguradoraCnpj] = useState('')
@@ -129,7 +180,9 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
   const [formaContratacao, setFormaContratacao] = useState('')
 
   // Coberturas
-  const [coberturas, setCoberturas] = useState<ExtractedApoliceCobertura[]>([])
+  const [coberturas, setCoberturas] = useState<
+    (ExtractedApoliceCobertura & { premio?: number | null; _isCustom?: boolean })[]
+  >([])
 
   // Mensagens e erros
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -677,16 +730,17 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
           console.warn('Erro ao limpar coberturas anteriores:', e)
         }
 
-        // Insere as coberturas extraídas
+        // Insere as coberturas editadas
         for (const c of coberturas) {
+          if (!c.nome.trim()) continue
           try {
             await pb.collection('coberturas').create({
               id_apolice: savedApoliceId,
-              nome_cobertura: c.nome,
-              categoria_normalizada: c.categoriaNormalizada || c.nome,
-              lmi_rs: c.lmi || 0,
-              franquia_pos: c.franquiaPos || '',
-              premio_cobertura: 0,
+              nome_cobertura: c.nome.trim(),
+              categoria_normalizada: c.categoriaNormalizada || c.nome.trim(),
+              lmi_rs: c.lmi ?? 0,
+              franquia_pos: (c.franquiaPos || '').trim(),
+              premio_cobertura: c.premio ?? 0,
               observacao: c.observacao || '',
               fonte_documento: 'Upload PDF Apólice Emitida',
               extraido_por_ia: false,
@@ -1441,62 +1495,251 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
               </div>
             </div>
 
-            {/* SEÇÃO 6: TABELA DE COBERTURAS EXTRAÍDAS */}
-            <div className="border border-gray-200 rounded-xl overflow-hidden">
-              <div className="bg-gray-50 px-3.5 py-2.5 border-b border-gray-200 flex items-center justify-between">
-                <span className="font-bold text-gray-900 text-xs">
-                  Quadro de Coberturas Identificadas ({coberturas.length})
-                </span>
-                <span className="text-[11px] text-gray-500 font-medium">
-                  {coberturas.filter((c) => c.categoriaBloco === 'Danos Materiais').length} DM ·{' '}
-                  {coberturas.filter((c) => c.categoriaBloco === 'Responsabilidade Civil').length}{' '}
-                  RC · {coberturas.filter((c) => c.categoriaBloco === 'Lucros Cessantes').length} LC
-                </span>
-              </div>
+            {/* SEÇÃO 6: TABELA DE COBERTURAS EXTRAÍDAS / EDITÁVEIS */}
+            {(() => {
+              // Detecção de incerteza da linha na camada de interface
+              // Critérios: nome duplicado, franquia vazia ou LMI herdado/ausente
+              const nameCounts = new Map<string, number>()
+              coberturas.forEach((c) => {
+                const normName = (c.nome || '').trim().toLowerCase()
+                if (normName) {
+                  nameCounts.set(normName, (nameCounts.get(normName) || 0) + 1)
+                }
+              })
 
-              <div className="max-h-60 overflow-y-auto divide-y divide-gray-100">
-                {coberturas.map((cob, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 hover:bg-gray-50/60 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px]"
-                  >
-                    <div className="space-y-0.5 flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">{cob.nome}</div>
-                      <div className="text-[10px] text-gray-500 flex items-center gap-2">
-                        <span className="px-1.5 py-0.2 rounded bg-gray-100 text-gray-700 font-mono">
-                          {cob.categoriaBloco}
-                        </span>
-                        <span className="text-gray-400">→</span>
-                        <span className="text-[#16578B] font-medium truncate">
-                          {cob.categoriaNormalizada}
-                        </span>
-                        {cob.observacao && (
-                          <span className="text-amber-700 italic truncate">({cob.observacao})</span>
-                        )}
-                      </div>
-                    </div>
+              const incertezas = coberturas.map((cob) => {
+                const motivos: string[] = []
+                const normName = (cob.nome || '').trim().toLowerCase()
+                if (normName && (nameCounts.get(normName) || 0) > 1) {
+                  motivos.push('Nome duplicado')
+                }
+                if (!(cob.franquiaPos || '').trim()) {
+                  motivos.push('Franquia/P.O.S. vazia')
+                }
+                const obsLow = (cob.observacao || '').toLowerCase()
+                const isHerdada =
+                  obsLow.includes('herdad') ||
+                  obsLow.includes('básica') ||
+                  obsLow.includes('basica') ||
+                  obsLow.includes('sublimite')
+                if (cob.lmi === null || cob.lmi === undefined || isHerdada) {
+                  motivos.push(isHerdada ? 'LMI herdada/derivada' : 'LMI não informada')
+                }
+                return {
+                  isIncerta: motivos.length > 0,
+                  motivos,
+                }
+              })
 
-                    <div className="flex items-center gap-4 text-right shrink-0">
-                      <div>
-                        <span className="text-[10px] text-gray-400 block">LMI</span>
-                        <strong className="text-gray-900 font-mono">
-                          {cob.lmi ? formatCurrency(cob.lmi) : '—'}
-                        </strong>
-                      </div>
-                      <div className="min-w-[180px] text-right">
-                        <span className="text-[10px] text-gray-400 block">Franquia / P.O.S.</span>
-                        <span
-                          className="text-gray-700 truncate max-w-[220px] inline-block font-medium"
-                          title={cob.franquiaPos || 'Não informada'}
-                        >
-                          {cob.franquiaPos || 'Não informada'}
+              const hasAnyIncerteza = incertezas.some((inc) => inc.isIncerta)
+
+              return (
+                <div className="border border-gray-200 rounded-xl overflow-hidden space-y-0">
+                  {/* Banner de aviso se houver campos destacados */}
+                  {hasAnyIncerteza && (
+                    <div className="bg-amber-50 border-b border-amber-200 px-3.5 py-2 text-xs text-amber-900 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span className="font-semibold">
+                          Confira os campos destacados antes de salvar
                         </span>
                       </div>
+                      <span className="text-[11px] text-amber-700">
+                        {incertezas.filter((i) => i.isIncerta).length} item(ns) com alerta
+                      </span>
                     </div>
+                  )}
+
+                  <div className="bg-gray-50 px-3.5 py-2.5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-gray-900 text-xs">
+                        Quadro de Coberturas Identificadas ({coberturas.length})
+                      </span>
+                      <span className="text-[11px] text-gray-500 font-medium">
+                        {coberturas.filter((c) => c.categoriaBloco === 'Danos Materiais').length} DM
+                        ·{' '}
+                        {
+                          coberturas.filter((c) => c.categoriaBloco === 'Responsabilidade Civil')
+                            .length
+                        }{' '}
+                        RC ·{' '}
+                        {coberturas.filter((c) => c.categoriaBloco === 'Lucros Cessantes').length}{' '}
+                        LC
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddManualCobertura}
+                      className="h-7 text-[11px] px-2.5 border-blue-300 text-[#16578B] hover:bg-blue-50 flex items-center gap-1 font-semibold"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar linha</span>
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-200">
+                    {coberturas.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-gray-400">
+                        Nenhuma cobertura informada.{' '}
+                        <button
+                          type="button"
+                          onClick={handleAddManualCobertura}
+                          className="text-[#16578B] underline font-semibold ml-1"
+                        >
+                          Adicionar primeira linha
+                        </button>
+                      </div>
+                    ) : (
+                      coberturas.map((cob, idx) => {
+                        const inc = incertezas[idx] || { isIncerta: false, motivos: [] }
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 transition-colors space-y-2 text-[11px] ${
+                              inc.isIncerta
+                                ? 'bg-amber-50/70 border-l-4 border-l-amber-500'
+                                : 'hover:bg-gray-50/60 bg-white'
+                            }`}
+                          >
+                            {/* Linha superior: inputs principais (Nome, LMI, Franquia, Prêmio, Excluir) */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                              {/* Nome da Cobertura */}
+                              <div className="md:col-span-4 space-y-0.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-semibold text-gray-600">
+                                    Nome da Cobertura
+                                  </label>
+                                  {inc.isIncerta && inc.motivos.length > 0 && (
+                                    <span
+                                      className="text-[9px] text-amber-700 font-semibold px-1 rounded bg-amber-100 truncate max-w-[150px]"
+                                      title={inc.motivos.join(' · ')}
+                                    >
+                                      {inc.motivos.join(' · ')}
+                                    </span>
+                                  )}
+                                </div>
+                                <Input
+                                  type="text"
+                                  value={cob.nome}
+                                  onChange={(e) =>
+                                    handleUpdateCobertura(idx, 'nome', e.target.value)
+                                  }
+                                  placeholder="Ex: Incêndio, Raio e Explosão"
+                                  className={`h-7 text-xs font-semibold ${
+                                    inc.motivos.includes('Nome duplicado')
+                                      ? 'border-amber-400 bg-amber-50/60 text-amber-950 focus-visible:ring-amber-500'
+                                      : ''
+                                  }`}
+                                  required
+                                />
+                              </div>
+
+                              {/* LMI (R$) */}
+                              <div className="md:col-span-2 space-y-0.5">
+                                <label className="text-[10px] font-semibold text-gray-600 block">
+                                  LMI (R$)
+                                </label>
+                                <Input
+                                  type="text"
+                                  value={
+                                    cob.lmi !== null && cob.lmi !== undefined
+                                      ? formatCurrencyNumber(cob.lmi)
+                                      : ''
+                                  }
+                                  onChange={(e) => {
+                                    const val = parseCurrencyValue(e.target.value)
+                                    handleUpdateCobertura(idx, 'lmi', val)
+                                  }}
+                                  placeholder="0,00"
+                                  className={`h-7 text-xs font-mono text-right ${
+                                    inc.motivos.some((m) => m.startsWith('LMI'))
+                                      ? 'border-amber-400 bg-amber-50/60 text-amber-950 focus-visible:ring-amber-500'
+                                      : ''
+                                  }`}
+                                />
+                              </div>
+
+                              {/* Franquia / P.O.S. */}
+                              <div className="md:col-span-3 space-y-0.5">
+                                <label className="text-[10px] font-semibold text-gray-600 block truncate">
+                                  Franquia / P.O.S.
+                                </label>
+                                <Input
+                                  type="text"
+                                  value={cob.franquiaPos || ''}
+                                  onChange={(e) =>
+                                    handleUpdateCobertura(idx, 'franquiaPos', e.target.value)
+                                  }
+                                  placeholder="Ex: 10% min R$ 5.000 ou Não Há"
+                                  className={`h-7 text-xs ${
+                                    inc.motivos.includes('Franquia/P.O.S. vazia')
+                                      ? 'border-amber-400 bg-amber-50/60 text-amber-950 focus-visible:ring-amber-500'
+                                      : ''
+                                  }`}
+                                />
+                              </div>
+
+                              {/* Prêmio da Cobertura (R$) */}
+                              <div className="md:col-span-2 space-y-0.5">
+                                <label className="text-[10px] font-semibold text-gray-600 block text-right">
+                                  Prêmio (R$)
+                                </label>
+                                <Input
+                                  type="text"
+                                  value={
+                                    cob.premio !== null && cob.premio !== undefined
+                                      ? formatCurrencyNumber(cob.premio)
+                                      : ''
+                                  }
+                                  onChange={(e) => {
+                                    const val = parseCurrencyValue(e.target.value)
+                                    handleUpdateCobertura(idx, 'premio', val)
+                                  }}
+                                  placeholder="0,00"
+                                  className="h-7 text-xs font-mono text-right"
+                                />
+                              </div>
+
+                              {/* Botão Excluir Linha */}
+                              <div className="md:col-span-1 flex justify-end pt-3 md:pt-4">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteCobertura(idx)}
+                                  className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  title="Excluir cobertura"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Metadados auxiliares: Bloco, Categoria Normalizada e Observação */}
+                            <div className="text-[10px] text-gray-500 flex flex-wrap items-center gap-2 pl-0.5">
+                              <span className="px-1.5 py-0.2 rounded bg-gray-100 text-gray-700 font-mono">
+                                {cob.categoriaBloco || 'Danos Materiais'}
+                              </span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-[#16578B] font-medium">
+                                {cob.categoriaNormalizada || cob.nome || 'Não categorizada'}
+                              </span>
+                              {cob.observacao && (
+                                <span className="text-amber-800 italic truncate max-w-md">
+                                  ({cob.observacao})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Diagnóstico Técnico Colapsável */}
             {extractionResult?.diagnostico && (

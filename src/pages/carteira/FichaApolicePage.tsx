@@ -22,6 +22,8 @@ import {
   Calendar,
   AlertTriangle,
   Loader2,
+  Check,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,7 +35,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { formatCurrency, formatDate, formatCnpj, getStatusBadgeInfo } from '@/lib/formatters'
+import {
+  formatCurrency,
+  formatCurrencyNumber,
+  parseCurrencyValue,
+  formatDate,
+  formatCnpj,
+  getStatusBadgeInfo,
+} from '@/lib/formatters'
 import {
   ApoliceMinima,
   buildMapaSucessao,
@@ -145,6 +154,12 @@ export default function FichaApolicePage() {
   const [loading, setLoading] = useState(true)
   const [relacaoSucessao, setRelacaoSucessao] = useState<RelacaoSucessao | null>(null)
   const [savingStatusManual, setSavingStatusManual] = useState(false)
+
+  // Edição inline de franquia_pos e premio_cobertura
+  const [editingCobId, setEditingCobId] = useState<string | null>(null)
+  const [inlineFranquia, setInlineFranquia] = useState<string>('')
+  const [inlinePremio, setInlinePremio] = useState<string>('')
+  const [savingCobInline, setSavingCobInline] = useState(false)
 
   // Renovation cycle modal
   const [renovacaoModalOpen, setRenovacaoModalOpen] = useState(false)
@@ -287,6 +302,51 @@ export default function FichaApolicePage() {
       fetchApoliceFull()
     } catch (err: unknown) {
       alert('Erro ao excluir: ' + (err as Error).message)
+    }
+  }
+
+  // Salvar edição inline de cobertura (franquia_pos e premio_cobertura)
+  const handleStartEditCob = (cob: CoberturaItem) => {
+    setEditingCobId(cob.id)
+    setInlineFranquia(cob.franquia_pos || '')
+    setInlinePremio(
+      cob.premio_cobertura !== null && cob.premio_cobertura !== undefined
+        ? formatCurrencyNumber(cob.premio_cobertura)
+        : '',
+    )
+  }
+
+  const handleCancelEditCob = () => {
+    setEditingCobId(null)
+    setInlineFranquia('')
+    setInlinePremio('')
+  }
+
+  const handleSaveEditCob = async (cobId: string) => {
+    try {
+      setSavingCobInline(true)
+      const parsedPremio = parseCurrencyValue(inlinePremio) ?? 0
+      await pb.collection('coberturas').update(cobId, {
+        franquia_pos: inlineFranquia.trim(),
+        premio_cobertura: parsedPremio,
+      })
+
+      setCoberturas((prev) =>
+        prev.map((c) =>
+          c.id === cobId
+            ? {
+                ...c,
+                franquia_pos: inlineFranquia.trim(),
+                premio_cobertura: parsedPremio,
+              }
+            : c,
+        ),
+      )
+      setEditingCobId(null)
+    } catch (err: unknown) {
+      alert('Erro ao atualizar cobertura: ' + (err as Error).message)
+    } finally {
+      setSavingCobInline(false)
     }
   }
 
@@ -958,30 +1018,92 @@ export default function FichaApolicePage() {
                     <th className="py-2.5 px-3 text-right">LMI (R$)</th>
                     <th className="py-2.5 px-3">Franquia / POS</th>
                     <th className="py-2.5 px-3 text-right">Prêmio</th>
+                    <th className="py-2.5 px-3 text-center w-20">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {coberturas.map((cob) => (
-                    <tr key={cob.id} className="hover:bg-gray-50">
-                      <td className="py-2.5 px-3 font-semibold text-gray-900">
-                        {cob.nome_cobertura}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-[#16578B] border border-blue-100">
-                          {cob.categoria_normalizada}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-bold text-gray-800 tabular-nums">
-                        {formatCurrency(cob.lmi_rs)}
-                      </td>
-                      <td className="py-2.5 px-3 text-gray-600 max-w-xs">
-                        {cob.franquia_pos || '—'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right text-gray-600 tabular-nums">
-                        {formatCurrency(cob.premio_cobertura)}
-                      </td>
-                    </tr>
-                  ))}
+                  {coberturas.map((cob) => {
+                    const isEditing = editingCobId === cob.id
+                    return (
+                      <tr key={cob.id} className={isEditing ? 'bg-blue-50/50' : 'hover:bg-gray-50'}>
+                        <td className="py-2.5 px-3 font-semibold text-gray-900">
+                          {cob.nome_cobertura}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-[#16578B] border border-blue-100">
+                            {cob.categoria_normalizada}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-bold text-gray-800 tabular-nums">
+                          {formatCurrency(cob.lmi_rs)}
+                        </td>
+                        <td className="py-2 px-3 text-gray-600 max-w-xs">
+                          {isEditing ? (
+                            <Input
+                              type="text"
+                              value={inlineFranquia}
+                              onChange={(e) => setInlineFranquia(e.target.value)}
+                              placeholder="Franquia / P.O.S."
+                              className="h-7 text-xs bg-white"
+                              autoFocus
+                            />
+                          ) : (
+                            <span>{cob.franquia_pos || '—'}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-600 tabular-nums">
+                          {isEditing ? (
+                            <Input
+                              type="text"
+                              value={inlinePremio}
+                              onChange={(e) => setInlinePremio(e.target.value)}
+                              placeholder="0,00"
+                              className="h-7 text-xs font-mono text-right bg-white"
+                            />
+                          ) : (
+                            <span>{formatCurrency(cob.premio_cobertura)}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                disabled={savingCobInline}
+                                onClick={() => handleSaveEditCob(cob.id)}
+                                className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded"
+                                title="Salvar"
+                              >
+                                {savingCobInline ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={savingCobInline}
+                                onClick={handleCancelEditCob}
+                                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                                title="Cancelar"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditCob(cob)}
+                              className="p-1 text-gray-400 hover:text-[#16578B] hover:bg-blue-50 rounded transition-colors"
+                              title="Editar Franquia e Prêmio"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
