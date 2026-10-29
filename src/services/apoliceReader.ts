@@ -3865,7 +3865,9 @@ function extractTokioCoberturasGeometric(
     // Qualquer texto com y > 255 pt pertence ao questionário de risco / LMR / VRDs e DEVE ser descartado
     // para evitar que "Incêndio" e outros rótulos do questionário contaminem o quadro.
     if (page.pageNumber === 5) {
-      const colHeaderPrLiq = items.find((it) => /Pr[êe]mio\s+l[íi]quido/i.test(it.str) && it.y < 350)
+      const colHeaderPrLiq = items.find(
+        (it) => /Pr[êe]mio\s+l[íi]quido/i.test(it.str) && it.y < 350,
+      )
       const colHeaderFranquia = items.find((it) => /Franquia/i.test(it.str) && it.y < 350)
       const colHeaderCob = items.find((it) => /^Cobertura$/i.test(it.str.trim()) && it.y < 350)
 

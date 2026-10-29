@@ -1,6 +1,7236 @@
 {
   "metadata": {
-    "sourcePdf": "APOLICE_EMPRESA_TOKIO_BT_FORTALEZA_26 - cópia.pdf"
+    "sourcePdf": "APOLICE_EMPRESA_TOKIO_BT_FORTALEZA_26 - cópia.pdf",
+    "extractedAt": "2026-10-28T17:20:46.509Z",
+    "totalPagesInPdf": 204,
+    "pagesIncluded": [1, 2, 3, 4, 5, 6, 7, 204]
   },
-  "pages": []
+  "pages": [
+    {
+      "pageNumber": 1,
+      "text": "Documento   assinado   digitalmente   conforme   MP   nº   2.200/2001   de   24/08/2001,   que   institui a   Infraestrutura de Chaves Públicas Brasileira - ICP-Brasil. O\nTOKIO MARINE\nEMPRESARIAL\n1C385940940001470000000373992400000000000000\nApólice de Seguro",
+      "lines": [
+        "Documento   assinado   digitalmente   conforme   MP   nº   2.200/2001   de   24/08/2001,   que   institui a   Infraestrutura de Chaves Públicas Brasileira - ICP-Brasil. O",
+        "TOKIO MARINE",
+        "EMPRESARIAL",
+        "1C385940940001470000000373992400000000000000",
+        "Apólice de Seguro"
+      ],
+      "items": [
+        {
+          "x": 225,
+          "y": 184,
+          "width": 166,
+          "height": 19,
+          "texto": "Apólice de Seguro",
+          "str": "Apólice de Seguro",
+          "fontName": "g_d0_f1",
+          "isBold": false
+        },
+        {
+          "x": 16,
+          "y": 197,
+          "width": 56,
+          "height": 2,
+          "texto": "1C385940940001470000000373992400000000000000",
+          "str": "1C385940940001470000000373992400000000000000",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 33,
+          "y": 652,
+          "width": 255,
+          "height": 35,
+          "texto": "TOKIO MARINE",
+          "str": "TOKIO MARINE",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 33,
+          "y": 609,
+          "width": 241,
+          "height": 35,
+          "texto": "EMPRESARIAL",
+          "str": "EMPRESARIAL",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 114,
+          "y": 835,
+          "width": 22,
+          "height": 4,
+          "texto": "Documento",
+          "str": "Documento",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 136,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 138,
+          "y": 835,
+          "width": 19,
+          "height": 4,
+          "texto": "assinado",
+          "str": "assinado",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 157,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 160,
+          "y": 835,
+          "width": 29,
+          "height": 4,
+          "texto": "digitalmente",
+          "str": "digitalmente",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 188,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 191,
+          "y": 835,
+          "width": 19,
+          "height": 4,
+          "texto": "conforme",
+          "str": "conforme",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 210,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 212,
+          "y": 835,
+          "width": 5,
+          "height": 4,
+          "texto": "MP",
+          "str": "MP",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 217,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 220,
+          "y": 835,
+          "width": 5,
+          "height": 4,
+          "texto": "nº",
+          "str": "nº",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 224,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 227,
+          "y": 835,
+          "width": 24,
+          "height": 4,
+          "texto": "2.200/2001",
+          "str": "2.200/2001",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 251,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 253,
+          "y": 835,
+          "width": 5,
+          "height": 4,
+          "texto": "de",
+          "str": "de",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 258,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 260,
+          "y": 835,
+          "width": 26,
+          "height": 4,
+          "texto": "24/08/2001,",
+          "str": "24/08/2001,",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 287,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 289,
+          "y": 835,
+          "width": 7,
+          "height": 4,
+          "texto": "que",
+          "str": "que",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 296,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 299,
+          "y": 835,
+          "width": 24,
+          "height": 4,
+          "texto": "institui a",
+          "str": "institui a",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 323,
+          "y": 835,
+          "width": 2,
+          "texto": " ",
+          "str": " ",
+          "fontName": "Courier",
+          "isBold": false
+        },
+        {
+          "x": 325,
+          "y": 835,
+          "width": 144,
+          "height": 4,
+          "texto": "Infraestrutura de Chaves Públicas Brasileira - ICP-Brasil. O",
+          "str": "Infraestrutura de Chaves Públicas Brasileira - ICP-Brasil. O",
+          "fontName": "Courier",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 2,
+      "text": "BT FORTALEZA HOTEIS LTDA,\nObrigado por escolher a Tokio Marine Seguradora!\nParabéns!   Você   protegeu   seu   bem   com   a   confiança   de   uma   das   maiores\nseguradoras   do   Brasil   e   do   mundo.   E   agora,   já   pode   contar   com as   melhores\ncoberturas e os serviços exclusivos de Assistência 24 Horas.\nEsta é a sua Apólice Completa . Leia com atenção e garanta a sua tranquilidade.\nNas próximas páginas, você poderá conferir todos os detalhes do seu Seguro, além\nde todos os canais de atendimento que estão à sua disposição.\nFique   à   vontade   para   fazer   contato   sempre   que   precisar   tirar   dúvidas,   fazer\nsolicitações e para manter seus dados sempre atualizados.\nAproveite   e   baixe   também   o   aplicativo   Tokio   Marine.   Com   ele,   você   tem   a\npraticidade de consultar tudo sobre o seu Seguro, incluindo   status   de pagamentos,\nem apenas um toque.\nA   Tokio   Marine   é   uma   Companhia   Seguradora   com   nota   máxima,   AAA.br,   de\nacordo com a agência de classificação de risco Moody's Local.\nSao Paulo, 23 de outubro de 2026.\nAtenciosamente,\nTOKIO MARINE SEGURADORA S.A.,\n2/204",
+      "lines": [
+        "BT FORTALEZA HOTEIS LTDA,",
+        "Obrigado por escolher a Tokio Marine Seguradora!",
+        "Parabéns!   Você   protegeu   seu   bem   com   a   confiança   de   uma   das   maiores",
+        "seguradoras   do   Brasil   e   do   mundo.   E   agora,   já   pode   contar   com as   melhores",
+        "coberturas e os serviços exclusivos de Assistência 24 Horas.",
+        "Esta é a sua Apólice Completa . Leia com atenção e garanta a sua tranquilidade.",
+        "Nas próximas páginas, você poderá conferir todos os detalhes do seu Seguro, além",
+        "de todos os canais de atendimento que estão à sua disposição.",
+        "Fique   à   vontade   para   fazer   contato   sempre   que   precisar   tirar   dúvidas,   fazer",
+        "solicitações e para manter seus dados sempre atualizados.",
+        "Aproveite   e   baixe   também   o   aplicativo   Tokio   Marine.   Com   ele,   você   tem   a",
+        "praticidade de consultar tudo sobre o seu Seguro, incluindo   status   de pagamentos,",
+        "em apenas um toque.",
+        "A   Tokio   Marine   é   uma   Companhia   Seguradora   com   nota   máxima,   AAA.br,   de",
+        "acordo com a agência de classificação de risco Moody's Local.",
+        "Sao Paulo, 23 de outubro de 2026.",
+        "Atenciosamente,",
+        "TOKIO MARINE SEGURADORA S.A.,",
+        "2/204"
+      ],
+      "items": [
+        {
+          "x": 283,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "2/204",
+          "str": "2/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 665,
+          "width": 249,
+          "height": 17,
+          "texto": "BT FORTALEZA HOTEIS LTDA,",
+          "str": "BT FORTALEZA HOTEIS LTDA,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 643,
+          "width": 280,
+          "height": 12,
+          "texto": "Obrigado por escolher a Tokio Marine Seguradora!",
+          "str": "Obrigado por escolher a Tokio Marine Seguradora!",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 615,
+          "width": 54,
+          "height": 12,
+          "texto": "Parabéns!",
+          "str": "Parabéns!",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 108,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 118,
+          "y": 615,
+          "width": 28,
+          "height": 12,
+          "texto": "Você",
+          "str": "Você",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 146,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 156,
+          "y": 615,
+          "width": 49,
+          "height": 12,
+          "texto": "protegeu",
+          "str": "protegeu",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 215,
+          "y": 615,
+          "width": 19,
+          "height": 12,
+          "texto": "seu",
+          "str": "seu",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 235,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 245,
+          "y": 615,
+          "width": 24,
+          "height": 12,
+          "texto": "bem",
+          "str": "bem",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 269,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 278,
+          "y": 615,
+          "width": 24,
+          "height": 12,
+          "texto": "com",
+          "str": "com",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 302,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 312,
+          "y": 615,
+          "width": 6,
+          "height": 12,
+          "texto": "a",
+          "str": "a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 318,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 328,
+          "y": 615,
+          "width": 54,
+          "height": 12,
+          "texto": "confiança",
+          "str": "confiança",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 382,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 392,
+          "y": 615,
+          "width": 13,
+          "height": 12,
+          "texto": "de",
+          "str": "de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 405,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 415,
+          "y": 615,
+          "width": 24,
+          "height": 12,
+          "texto": "uma",
+          "str": "uma",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 439,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 449,
+          "y": 615,
+          "width": 19,
+          "height": 12,
+          "texto": "das",
+          "str": "das",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 468,
+          "y": 615,
+          "width": 10,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 478,
+          "y": 615,
+          "width": 43,
+          "height": 12,
+          "texto": "maiores",
+          "str": "maiores",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 600,
+          "width": 67,
+          "height": 12,
+          "texto": "seguradoras",
+          "str": "seguradoras",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 121,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 128,
+          "y": 600,
+          "width": 14,
+          "height": 12,
+          "texto": "do",
+          "str": "do",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 142,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 149,
+          "y": 600,
+          "width": 30,
+          "height": 12,
+          "texto": "Brasil",
+          "str": "Brasil",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 179,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 600,
+          "width": 6,
+          "height": 12,
+          "texto": "e",
+          "str": "e",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 193,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 200,
+          "y": 600,
+          "width": 14,
+          "height": 12,
+          "texto": "do",
+          "str": "do",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 214,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 221,
+          "y": 600,
+          "width": 42,
+          "height": 12,
+          "texto": "mundo.",
+          "str": "mundo.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 263,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 271,
+          "y": 600,
+          "width": 7,
+          "height": 12,
+          "texto": "E",
+          "str": "E",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 277,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 285,
+          "y": 600,
+          "width": 35,
+          "height": 12,
+          "texto": "agora,",
+          "str": "agora,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 320,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 327,
+          "y": 600,
+          "width": 9,
+          "height": 12,
+          "texto": "já",
+          "str": "já",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 336,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 344,
+          "y": 600,
+          "width": 27,
+          "height": 12,
+          "texto": "pode",
+          "str": "pode",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 371,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 378,
+          "y": 600,
+          "width": 35,
+          "height": 12,
+          "texto": "contar",
+          "str": "contar",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 413,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 421,
+          "y": 600,
+          "width": 43,
+          "height": 12,
+          "texto": "com as",
+          "str": "com as",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 464,
+          "y": 600,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 471,
+          "y": 600,
+          "width": 50,
+          "height": 12,
+          "texto": "melhores",
+          "str": "melhores",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 586,
+          "width": 341,
+          "height": 12,
+          "texto": "coberturas e os serviços exclusivos de Assistência 24 Horas.",
+          "str": "coberturas e os serviços exclusivos de Assistência 24 Horas.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 556,
+          "width": 449,
+          "height": 12,
+          "texto": "Esta é a sua Apólice Completa . Leia com atenção e garanta a sua tranquilidade.",
+          "str": "Esta é a sua Apólice Completa . Leia com atenção e garanta a sua tranquilidade.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 527,
+          "width": 468,
+          "height": 12,
+          "texto": "Nas próximas páginas, você poderá conferir todos os detalhes do seu Seguro, além",
+          "str": "Nas próximas páginas, você poderá conferir todos os detalhes do seu Seguro, além",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 512,
+          "width": 353,
+          "height": 12,
+          "texto": "de todos os canais de atendimento que estão à sua disposição.",
+          "str": "de todos os canais de atendimento que estão à sua disposição.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 482,
+          "width": 30,
+          "height": 12,
+          "texto": "Fique",
+          "str": "Fique",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 83,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 92,
+          "y": 482,
+          "width": 6,
+          "height": 12,
+          "texto": "à",
+          "str": "à",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 98,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 107,
+          "y": 482,
+          "width": 45,
+          "height": 12,
+          "texto": "vontade",
+          "str": "vontade",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 151,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 160,
+          "y": 482,
+          "width": 24,
+          "height": 12,
+          "texto": "para",
+          "str": "para",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 184,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 192,
+          "y": 482,
+          "width": 27,
+          "height": 12,
+          "texto": "fazer",
+          "str": "fazer",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 220,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 228,
+          "y": 482,
+          "width": 42,
+          "height": 12,
+          "texto": "contato",
+          "str": "contato",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 271,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 279,
+          "y": 482,
+          "width": 40,
+          "height": 12,
+          "texto": "sempre",
+          "str": "sempre",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 319,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 328,
+          "y": 482,
+          "width": 20,
+          "height": 12,
+          "texto": "que",
+          "str": "que",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 348,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 356,
+          "y": 482,
+          "width": 44,
+          "height": 12,
+          "texto": "precisar",
+          "str": "precisar",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 400,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 408,
+          "y": 482,
+          "width": 22,
+          "height": 12,
+          "texto": "tirar",
+          "str": "tirar",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 431,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 439,
+          "y": 482,
+          "width": 47,
+          "height": 12,
+          "texto": "dúvidas,",
+          "str": "dúvidas,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 486,
+          "y": 482,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 494,
+          "y": 482,
+          "width": 27,
+          "height": 12,
+          "texto": "fazer",
+          "str": "fazer",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 468,
+          "width": 327,
+          "height": 12,
+          "texto": "solicitações e para manter seus dados sempre atualizados.",
+          "str": "solicitações e para manter seus dados sempre atualizados.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 438,
+          "width": 54,
+          "height": 12,
+          "texto": "Aproveite",
+          "str": "Aproveite",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 107,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 116,
+          "y": 438,
+          "width": 6,
+          "height": 12,
+          "texto": "e",
+          "str": "e",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 122,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 131,
+          "y": 438,
+          "width": 29,
+          "height": 12,
+          "texto": "baixe",
+          "str": "baixe",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 160,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 169,
+          "y": 438,
+          "width": 45,
+          "height": 12,
+          "texto": "também",
+          "str": "também",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 214,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 222,
+          "y": 438,
+          "width": 7,
+          "height": 12,
+          "texto": "o",
+          "str": "o",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 229,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 237,
+          "y": 438,
+          "width": 53,
+          "height": 12,
+          "texto": "aplicativo",
+          "str": "aplicativo",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 290,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 299,
+          "y": 438,
+          "width": 31,
+          "height": 12,
+          "texto": "Tokio",
+          "str": "Tokio",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 329,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 338,
+          "y": 438,
+          "width": 42,
+          "height": 12,
+          "texto": "Marine.",
+          "str": "Marine.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 380,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 388,
+          "y": 438,
+          "width": 26,
+          "height": 12,
+          "texto": "Com",
+          "str": "Com",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 414,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 422,
+          "y": 438,
+          "width": 20,
+          "height": 12,
+          "texto": "ele,",
+          "str": "ele,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 442,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 450,
+          "y": 438,
+          "width": 26,
+          "height": 12,
+          "texto": "você",
+          "str": "você",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 477,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 485,
+          "y": 438,
+          "width": 21,
+          "height": 12,
+          "texto": "tem",
+          "str": "tem",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 507,
+          "y": 438,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 515,
+          "y": 438,
+          "width": 6,
+          "height": 12,
+          "texto": "a",
+          "str": "a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 423,
+          "width": 335,
+          "height": 12,
+          "texto": "praticidade de consultar tudo sobre o seu Seguro, incluindo",
+          "str": "praticidade de consultar tudo sobre o seu Seguro, incluindo",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 389,
+          "y": 423,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 393,
+          "y": 423,
+          "width": 34,
+          "height": 12,
+          "texto": "status",
+          "str": "status",
+          "fontName": "g_d0_f4",
+          "isBold": false
+        },
+        {
+          "x": 428,
+          "y": 423,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f4",
+          "isBold": false
+        },
+        {
+          "x": 432,
+          "y": 423,
+          "width": 89,
+          "height": 12,
+          "texto": "de pagamentos,",
+          "str": "de pagamentos,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 409,
+          "width": 121,
+          "height": 12,
+          "texto": "em apenas um toque.",
+          "str": "em apenas um toque.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 364,
+          "width": 9,
+          "height": 12,
+          "texto": "A",
+          "str": "A",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 63,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 70,
+          "y": 364,
+          "width": 31,
+          "height": 12,
+          "texto": "Tokio",
+          "str": "Tokio",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 100,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 108,
+          "y": 364,
+          "width": 38,
+          "height": 12,
+          "texto": "Marine",
+          "str": "Marine",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 146,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 153,
+          "y": 364,
+          "width": 6,
+          "height": 12,
+          "texto": "é",
+          "str": "é",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 159,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 167,
+          "y": 364,
+          "width": 24,
+          "height": 12,
+          "texto": "uma",
+          "str": "uma",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 190,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 198,
+          "y": 364,
+          "width": 62,
+          "height": 12,
+          "texto": "Companhia",
+          "str": "Companhia",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 260,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 267,
+          "y": 364,
+          "width": 63,
+          "height": 12,
+          "texto": "Seguradora",
+          "str": "Seguradora",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 330,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 337,
+          "y": 364,
+          "width": 24,
+          "height": 12,
+          "texto": "com",
+          "str": "com",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 361,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 369,
+          "y": 364,
+          "width": 25,
+          "height": 12,
+          "texto": "nota",
+          "str": "nota",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 393,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 400,
+          "y": 364,
+          "width": 47,
+          "height": 12,
+          "texto": "máxima,",
+          "str": "máxima,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 448,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 455,
+          "y": 364,
+          "width": 46,
+          "height": 12,
+          "texto": "AAA.br,",
+          "str": "AAA.br,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 501,
+          "y": 364,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 508,
+          "y": 364,
+          "width": 13,
+          "height": 12,
+          "texto": "de",
+          "str": "de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 349,
+          "width": 351,
+          "height": 12,
+          "texto": "acordo com a agência de classificação de risco Moody's Local.",
+          "str": "acordo com a agência de classificação de risco Moody's Local.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 57,
+          "y": 307,
+          "width": 198,
+          "height": 12,
+          "texto": "Sao Paulo, 23 de outubro de 2026.",
+          "str": "Sao Paulo, 23 de outubro de 2026.",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 57,
+          "y": 259,
+          "width": 94,
+          "height": 12,
+          "texto": "Atenciosamente,",
+          "str": "Atenciosamente,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 57,
+          "y": 235,
+          "width": 207,
+          "height": 12,
+          "texto": "TOKIO MARINE SEGURADORA S.A.,",
+          "str": "TOKIO MARINE SEGURADORA S.A.,",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 3,
+      "text": "Tokio Marine Empresarial - Apólice de Seguro\nVigência do Seguro:   a partir das 24 horas do dia 23/10/2026 até às 24 horas do dia 23/10/2027.\nSegurado\nRazão Social: BT FORTALEZA HOTEIS LTDA\nCNPJ:   38.594.094/0001-47\nEndereço:   BEIRA MAR, 3470 - 704\nBairro:   MEIRELES   CEP:   60165-120\nCidade:   FORTALEZA   UF:   CE\nTelefone:   (11) 3027-5043   Celular:   (11) 99883-8388\nCorretor\nNome Corretor:   BYCOR CONSULTORIA E CORRETORA Código:   145012\nDE S\nCNPJ:   17.267.516/0001-08   Cód. SUSEP:   202027021\nEndereço:   AVENIDA PAULISTA 1842 15 º ANDAR\nBairro:   BELA VISTA   CEP:   01310-945\nCidade:   SAO PAULO   UF:   SP\nTelefone:   (11)93806-7801\nSucursal:   08101 - SP ZONA SUL\nParticipação:   100%   Lider:   SIM\nDados do Seguro\nRamo:   01.18   Proposta:   15772067\nApólice:   03739924   Data de Emissão:   23/10/2026 10:36:51\nTipo de Seguro:   Renovação Congênere   Apólice Renovada:   01.128.425.000613\nSeguradora anterior:\nForma de envio da Apólice:   E-mail (resumo da apólice, cartão do segurado e boletos digitais)\nDestino da Correspondência:   Corretor\nMoeda:   REAL\nQuestionário de Risco\nExiste algum local de risco que compartilha o terreno/imóvel com outras empresas?\nNão\nDados de Pagamento\nPrêmio Líquido   R$   2.708,38   Cobrança:   Carnê\n3/204",
+      "lines": [
+        "Tokio Marine Empresarial - Apólice de Seguro",
+        "Vigência do Seguro:   a partir das 24 horas do dia 23/10/2026 até às 24 horas do dia 23/10/2027.",
+        "Segurado",
+        "Razão Social: BT FORTALEZA HOTEIS LTDA",
+        "CNPJ:   38.594.094/0001-47",
+        "Endereço:   BEIRA MAR, 3470 - 704",
+        "Bairro:   MEIRELES   CEP:   60165-120",
+        "Cidade:   FORTALEZA   UF:   CE",
+        "Telefone:   (11) 3027-5043   Celular:   (11) 99883-8388",
+        "Corretor",
+        "Nome Corretor:   BYCOR CONSULTORIA E CORRETORA Código:   145012",
+        "DE S",
+        "CNPJ:   17.267.516/0001-08   Cód. SUSEP:   202027021",
+        "Endereço:   AVENIDA PAULISTA 1842 15 º ANDAR",
+        "Bairro:   BELA VISTA   CEP:   01310-945",
+        "Cidade:   SAO PAULO   UF:   SP",
+        "Telefone:   (11)93806-7801",
+        "Sucursal:   08101 - SP ZONA SUL",
+        "Participação:   100%   Lider:   SIM",
+        "Dados do Seguro",
+        "Ramo:   01.18   Proposta:   15772067",
+        "Apólice:   03739924   Data de Emissão:   23/10/2026 10:36:51",
+        "Tipo de Seguro:   Renovação Congênere   Apólice Renovada:   01.128.425.000613",
+        "Seguradora anterior:",
+        "Forma de envio da Apólice:   E-mail (resumo da apólice, cartão do segurado e boletos digitais)",
+        "Destino da Correspondência:   Corretor",
+        "Moeda:   REAL",
+        "Questionário de Risco",
+        "Existe algum local de risco que compartilha o terreno/imóvel com outras empresas?",
+        "Não",
+        "Dados de Pagamento",
+        "Prêmio Líquido   R$   2.708,38   Cobrança:   Carnê",
+        "3/204"
+      ],
+      "items": [
+        {
+          "x": 284,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "3/204",
+          "str": "3/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 97,
+          "y": 598,
+          "width": 171,
+          "height": 12,
+          "texto": "BT FORTALEZA HOTEIS LTDA",
+          "str": "BT FORTALEZA HOTEIS LTDA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 160,
+          "width": 466,
+          "height": 12,
+          "texto": "Existe algum local de risco que compartilha o terreno/imóvel com outras empresas?",
+          "str": "Existe algum local de risco que compartilha o terreno/imóvel com outras empresas?",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 324,
+          "y": 672,
+          "width": 254,
+          "height": 12,
+          "texto": "Tokio Marine Empresarial - Apólice de Seguro",
+          "str": "Tokio Marine Empresarial - Apólice de Seguro",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 649,
+          "width": 112,
+          "height": 12,
+          "texto": "Vigência do Seguro:",
+          "str": "Vigência do Seguro:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 130,
+          "y": 649,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 134,
+          "y": 649,
+          "width": 432,
+          "height": 12,
+          "texto": "a partir das 24 horas do dia 23/10/2026 até às 24 horas do dia 23/10/2027.",
+          "str": "a partir das 24 horas do dia 23/10/2026 até às 24 horas do dia 23/10/2027.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 615,
+          "width": 61,
+          "height": 14,
+          "texto": "Segurado",
+          "str": "Segurado",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 598,
+          "width": 75,
+          "height": 12,
+          "texto": "Razão Social:",
+          "str": "Razão Social:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 584,
+          "width": 35,
+          "height": 12,
+          "texto": "CNPJ:",
+          "str": "CNPJ:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 53,
+          "y": 584,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 57,
+          "y": 584,
+          "width": 122,
+          "height": 12,
+          "texto": "38.594.094/0001-47",
+          "str": "38.594.094/0001-47",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 569,
+          "width": 55,
+          "height": 12,
+          "texto": "Endereço:",
+          "str": "Endereço:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 73,
+          "y": 569,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 77,
+          "y": 569,
+          "width": 139,
+          "height": 12,
+          "texto": "BEIRA MAR, 3470 - 704",
+          "str": "BEIRA MAR, 3470 - 704",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 554,
+          "width": 36,
+          "height": 12,
+          "texto": "Bairro:",
+          "str": "Bairro:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 554,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 58,
+          "y": 554,
+          "width": 57,
+          "height": 12,
+          "texto": "MEIRELES",
+          "str": "MEIRELES",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 115,
+          "y": 554,
+          "width": 220,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 554,
+          "width": 26,
+          "height": 12,
+          "texto": "CEP:",
+          "str": "CEP:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 362,
+          "y": 554,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 366,
+          "y": 554,
+          "width": 64,
+          "height": 12,
+          "texto": "60165-120",
+          "str": "60165-120",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 539,
+          "width": 42,
+          "height": 12,
+          "texto": "Cidade:",
+          "str": "Cidade:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 60,
+          "y": 539,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 64,
+          "y": 539,
+          "width": 70,
+          "height": 12,
+          "texto": "FORTALEZA",
+          "str": "FORTALEZA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 133,
+          "y": 539,
+          "width": 202,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 539,
+          "width": 19,
+          "height": 12,
+          "texto": "UF:",
+          "str": "UF:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 355,
+          "y": 539,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 359,
+          "y": 539,
+          "width": 15,
+          "height": 12,
+          "texto": "CE",
+          "str": "CE",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 525,
+          "width": 52,
+          "height": 12,
+          "texto": "Telefone:",
+          "str": "Telefone:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 70,
+          "y": 525,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 74,
+          "y": 525,
+          "width": 91,
+          "height": 12,
+          "texto": "(11) 3027-5043",
+          "str": "(11) 3027-5043",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 165,
+          "y": 525,
+          "width": 170,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 525,
+          "width": 42,
+          "height": 12,
+          "texto": "Celular:",
+          "str": "Celular:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 378,
+          "y": 525,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 382,
+          "y": 525,
+          "width": 99,
+          "height": 12,
+          "texto": "(11) 99883-8388",
+          "str": "(11) 99883-8388",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 481,
+          "width": 53,
+          "height": 14,
+          "texto": "Corretor",
+          "str": "Corretor",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 465,
+          "width": 86,
+          "height": 12,
+          "texto": "Nome Corretor:",
+          "str": "Nome Corretor:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 104,
+          "y": 465,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 108,
+          "y": 465,
+          "width": 219,
+          "height": 12,
+          "texto": "BYCOR CONSULTORIA E CORRETORA",
+          "str": "BYCOR CONSULTORIA E CORRETORA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 450,
+          "width": 27,
+          "height": 12,
+          "texto": "DE S",
+          "str": "DE S",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 465,
+          "width": 43,
+          "height": 12,
+          "texto": "Código:",
+          "str": "Código:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 378,
+          "y": 465,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 382,
+          "y": 465,
+          "width": 45,
+          "height": 12,
+          "texto": "145012",
+          "str": "145012",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 434,
+          "width": 35,
+          "height": 12,
+          "texto": "CNPJ:",
+          "str": "CNPJ:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 53,
+          "y": 434,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 57,
+          "y": 434,
+          "width": 122,
+          "height": 12,
+          "texto": "17.267.516/0001-08",
+          "str": "17.267.516/0001-08",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 179,
+          "y": 434,
+          "width": 157,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 434,
+          "width": 72,
+          "height": 12,
+          "texto": "Cód. SUSEP:",
+          "str": "Cód. SUSEP:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 408,
+          "y": 434,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 412,
+          "y": 434,
+          "width": 68,
+          "height": 12,
+          "texto": "202027021",
+          "str": "202027021",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 420,
+          "width": 55,
+          "height": 12,
+          "texto": "Endereço:",
+          "str": "Endereço:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 73,
+          "y": 420,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 77,
+          "y": 420,
+          "width": 226,
+          "height": 12,
+          "texto": "AVENIDA PAULISTA 1842 15 º ANDAR",
+          "str": "AVENIDA PAULISTA 1842 15 º ANDAR",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 404,
+          "width": 36,
+          "height": 12,
+          "texto": "Bairro:",
+          "str": "Bairro:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 404,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 58,
+          "y": 404,
+          "width": 70,
+          "height": 12,
+          "texto": "BELA VISTA",
+          "str": "BELA VISTA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 128,
+          "y": 404,
+          "width": 207,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 404,
+          "width": 26,
+          "height": 12,
+          "texto": "CEP:",
+          "str": "CEP:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 362,
+          "y": 404,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 366,
+          "y": 404,
+          "width": 64,
+          "height": 12,
+          "texto": "01310-945",
+          "str": "01310-945",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 389,
+          "width": 42,
+          "height": 12,
+          "texto": "Cidade:",
+          "str": "Cidade:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 60,
+          "y": 389,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 64,
+          "y": 389,
+          "width": 70,
+          "height": 12,
+          "texto": "SAO PAULO",
+          "str": "SAO PAULO",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 134,
+          "y": 389,
+          "width": 202,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 389,
+          "width": 19,
+          "height": 12,
+          "texto": "UF:",
+          "str": "UF:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 355,
+          "y": 389,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 359,
+          "y": 389,
+          "width": 15,
+          "height": 12,
+          "texto": "SP",
+          "str": "SP",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 374,
+          "width": 52,
+          "height": 12,
+          "texto": "Telefone:",
+          "str": "Telefone:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 70,
+          "y": 374,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 74,
+          "y": 374,
+          "width": 95,
+          "height": 12,
+          "texto": "(11)93806-7801",
+          "str": "(11)93806-7801",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 360,
+          "width": 52,
+          "height": 12,
+          "texto": "Sucursal:",
+          "str": "Sucursal:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 70,
+          "y": 360,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 74,
+          "y": 360,
+          "width": 129,
+          "height": 12,
+          "texto": "08101 - SP ZONA SUL",
+          "str": "08101 - SP ZONA SUL",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 345,
+          "width": 72,
+          "height": 12,
+          "texto": "Participação:",
+          "str": "Participação:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 90,
+          "y": 345,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 94,
+          "y": 345,
+          "width": 35,
+          "height": 12,
+          "texto": "100%",
+          "str": "100%",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 128,
+          "y": 345,
+          "width": 207,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 335,
+          "y": 345,
+          "width": 31,
+          "height": 12,
+          "texto": "Lider:",
+          "str": "Lider:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 366,
+          "y": 345,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 370,
+          "y": 345,
+          "width": 22,
+          "height": 12,
+          "texto": "SIM",
+          "str": "SIM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 323,
+          "width": 112,
+          "height": 14,
+          "texto": "Dados do Seguro",
+          "str": "Dados do Seguro",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 307,
+          "width": 36,
+          "height": 12,
+          "texto": "Ramo:",
+          "str": "Ramo:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 307,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 58,
+          "y": 307,
+          "width": 34,
+          "height": 12,
+          "texto": "01.18",
+          "str": "01.18",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 92,
+          "y": 307,
+          "width": 227,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 318,
+          "y": 307,
+          "width": 53,
+          "height": 12,
+          "texto": "Proposta:",
+          "str": "Proposta:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 371,
+          "y": 307,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 375,
+          "y": 307,
+          "width": 60,
+          "height": 12,
+          "texto": "15772067",
+          "str": "15772067",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 292,
+          "width": 45,
+          "height": 12,
+          "texto": "Apólice:",
+          "str": "Apólice:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 63,
+          "y": 292,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 67,
+          "y": 292,
+          "width": 60,
+          "height": 12,
+          "texto": "03739924",
+          "str": "03739924",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 128,
+          "y": 292,
+          "width": 191,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 318,
+          "y": 292,
+          "width": 97,
+          "height": 12,
+          "texto": "Data de Emissão:",
+          "str": "Data de Emissão:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 415,
+          "y": 292,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 419,
+          "y": 292,
+          "width": 126,
+          "height": 12,
+          "texto": "23/10/2026 10:36:51",
+          "str": "23/10/2026 10:36:51",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 277,
+          "width": 89,
+          "height": 12,
+          "texto": "Tipo de Seguro:",
+          "str": "Tipo de Seguro:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 107,
+          "y": 277,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 111,
+          "y": 277,
+          "width": 124,
+          "height": 12,
+          "texto": "Renovação Congênere",
+          "str": "Renovação Congênere",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 235,
+          "y": 277,
+          "width": 84,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 318,
+          "y": 277,
+          "width": 104,
+          "height": 12,
+          "texto": "Apólice Renovada:",
+          "str": "Apólice Renovada:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 422,
+          "y": 277,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 426,
+          "y": 277,
+          "width": 118,
+          "height": 12,
+          "texto": "01.128.425.000613",
+          "str": "01.128.425.000613",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 263,
+          "width": 114,
+          "height": 12,
+          "texto": "Seguradora anterior:",
+          "str": "Seguradora anterior:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 248,
+          "width": 152,
+          "height": 12,
+          "texto": "Forma de envio da Apólice:",
+          "str": "Forma de envio da Apólice:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 170,
+          "y": 248,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 174,
+          "y": 248,
+          "width": 360,
+          "height": 12,
+          "texto": "E-mail (resumo da apólice, cartão do segurado e boletos digitais)",
+          "str": "E-mail (resumo da apólice, cartão do segurado e boletos digitais)",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 233,
+          "width": 160,
+          "height": 12,
+          "texto": "Destino da Correspondência:",
+          "str": "Destino da Correspondência:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 178,
+          "y": 233,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 182,
+          "y": 233,
+          "width": 46,
+          "height": 12,
+          "texto": "Corretor",
+          "str": "Corretor",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 219,
+          "width": 42,
+          "height": 12,
+          "texto": "Moeda:",
+          "str": "Moeda:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 60,
+          "y": 219,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 64,
+          "y": 219,
+          "width": 30,
+          "height": 12,
+          "texto": "REAL",
+          "str": "REAL",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 180,
+          "width": 142,
+          "height": 14,
+          "texto": "Questionário de Risco",
+          "str": "Questionário de Risco",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 145,
+          "width": 22,
+          "height": 12,
+          "texto": "Não",
+          "str": "Não",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 111,
+          "width": 138,
+          "height": 14,
+          "texto": "Dados de Pagamento",
+          "str": "Dados de Pagamento",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 90,
+          "width": 82,
+          "height": 12,
+          "texto": "Prêmio Líquido",
+          "str": "Prêmio Líquido",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 100,
+          "y": 90,
+          "width": 87,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 90,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 90,
+          "width": 43,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 245,
+          "y": 90,
+          "width": 53,
+          "height": 12,
+          "texto": "2.708,38",
+          "str": "2.708,38",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 299,
+          "y": 90,
+          "width": 9,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 307,
+          "y": 90,
+          "width": 57,
+          "height": 12,
+          "texto": "Cobrança:",
+          "str": "Cobrança:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 364,
+          "y": 90,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 368,
+          "y": 90,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 4,
+      "text": "Adicional de Fracionamento   R$   0,00\nCusto de Emissão   R$   0,00\nI.O.F   R$   199,87\nCorreção Monetária   R$   0,00\nPrêmio Total   R$   2.908,25\nJuros   0,00\nPrêmio Dólar   US$   0,00\nValor da Conversão   R$   0,00\nDados de Parcelamento\nParcela   Valor (R$)   Vencimento   Forma de Pagamento\n01ª   581,65   30/10/2026   Carnê\n02ª   581,65   23/11/2026   Carnê\n03ª   581,65   23/12/2026   Carnê\n04ª   581,65   23/01/2027   Carnê\n05ª   581,65   23/02/2027   Carnê\n4/204",
+      "lines": [
+        "Adicional de Fracionamento   R$   0,00",
+        "Custo de Emissão   R$   0,00",
+        "I.O.F   R$   199,87",
+        "Correção Monetária   R$   0,00",
+        "Prêmio Total   R$   2.908,25",
+        "Juros   0,00",
+        "Prêmio Dólar   US$   0,00",
+        "Valor da Conversão   R$   0,00",
+        "Dados de Parcelamento",
+        "Parcela   Valor (R$)   Vencimento   Forma de Pagamento",
+        "01ª   581,65   30/10/2026   Carnê",
+        "02ª   581,65   23/11/2026   Carnê",
+        "03ª   581,65   23/12/2026   Carnê",
+        "04ª   581,65   23/01/2027   Carnê",
+        "05ª   581,65   23/02/2027   Carnê",
+        "4/204"
+      ],
+      "items": [
+        {
+          "x": 284,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "4/204",
+          "str": "4/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 672,
+          "width": 154,
+          "height": 12,
+          "texto": "Adicional de Fracionamento",
+          "str": "Adicional de Fracionamento",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 172,
+          "y": 672,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 672,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 672,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 672,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 656,
+          "width": 100,
+          "height": 12,
+          "texto": "Custo de Emissão",
+          "str": "Custo de Emissão",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 118,
+          "y": 656,
+          "width": 69,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 656,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 656,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 656,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 640,
+          "width": 27,
+          "height": 12,
+          "texto": "I.O.F",
+          "str": "I.O.F",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 45,
+          "y": 640,
+          "width": 142,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 640,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 640,
+          "width": 55,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 257,
+          "y": 640,
+          "width": 42,
+          "height": 12,
+          "texto": "199,87",
+          "str": "199,87",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 625,
+          "width": 110,
+          "height": 12,
+          "texto": "Correção Monetária",
+          "str": "Correção Monetária",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 128,
+          "y": 625,
+          "width": 59,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 625,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 625,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 625,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 609,
+          "width": 70,
+          "height": 12,
+          "texto": "Prêmio Total",
+          "str": "Prêmio Total",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 88,
+          "y": 609,
+          "width": 99,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 609,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 609,
+          "width": 43,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 245,
+          "y": 609,
+          "width": 53,
+          "height": 12,
+          "texto": "2.908,25",
+          "str": "2.908,25",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 593,
+          "width": 31,
+          "height": 12,
+          "texto": "Juros",
+          "str": "Juros",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 49,
+          "y": 593,
+          "width": 223,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 593,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 577,
+          "width": 71,
+          "height": 12,
+          "texto": "Prêmio Dólar",
+          "str": "Prêmio Dólar",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 89,
+          "y": 577,
+          "width": 89,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 178,
+          "y": 577,
+          "width": 24,
+          "height": 12,
+          "texto": "US$",
+          "str": "US$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 577,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 577,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 562,
+          "width": 109,
+          "height": 12,
+          "texto": "Valor da Conversão",
+          "str": "Valor da Conversão",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 127,
+          "y": 562,
+          "width": 60,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 187,
+          "y": 561,
+          "width": 15,
+          "height": 12,
+          "texto": "R$",
+          "str": "R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 561,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 272,
+          "y": 561,
+          "width": 27,
+          "height": 12,
+          "texto": "0,00",
+          "str": "0,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 532,
+          "width": 153,
+          "height": 14,
+          "texto": "Dados de Parcelamento",
+          "str": "Dados de Parcelamento",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 46,
+          "y": 511,
+          "width": 40,
+          "height": 12,
+          "texto": "Parcela",
+          "str": "Parcela",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 86,
+          "y": 511,
+          "width": 71,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 157,
+          "y": 511,
+          "width": 56,
+          "height": 12,
+          "texto": "Valor (R$)",
+          "str": "Valor (R$)",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 214,
+          "y": 511,
+          "width": 70,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 284,
+          "y": 511,
+          "width": 66,
+          "height": 12,
+          "texto": "Vencimento",
+          "str": "Vencimento",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 350,
+          "y": 511,
+          "width": 68,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 418,
+          "y": 511,
+          "width": 118,
+          "height": 12,
+          "texto": "Forma de Pagamento",
+          "str": "Forma de Pagamento",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 495,
+          "width": 20,
+          "height": 12,
+          "texto": "01ª",
+          "str": "01ª",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 76,
+          "y": 495,
+          "width": 88,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 495,
+          "width": 42,
+          "height": 12,
+          "texto": "581,65",
+          "str": "581,65",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 495,
+          "width": 77,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 495,
+          "width": 68,
+          "height": 12,
+          "texto": "30/10/2026",
+          "str": "30/10/2026",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 495,
+          "width": 110,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 461,
+          "y": 495,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 479,
+          "width": 20,
+          "height": 12,
+          "texto": "02ª",
+          "str": "02ª",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 76,
+          "y": 479,
+          "width": 88,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 479,
+          "width": 42,
+          "height": 12,
+          "texto": "581,65",
+          "str": "581,65",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 479,
+          "width": 77,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 479,
+          "width": 68,
+          "height": 12,
+          "texto": "23/11/2026",
+          "str": "23/11/2026",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 479,
+          "width": 110,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 461,
+          "y": 479,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 463,
+          "width": 20,
+          "height": 12,
+          "texto": "03ª",
+          "str": "03ª",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 76,
+          "y": 463,
+          "width": 88,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 463,
+          "width": 42,
+          "height": 12,
+          "texto": "581,65",
+          "str": "581,65",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 463,
+          "width": 77,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 463,
+          "width": 68,
+          "height": 12,
+          "texto": "23/12/2026",
+          "str": "23/12/2026",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 463,
+          "width": 110,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 461,
+          "y": 463,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 448,
+          "width": 20,
+          "height": 12,
+          "texto": "04ª",
+          "str": "04ª",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 76,
+          "y": 448,
+          "width": 88,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 448,
+          "width": 42,
+          "height": 12,
+          "texto": "581,65",
+          "str": "581,65",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 448,
+          "width": 77,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 448,
+          "width": 68,
+          "height": 12,
+          "texto": "23/01/2027",
+          "str": "23/01/2027",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 448,
+          "width": 110,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 461,
+          "y": 448,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 432,
+          "width": 20,
+          "height": 12,
+          "texto": "05ª",
+          "str": "05ª",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 76,
+          "y": 432,
+          "width": 88,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 432,
+          "width": 42,
+          "height": 12,
+          "texto": "581,65",
+          "str": "581,65",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 206,
+          "y": 432,
+          "width": 77,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 432,
+          "width": 68,
+          "height": 12,
+          "texto": "23/02/2027",
+          "str": "23/02/2027",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 432,
+          "width": 110,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 461,
+          "y": 432,
+          "width": 32,
+          "height": 12,
+          "texto": "Carnê",
+          "str": "Carnê",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 5,
+      "text": "Especificação da Apólice - Descrição do Item - 1 - Grupo 01 - Patrimonial\nRamo:   18 -   COMPREENSIVO EMPRESARIAL   Processo SUSEP n°:   15414.900584/2018-68\nQuestionário de Avaliação de Risco\nLocal de Risco:   AV BEIRA MAR, 3470 - 740 - MEIRELES - 60165-120 - FORTALEZA - CE\nAtividade: HOTEL, MOTEL OU POUSADA\nClasse de Construção:   SUPERIOR\nBens Cobertos:   PRÉDIO E CONTEÚDO\nValor de Novo: Sim\nProtecionais:   EXTINTORES\nLocalização:   SUB-SOLO, TÉRREO, MEZANINO OU ATÉ O 1º ANDAR DE EDIFÍCIO\nOutros Seguros : O segurado não declarou a existência de outros seguros .\nValor(es) em Risco Declarado(s):\nDanos Materiais:   3.137.400,00\nLucros Cessantes:   390.000,00\nTotal:   3.527.400,00\nLimite Máximo de Responsabilidade: R$ 3.613.400,00\nFranquia /\nParticipação\nLimite Máximo de\nCobertura   Obrigatória do Prêmio líquido - R$\nIndenização - R$\nSegurado em Caso\nde Sinistro\nIncêndio (Inclusive Decorrente de 3.137.400,00 10% DOS 779,98\nTumultos, Greves e Lockout), Raio, PREJUÍZOS, COM\nExplosão, Implosão, Fumaça e MÍNIMO DE R$\nQueda de Aeronaves 1.500,00\n(EXCLUSIVAMENTE\nEM CASO DE RAIO)\nCUSTOS DE DEFESA DO 6.000,00 NÃO HÁ   18,55\nSEGURADO - EM DECORRÊNCIA\nDE RESPONSABILIDADE CIVIL\nOPERAÇÕES\nDESPESAS DE CONTENÇÃO E 50.000,00 10% DOS 76,23\nSALVAMENTO PREJUÍZOS, COM\nMÍNIMO DE R$\n1.000,00\nDanos Elétricos   30.000,00 15% DOS 261,81\nPREJUÍZOS, COM\n5/204",
+      "lines": [
+        "Especificação da Apólice - Descrição do Item - 1 - Grupo 01 - Patrimonial",
+        "Ramo:   18 -   COMPREENSIVO EMPRESARIAL   Processo SUSEP n°:   15414.900584/2018-68",
+        "Questionário de Avaliação de Risco",
+        "Local de Risco:   AV BEIRA MAR, 3470 - 740 - MEIRELES - 60165-120 - FORTALEZA - CE",
+        "Atividade: HOTEL, MOTEL OU POUSADA",
+        "Classe de Construção:   SUPERIOR",
+        "Bens Cobertos:   PRÉDIO E CONTEÚDO",
+        "Valor de Novo: Sim",
+        "Protecionais:   EXTINTORES",
+        "Localização:   SUB-SOLO, TÉRREO, MEZANINO OU ATÉ O 1º ANDAR DE EDIFÍCIO",
+        "Outros Seguros : O segurado não declarou a existência de outros seguros .",
+        "Valor(es) em Risco Declarado(s):",
+        "Danos Materiais:   3.137.400,00",
+        "Lucros Cessantes:   390.000,00",
+        "Total:   3.527.400,00",
+        "Limite Máximo de Responsabilidade: R$ 3.613.400,00",
+        "Franquia /",
+        "Participação",
+        "Limite Máximo de",
+        "Cobertura   Obrigatória do Prêmio líquido - R$",
+        "Indenização - R$",
+        "Segurado em Caso",
+        "de Sinistro",
+        "Incêndio (Inclusive Decorrente de 3.137.400,00 10% DOS 779,98",
+        "Tumultos, Greves e Lockout), Raio, PREJUÍZOS, COM",
+        "Explosão, Implosão, Fumaça e MÍNIMO DE R$",
+        "Queda de Aeronaves 1.500,00",
+        "(EXCLUSIVAMENTE",
+        "EM CASO DE RAIO)",
+        "CUSTOS DE DEFESA DO 6.000,00 NÃO HÁ   18,55",
+        "SEGURADO - EM DECORRÊNCIA",
+        "DE RESPONSABILIDADE CIVIL",
+        "OPERAÇÕES",
+        "DESPESAS DE CONTENÇÃO E 50.000,00 10% DOS 76,23",
+        "SALVAMENTO PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "1.000,00",
+        "Danos Elétricos   30.000,00 15% DOS 261,81",
+        "PREJUÍZOS, COM",
+        "5/204"
+      ],
+      "items": [
+        {
+          "x": 284,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "5/204",
+          "str": "5/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 78,
+          "y": 567,
+          "width": 172,
+          "height": 12,
+          "texto": "HOTEL, MOTEL OU POUSADA",
+          "str": "HOTEL, MOTEL OU POUSADA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 105,
+          "y": 505,
+          "width": 21,
+          "height": 12,
+          "texto": "Sim",
+          "str": "Sim",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 395,
+          "width": 94,
+          "height": 12,
+          "texto": "Danos Materiais:",
+          "str": "Danos Materiais:",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 112,
+          "y": 395,
+          "width": 385,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 496,
+          "y": 395,
+          "width": 80,
+          "height": 12,
+          "texto": "3.137.400,00",
+          "str": "3.137.400,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 381,
+          "width": 102,
+          "height": 12,
+          "texto": "Lucros Cessantes:",
+          "str": "Lucros Cessantes:",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 120,
+          "y": 381,
+          "width": 388,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 508,
+          "y": 381,
+          "width": 68,
+          "height": 12,
+          "texto": "390.000,00",
+          "str": "390.000,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 366,
+          "width": 32,
+          "height": 12,
+          "texto": "Total:",
+          "str": "Total:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 50,
+          "y": 366,
+          "width": 446,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 496,
+          "y": 366,
+          "width": 80,
+          "height": 12,
+          "texto": "3.527.400,00",
+          "str": "3.527.400,00",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 224,
+          "y": 345,
+          "width": 99,
+          "height": 12,
+          "texto": "R$ 3.613.400,00",
+          "str": "R$ 3.613.400,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 658,
+          "width": 477,
+          "height": 14,
+          "texto": "Especificação da Apólice - Descrição do Item - 1 - Grupo 01 - Patrimonial",
+          "str": "Especificação da Apólice - Descrição do Item - 1 - Grupo 01 - Patrimonial",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 632,
+          "width": 36,
+          "height": 12,
+          "texto": "Ramo:",
+          "str": "Ramo:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 54,
+          "y": 632,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 58,
+          "y": 632,
+          "width": 23,
+          "height": 12,
+          "texto": "18 -",
+          "str": "18 -",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 81,
+          "y": 632,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 89,
+          "y": 632,
+          "width": 181,
+          "height": 12,
+          "texto": "COMPREENSIVO EMPRESARIAL",
+          "str": "COMPREENSIVO EMPRESARIAL",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 270,
+          "y": 632,
+          "width": 12,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 282,
+          "y": 632,
+          "width": 115,
+          "height": 12,
+          "texto": "Processo SUSEP n°:",
+          "str": "Processo SUSEP n°:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 396,
+          "y": 632,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 400,
+          "y": 632,
+          "width": 140,
+          "height": 12,
+          "texto": "15414.900584/2018-68",
+          "str": "15414.900584/2018-68",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 609,
+          "width": 230,
+          "height": 14,
+          "texto": "Questionário de Avaliação de Risco",
+          "str": "Questionário de Avaliação de Risco",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 588,
+          "width": 84,
+          "height": 12,
+          "texto": "Local de Risco:",
+          "str": "Local de Risco:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 102,
+          "y": 588,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 106,
+          "y": 588,
+          "width": 414,
+          "height": 12,
+          "texto": "AV BEIRA MAR, 3470 - 740 - MEIRELES - 60165-120 - FORTALEZA - CE",
+          "str": "AV BEIRA MAR, 3470 - 740 - MEIRELES - 60165-120 - FORTALEZA - CE",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 567,
+          "width": 56,
+          "height": 12,
+          "texto": "Atividade:",
+          "str": "Atividade:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 547,
+          "width": 125,
+          "height": 12,
+          "texto": "Classe de Construção:",
+          "str": "Classe de Construção:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 143,
+          "y": 547,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 147,
+          "y": 547,
+          "width": 58,
+          "height": 12,
+          "texto": "SUPERIOR",
+          "str": "SUPERIOR",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 526,
+          "width": 85,
+          "height": 12,
+          "texto": "Bens Cobertos:",
+          "str": "Bens Cobertos:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 103,
+          "y": 526,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 107,
+          "y": 526,
+          "width": 125,
+          "height": 12,
+          "texto": "PRÉDIO E CONTEÚDO",
+          "str": "PRÉDIO E CONTEÚDO",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 505,
+          "width": 84,
+          "height": 12,
+          "texto": "Valor de Novo:",
+          "str": "Valor de Novo:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 484,
+          "width": 72,
+          "height": 12,
+          "texto": "Protecionais:",
+          "str": "Protecionais:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 90,
+          "y": 484,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 94,
+          "y": 484,
+          "width": 74,
+          "height": 12,
+          "texto": "EXTINTORES",
+          "str": "EXTINTORES",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 464,
+          "width": 68,
+          "height": 12,
+          "texto": "Localização:",
+          "str": "Localização:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 86,
+          "y": 464,
+          "width": 4,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 90,
+          "y": 464,
+          "width": 385,
+          "height": 12,
+          "texto": "SUB-SOLO, TÉRREO, MEZANINO OU ATÉ O 1º ANDAR DE EDIFÍCIO",
+          "str": "SUB-SOLO, TÉRREO, MEZANINO OU ATÉ O 1º ANDAR DE EDIFÍCIO",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 440,
+          "width": 87,
+          "height": 12,
+          "texto": "Outros Seguros",
+          "str": "Outros Seguros",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 105,
+          "y": 440,
+          "width": 321,
+          "height": 12,
+          "texto": ": O segurado não declarou a existência de outros seguros",
+          "str": ": O segurado não declarou a existência de outros seguros",
+          "fontName": "g_d0_f4",
+          "isBold": false
+        },
+        {
+          "x": 426,
+          "y": 440,
+          "width": 3,
+          "height": 12,
+          "texto": ".",
+          "str": ".",
+          "fontName": "g_d0_f5",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 413,
+          "width": 182,
+          "height": 12,
+          "texto": "Valor(es) em Risco Declarado(s):",
+          "str": "Valor(es) em Risco Declarado(s):",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 345,
+          "width": 203,
+          "height": 12,
+          "texto": "Limite Máximo de Responsabilidade:",
+          "str": "Limite Máximo de Responsabilidade:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 96,
+          "y": 289,
+          "width": 55,
+          "height": 12,
+          "texto": "Cobertura",
+          "str": "Cobertura",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 151,
+          "y": 289,
+          "width": 89,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 240,
+          "y": 297,
+          "width": 99,
+          "height": 12,
+          "texto": "Limite Máximo de",
+          "str": "Limite Máximo de",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 244,
+          "y": 282,
+          "width": 93,
+          "height": 12,
+          "texto": "Indenização - R$",
+          "str": "Indenização - R$",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 382,
+          "y": 319,
+          "width": 55,
+          "height": 12,
+          "texto": "Franquia /",
+          "str": "Franquia /",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 376,
+          "y": 304,
+          "width": 68,
+          "height": 12,
+          "texto": "Participação",
+          "str": "Participação",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 370,
+          "y": 289,
+          "width": 79,
+          "height": 12,
+          "texto": "Obrigatória do",
+          "str": "Obrigatória do",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 357,
+          "y": 275,
+          "width": 105,
+          "height": 12,
+          "texto": "Segurado em Caso",
+          "str": "Segurado em Caso",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 380,
+          "y": 260,
+          "width": 59,
+          "height": 12,
+          "texto": "de Sinistro",
+          "str": "de Sinistro",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 470,
+          "y": 289,
+          "width": 106,
+          "height": 12,
+          "texto": "Prêmio líquido - R$",
+          "str": "Prêmio líquido - R$",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 245,
+          "width": 186,
+          "height": 12,
+          "texto": "Incêndio (Inclusive Decorrente de",
+          "str": "Incêndio (Inclusive Decorrente de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 231,
+          "width": 197,
+          "height": 12,
+          "texto": "Tumultos, Greves e Lockout), Raio,",
+          "str": "Tumultos, Greves e Lockout), Raio,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 216,
+          "width": 169,
+          "height": 12,
+          "texto": "Explosão, Implosão, Fumaça e",
+          "str": "Explosão, Implosão, Fumaça e",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 201,
+          "width": 116,
+          "height": 12,
+          "texto": "Queda de Aeronaves",
+          "str": "Queda de Aeronaves",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 267,
+          "y": 245,
+          "width": 142,
+          "height": 12,
+          "texto": "3.137.400,00 10% DOS",
+          "str": "3.137.400,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 231,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 216,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 201,
+          "width": 53,
+          "height": 12,
+          "texto": "1.500,00",
+          "str": "1.500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 186,
+          "width": 113,
+          "height": 12,
+          "texto": "(EXCLUSIVAMENTE",
+          "str": "(EXCLUSIVAMENTE",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 172,
+          "width": 113,
+          "height": 12,
+          "texto": "EM CASO DE RAIO)",
+          "str": "EM CASO DE RAIO)",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 245,
+          "width": 42,
+          "height": 12,
+          "texto": "779,98",
+          "str": "779,98",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 157,
+          "width": 140,
+          "height": 12,
+          "texto": "CUSTOS DE DEFESA DO",
+          "str": "CUSTOS DE DEFESA DO",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 142,
+          "width": 185,
+          "height": 12,
+          "texto": "SEGURADO - EM DECORRÊNCIA",
+          "str": "SEGURADO - EM DECORRÊNCIA",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 127,
+          "width": 172,
+          "height": 12,
+          "texto": "DE RESPONSABILIDADE CIVIL",
+          "str": "DE RESPONSABILIDADE CIVIL",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 113,
+          "width": 72,
+          "height": 12,
+          "texto": "OPERAÇÕES",
+          "str": "OPERAÇÕES",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 294,
+          "y": 157,
+          "width": 107,
+          "height": 12,
+          "texto": "6.000,00 NÃO HÁ",
+          "str": "6.000,00 NÃO HÁ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 401,
+          "y": 157,
+          "width": 138,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 157,
+          "width": 34,
+          "height": 12,
+          "texto": "18,55",
+          "str": "18,55",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 98,
+          "width": 172,
+          "height": 12,
+          "texto": "DESPESAS DE CONTENÇÃO E",
+          "str": "DESPESAS DE CONTENÇÃO E",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 83,
+          "width": 84,
+          "height": 12,
+          "texto": "SALVAMENTO",
+          "str": "SALVAMENTO",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 98,
+          "width": 123,
+          "height": 12,
+          "texto": "50.000,00 10% DOS",
+          "str": "50.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 83,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 68,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 54,
+          "width": 53,
+          "height": 12,
+          "texto": "1.000,00",
+          "str": "1.000,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 98,
+          "width": 34,
+          "height": 12,
+          "texto": "76,23",
+          "str": "76,23",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 39,
+          "width": 86,
+          "height": 12,
+          "texto": "Danos Elétricos",
+          "str": "Danos Elétricos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 107,
+          "y": 39,
+          "width": 180,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 39,
+          "width": 123,
+          "height": 12,
+          "texto": "30.000,00 15% DOS",
+          "str": "30.000,00 15% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 24,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 39,
+          "width": 42,
+          "height": 12,
+          "texto": "261,81",
+          "str": "261,81",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 6,
+      "text": "MÍNIMO DE R$\n2.500,00\nDesmoronamento   10.000,00 20% DOS 32,97\nPREJUÍZOS, COM\nMÍNIMO DE R$\n5.000,00\nEquipamentos Eletrônicos   5.000,00 10% DOS 36,26\nPREJUÍZOS, COM\nMÍNIMO DE R$\n500,00\nInfidelidade de Empregados   50.000,00 10% DOS 310,06\nPREJUÍZOS, COM\nMÍNIMO DE R$\n750,00\nLucros Cessantes (Despesas Fixas), 390.000,00 AS PRIMEIRAS 96 217,74\nem Decorrência de Incêndio HORAS DE\n(Inclusive Decorrente de Tumultos, PARALISAÇÃO.\nGreves e Lockout), Raio, Explosão,\nImplosão, Fumaça e Queda de\nAeronaves (Período Indenitário =\n12 Meses)\nRecomposição de Registros e 10.000,00 10% DOS 32,97\nDocumentos PREJUÍZOS, COM\nMÍNIMO DE R$\n600,00\nResponsabilidade Civil Operações   30.000,00 NÃO HÁ   69,67\nRoubo de Bens de Hóspedes   50.000,00 R$ 1.000,00   91,95\nRoubo e Furto Mediante 5.000,00 10% DOS 44,05\nArrombamento PREJUÍZOS, COM\nMÍNIMO DE R$\n3.000,00\nTumultos, Greves, Lockout e Atos 10.000,00 10% DOS 32,97\nDolosos PREJUÍZOS, COM\nMÍNIMO DE R$\n750,00\nValores em Trânsito   10.000,00 10% DOS 393,97\nPREJUÍZOS, COM\nMÍNIMO DE R$\n500,00\nValores no Interior do 5.000,00 10% DOS 196,96\nEstabelecimento PREJUÍZOS, COM\nMÍNIMO DE R$\n500,00\n6/204",
+      "lines": [
+        "MÍNIMO DE R$",
+        "2.500,00",
+        "Desmoronamento   10.000,00 20% DOS 32,97",
+        "PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "5.000,00",
+        "Equipamentos Eletrônicos   5.000,00 10% DOS 36,26",
+        "PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "500,00",
+        "Infidelidade de Empregados   50.000,00 10% DOS 310,06",
+        "PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "750,00",
+        "Lucros Cessantes (Despesas Fixas), 390.000,00 AS PRIMEIRAS 96 217,74",
+        "em Decorrência de Incêndio HORAS DE",
+        "(Inclusive Decorrente de Tumultos, PARALISAÇÃO.",
+        "Greves e Lockout), Raio, Explosão,",
+        "Implosão, Fumaça e Queda de",
+        "Aeronaves (Período Indenitário =",
+        "12 Meses)",
+        "Recomposição de Registros e 10.000,00 10% DOS 32,97",
+        "Documentos PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "600,00",
+        "Responsabilidade Civil Operações   30.000,00 NÃO HÁ   69,67",
+        "Roubo de Bens de Hóspedes   50.000,00 R$ 1.000,00   91,95",
+        "Roubo e Furto Mediante 5.000,00 10% DOS 44,05",
+        "Arrombamento PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "3.000,00",
+        "Tumultos, Greves, Lockout e Atos 10.000,00 10% DOS 32,97",
+        "Dolosos PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "750,00",
+        "Valores em Trânsito   10.000,00 10% DOS 393,97",
+        "PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "500,00",
+        "Valores no Interior do 5.000,00 10% DOS 196,96",
+        "Estabelecimento PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "500,00",
+        "6/204"
+      ],
+      "items": [
+        {
+          "x": 284,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "6/204",
+          "str": "6/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 672,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 657,
+          "width": 53,
+          "height": 12,
+          "texto": "2.500,00",
+          "str": "2.500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 642,
+          "width": 98,
+          "height": 12,
+          "texto": "Desmoronamento",
+          "str": "Desmoronamento",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 119,
+          "y": 642,
+          "width": 168,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 642,
+          "width": 123,
+          "height": 12,
+          "texto": "10.000,00 20% DOS",
+          "str": "10.000,00 20% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 628,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 613,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 598,
+          "width": 53,
+          "height": 12,
+          "texto": "5.000,00",
+          "str": "5.000,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 642,
+          "width": 34,
+          "height": 12,
+          "texto": "32,97",
+          "str": "32,97",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 583,
+          "width": 143,
+          "height": 12,
+          "texto": "Equipamentos Eletrônicos",
+          "str": "Equipamentos Eletrônicos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 583,
+          "width": 130,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 294,
+          "y": 583,
+          "width": 116,
+          "height": 12,
+          "texto": "5.000,00 10% DOS",
+          "str": "5.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 569,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 554,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 539,
+          "width": 42,
+          "height": 12,
+          "texto": "500,00",
+          "str": "500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 583,
+          "width": 34,
+          "height": 12,
+          "texto": "36,26",
+          "str": "36,26",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 524,
+          "width": 153,
+          "height": 12,
+          "texto": "Infidelidade de Empregados",
+          "str": "Infidelidade de Empregados",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 173,
+          "y": 524,
+          "width": 113,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 524,
+          "width": 123,
+          "height": 12,
+          "texto": "50.000,00 10% DOS",
+          "str": "50.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 509,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 495,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 480,
+          "width": 42,
+          "height": 12,
+          "texto": "750,00",
+          "str": "750,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 524,
+          "width": 42,
+          "height": 12,
+          "texto": "310,06",
+          "str": "310,06",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 465,
+          "width": 200,
+          "height": 12,
+          "texto": "Lucros Cessantes (Despesas Fixas),",
+          "str": "Lucros Cessantes (Despesas Fixas),",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 450,
+          "width": 155,
+          "height": 12,
+          "texto": "em Decorrência de Incêndio",
+          "str": "em Decorrência de Incêndio",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 436,
+          "width": 195,
+          "height": 12,
+          "texto": "(Inclusive Decorrente de Tumultos,",
+          "str": "(Inclusive Decorrente de Tumultos,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 421,
+          "width": 195,
+          "height": 12,
+          "texto": "Greves e Lockout), Raio, Explosão,",
+          "str": "Greves e Lockout), Raio, Explosão,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 406,
+          "width": 169,
+          "height": 12,
+          "texto": "Implosão, Fumaça e Queda de",
+          "str": "Implosão, Fumaça e Queda de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 391,
+          "width": 186,
+          "height": 12,
+          "texto": "Aeronaves (Período Indenitário =",
+          "str": "Aeronaves (Período Indenitário =",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 377,
+          "width": 59,
+          "height": 12,
+          "texto": "12 Meses)",
+          "str": "12 Meses)",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 279,
+          "y": 465,
+          "width": 178,
+          "height": 12,
+          "texto": "390.000,00 AS PRIMEIRAS 96",
+          "str": "390.000,00 AS PRIMEIRAS 96",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 450,
+          "width": 62,
+          "height": 12,
+          "texto": "HORAS DE",
+          "str": "HORAS DE",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 436,
+          "width": 90,
+          "height": 12,
+          "texto": "PARALISAÇÃO.",
+          "str": "PARALISAÇÃO.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 465,
+          "width": 42,
+          "height": 12,
+          "texto": "217,74",
+          "str": "217,74",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 362,
+          "width": 164,
+          "height": 12,
+          "texto": "Recomposição de Registros e",
+          "str": "Recomposição de Registros e",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 347,
+          "width": 70,
+          "height": 12,
+          "texto": "Documentos",
+          "str": "Documentos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 362,
+          "width": 123,
+          "height": 12,
+          "texto": "10.000,00 10% DOS",
+          "str": "10.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 347,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 332,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 318,
+          "width": 42,
+          "height": 12,
+          "texto": "600,00",
+          "str": "600,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 362,
+          "width": 34,
+          "height": 12,
+          "texto": "32,97",
+          "str": "32,97",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 303,
+          "width": 186,
+          "height": 12,
+          "texto": "Responsabilidade Civil Operações",
+          "str": "Responsabilidade Civil Operações",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 207,
+          "y": 303,
+          "width": 79,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 303,
+          "width": 115,
+          "height": 12,
+          "texto": "30.000,00 NÃO HÁ",
+          "str": "30.000,00 NÃO HÁ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 401,
+          "y": 303,
+          "width": 138,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 303,
+          "width": 34,
+          "height": 12,
+          "texto": "69,67",
+          "str": "69,67",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 288,
+          "width": 159,
+          "height": 12,
+          "texto": "Roubo de Bens de Hóspedes",
+          "str": "Roubo de Bens de Hóspedes",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 180,
+          "y": 288,
+          "width": 107,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 288,
+          "width": 139,
+          "height": 12,
+          "texto": "50.000,00 R$ 1.000,00",
+          "str": "50.000,00 R$ 1.000,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 425,
+          "y": 288,
+          "width": 114,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 288,
+          "width": 34,
+          "height": 12,
+          "texto": "91,95",
+          "str": "91,95",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 273,
+          "width": 134,
+          "height": 12,
+          "texto": "Roubo e Furto Mediante",
+          "str": "Roubo e Furto Mediante",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 259,
+          "width": 83,
+          "height": 12,
+          "texto": "Arrombamento",
+          "str": "Arrombamento",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 294,
+          "y": 273,
+          "width": 116,
+          "height": 12,
+          "texto": "5.000,00 10% DOS",
+          "str": "5.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 259,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 244,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 229,
+          "width": 53,
+          "height": 12,
+          "texto": "3.000,00",
+          "str": "3.000,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 273,
+          "width": 34,
+          "height": 12,
+          "texto": "44,05",
+          "str": "44,05",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 214,
+          "width": 192,
+          "height": 12,
+          "texto": "Tumultos, Greves, Lockout e Atos",
+          "str": "Tumultos, Greves, Lockout e Atos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 200,
+          "width": 44,
+          "height": 12,
+          "texto": "Dolosos",
+          "str": "Dolosos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 214,
+          "width": 123,
+          "height": 12,
+          "texto": "10.000,00 10% DOS",
+          "str": "10.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 200,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 185,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 170,
+          "width": 42,
+          "height": 12,
+          "texto": "750,00",
+          "str": "750,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 214,
+          "width": 34,
+          "height": 12,
+          "texto": "32,97",
+          "str": "32,97",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 155,
+          "width": 112,
+          "height": 12,
+          "texto": "Valores em Trânsito",
+          "str": "Valores em Trânsito",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 133,
+          "y": 155,
+          "width": 154,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 155,
+          "width": 123,
+          "height": 12,
+          "texto": "10.000,00 10% DOS",
+          "str": "10.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 140,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 126,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 111,
+          "width": 42,
+          "height": 12,
+          "texto": "500,00",
+          "str": "500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 155,
+          "width": 42,
+          "height": 12,
+          "texto": "393,97",
+          "str": "393,97",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 96,
+          "width": 120,
+          "height": 12,
+          "texto": "Valores no Interior do",
+          "str": "Valores no Interior do",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 81,
+          "width": 91,
+          "height": 12,
+          "texto": "Estabelecimento",
+          "str": "Estabelecimento",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 294,
+          "y": 96,
+          "width": 116,
+          "height": 12,
+          "texto": "5.000,00 10% DOS",
+          "str": "5.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 81,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 67,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 52,
+          "width": 42,
+          "height": 12,
+          "texto": "500,00",
+          "str": "500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 532,
+          "y": 96,
+          "width": 42,
+          "height": 12,
+          "texto": "196,96",
+          "str": "196,96",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 7,
+      "text": "Vazamento de Chuveiros 100.000,00 10% DOS 32,97\nAutomáticos (Sprinklers) PREJUÍZOS, COM\nMÍNIMO DE R$\n500,00\nVendaval, Furacão, Ciclone, 10.000,00 15% DOS 79,27\nTornado, Granizo e Impacto de PREJUÍZOS, COM\nVeículos MÍNIMO DE R$\n2.500,00\nPrêmio Líquido Total R$:   2.708,38\n7/204",
+      "lines": [
+        "Vazamento de Chuveiros 100.000,00 10% DOS 32,97",
+        "Automáticos (Sprinklers) PREJUÍZOS, COM",
+        "MÍNIMO DE R$",
+        "500,00",
+        "Vendaval, Furacão, Ciclone, 10.000,00 15% DOS 79,27",
+        "Tornado, Granizo e Impacto de PREJUÍZOS, COM",
+        "Veículos MÍNIMO DE R$",
+        "2.500,00",
+        "Prêmio Líquido Total R$:   2.708,38",
+        "7/204"
+      ],
+      "items": [
+        {
+          "x": 284,
+          "y": 10,
+          "width": 28,
+          "height": 10,
+          "texto": "7/204",
+          "str": "7/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 672,
+          "width": 139,
+          "height": 12,
+          "texto": "Vazamento de Chuveiros",
+          "str": "Vazamento de Chuveiros",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 657,
+          "width": 137,
+          "height": 12,
+          "texto": "Automáticos (Sprinklers)",
+          "str": "Automáticos (Sprinklers)",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 279,
+          "y": 672,
+          "width": 131,
+          "height": 12,
+          "texto": "100.000,00 10% DOS",
+          "str": "100.000,00 10% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 657,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 642,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 628,
+          "width": 42,
+          "height": 12,
+          "texto": "500,00",
+          "str": "500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 672,
+          "width": 34,
+          "height": 12,
+          "texto": "32,97",
+          "str": "32,97",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 613,
+          "width": 156,
+          "height": 12,
+          "texto": "Vendaval, Furacão, Ciclone,",
+          "str": "Vendaval, Furacão, Ciclone,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 598,
+          "width": 172,
+          "height": 12,
+          "texto": "Tornado, Granizo e Impacto de",
+          "str": "Tornado, Granizo e Impacto de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 21,
+          "y": 583,
+          "width": 47,
+          "height": 12,
+          "texto": "Veículos",
+          "str": "Veículos",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 286,
+          "y": 613,
+          "width": 123,
+          "height": 12,
+          "texto": "10.000,00 15% DOS",
+          "str": "10.000,00 15% DOS",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 598,
+          "width": 101,
+          "height": 12,
+          "texto": "PREJUÍZOS, COM",
+          "str": "PREJUÍZOS, COM",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 583,
+          "width": 85,
+          "height": 12,
+          "texto": "MÍNIMO DE R$",
+          "str": "MÍNIMO DE R$",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 569,
+          "width": 53,
+          "height": 12,
+          "texto": "2.500,00",
+          "str": "2.500,00",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 539,
+          "y": 613,
+          "width": 34,
+          "height": 12,
+          "texto": "79,27",
+          "str": "79,27",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 317,
+          "y": 548,
+          "width": 137,
+          "height": 12,
+          "texto": "Prêmio Líquido Total R$:",
+          "str": "Prêmio Líquido Total R$:",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 455,
+          "y": 548,
+          "width": 66,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 520,
+          "y": 548,
+          "width": 53,
+          "height": 12,
+          "texto": "2.708,38",
+          "str": "2.708,38",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        }
+      ]
+    },
+    {
+      "pageNumber": 204,
+      "text": "Informações Complementares\nEste Seguro é garantido pela TOKIO MARINE SEGURADORA S.A. - Código SUSEP: 6190 - CNPJ\n33.164.021/0001-00 - Rua Sampaio Viana, 44 - Paraíso - São Paulo/SP.\nO registro do produto é automático e não representa aprovação ou recomendação por parte da\nSusep.\nO   segurado   fica   ciente   que,   quando   necessário,   seus   dados   poderão   ser   compartilhados   pela\nSeguradora   a   empresas   parceiras,   para   o   fim   específico   de   atender   a   prestação   de   serviços\ndecorrente do contrato de seguro, respeitando-se a confidencialidade das informações.\nAs Condições Contratuais deste produto protocolizadas pela   Tokio Marine Seguradora S.A . junto a\nSUSEP poderão ser consultadas no endereço eletrônico   www.susep.gov.br , de acordo com o(s)\nnúmero(s) de processo(s) constantes nesta Apólice / Endosso.\nO segurado poderá consultar a situação cadastral do corretor de seguros e da sociedade seguradora\nno sítio eletrônico www.susep.gov.br.\nSUSEP   Superintendência   de   Seguros   Privados   Autarquia   Federal   responsável   pela   fiscalização,\nnormatização e controle dos mercados de seguro, previdência complementar aberta, capitalização,\nresseguro e corretagem de seguros\nAtendimento ao Público da SUSEP : 0800 021 8484 (de segunda à sexta, das 9:30 às 17:00).\nA   Tokio Marine Seguradora S.A. , baseando-se nas informações constantes da proposta que lhe foi\napresentada pelo segurado / estipulante, proposta que, servindo de base à emissão do presente\ndocumento,   fica   fazendo   parte   integrante   e   inseparável   deste   contrato,   obriga-se   a   pagar   as\nindenizações   que   lhe   forem   devidas   em   conformidade   com   as   condições   contratuais\nconvencionadas,   insertas   no presente   ou em   seus anexos, às consequências dos eventos aqui\ndiscriminados.\nRessalta-se que, qualquer informação inverídica, inexata ou omitida, poderá culminar na perda ao\ndireito da indenização securitária.\nPara a validade do presente contrato, a   Tokio Marine Seguradora S.A. , neste ato assistida por seus\nrepresentantes legais, assinam este documento.\nSao Paulo, 23 de outubro de 2026.\nAtenciosamente,\nTOKIO MARINE SEGURADORA S.A.,\n204/204",
+      "lines": [
+        "Informações Complementares",
+        "Este Seguro é garantido pela TOKIO MARINE SEGURADORA S.A. - Código SUSEP: 6190 - CNPJ",
+        "33.164.021/0001-00 - Rua Sampaio Viana, 44 - Paraíso - São Paulo/SP.",
+        "O registro do produto é automático e não representa aprovação ou recomendação por parte da",
+        "Susep.",
+        "O   segurado   fica   ciente   que,   quando   necessário,   seus   dados   poderão   ser   compartilhados   pela",
+        "Seguradora   a   empresas   parceiras,   para   o   fim   específico   de   atender   a   prestação   de   serviços",
+        "decorrente do contrato de seguro, respeitando-se a confidencialidade das informações.",
+        "As Condições Contratuais deste produto protocolizadas pela   Tokio Marine Seguradora S.A . junto a",
+        "SUSEP poderão ser consultadas no endereço eletrônico   www.susep.gov.br , de acordo com o(s)",
+        "número(s) de processo(s) constantes nesta Apólice / Endosso.",
+        "O segurado poderá consultar a situação cadastral do corretor de seguros e da sociedade seguradora",
+        "no sítio eletrônico www.susep.gov.br.",
+        "SUSEP   Superintendência   de   Seguros   Privados   Autarquia   Federal   responsável   pela   fiscalização,",
+        "normatização e controle dos mercados de seguro, previdência complementar aberta, capitalização,",
+        "resseguro e corretagem de seguros",
+        "Atendimento ao Público da SUSEP : 0800 021 8484 (de segunda à sexta, das 9:30 às 17:00).",
+        "A   Tokio Marine Seguradora S.A. , baseando-se nas informações constantes da proposta que lhe foi",
+        "apresentada pelo segurado / estipulante, proposta que, servindo de base à emissão do presente",
+        "documento,   fica   fazendo   parte   integrante   e   inseparável   deste   contrato,   obriga-se   a   pagar   as",
+        "indenizações   que   lhe   forem   devidas   em   conformidade   com   as   condições   contratuais",
+        "convencionadas,   insertas   no presente   ou em   seus anexos, às consequências dos eventos aqui",
+        "discriminados.",
+        "Ressalta-se que, qualquer informação inverídica, inexata ou omitida, poderá culminar na perda ao",
+        "direito da indenização securitária.",
+        "Para a validade do presente contrato, a   Tokio Marine Seguradora S.A. , neste ato assistida por seus",
+        "representantes legais, assinam este documento.",
+        "Sao Paulo, 23 de outubro de 2026.",
+        "Atenciosamente,",
+        "TOKIO MARINE SEGURADORA S.A.,",
+        "204/204"
+      ],
+      "items": [
+        {
+          "x": 278,
+          "y": 10,
+          "width": 41,
+          "height": 10,
+          "texto": "204/204",
+          "str": "204/204",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 667,
+          "width": 193,
+          "height": 14,
+          "texto": "Informações Complementares",
+          "str": "Informações Complementares",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 649,
+          "width": 564,
+          "height": 12,
+          "texto": "Este Seguro é garantido pela TOKIO MARINE SEGURADORA S.A. - Código SUSEP: 6190 - CNPJ",
+          "str": "Este Seguro é garantido pela TOKIO MARINE SEGURADORA S.A. - Código SUSEP: 6190 - CNPJ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 634,
+          "width": 407,
+          "height": 12,
+          "texto": "33.164.021/0001-00 - Rua Sampaio Viana, 44 - Paraíso - São Paulo/SP.",
+          "str": "33.164.021/0001-00 - Rua Sampaio Viana, 44 - Paraíso - São Paulo/SP.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 614,
+          "width": 564,
+          "height": 12,
+          "texto": "O registro do produto é automático e não representa aprovação ou recomendação por parte da",
+          "str": "O registro do produto é automático e não representa aprovação ou recomendação por parte da",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 599,
+          "width": 38,
+          "height": 12,
+          "texto": "Susep.",
+          "str": "Susep.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 578,
+          "width": 9,
+          "height": 12,
+          "texto": "O",
+          "str": "O",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 27,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 35,
+          "y": 578,
+          "width": 51,
+          "height": 12,
+          "texto": "segurado",
+          "str": "segurado",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 86,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 94,
+          "y": 578,
+          "width": 20,
+          "height": 12,
+          "texto": "fica",
+          "str": "fica",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 114,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 122,
+          "y": 578,
+          "width": 34,
+          "height": 12,
+          "texto": "ciente",
+          "str": "ciente",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 156,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 164,
+          "y": 578,
+          "width": 24,
+          "height": 12,
+          "texto": "que,",
+          "str": "que,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 188,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 196,
+          "y": 578,
+          "width": 41,
+          "height": 12,
+          "texto": "quando",
+          "str": "quando",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 237,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 245,
+          "y": 578,
+          "width": 63,
+          "height": 12,
+          "texto": "necessário,",
+          "str": "necessário,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 307,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 315,
+          "y": 578,
+          "width": 25,
+          "height": 12,
+          "texto": "seus",
+          "str": "seus",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 341,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 349,
+          "y": 578,
+          "width": 33,
+          "height": 12,
+          "texto": "dados",
+          "str": "dados",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 382,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 390,
+          "y": 578,
+          "width": 45,
+          "height": 12,
+          "texto": "poderão",
+          "str": "poderão",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 434,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 442,
+          "y": 578,
+          "width": 17,
+          "height": 12,
+          "texto": "ser",
+          "str": "ser",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 459,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 467,
+          "y": 578,
+          "width": 85,
+          "height": 12,
+          "texto": "compartilhados",
+          "str": "compartilhados",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 552,
+          "y": 578,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 559,
+          "y": 578,
+          "width": 23,
+          "height": 12,
+          "texto": "pela",
+          "str": "pela",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 563,
+          "width": 63,
+          "height": 12,
+          "texto": "Seguradora",
+          "str": "Seguradora",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 81,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 90,
+          "y": 563,
+          "width": 6,
+          "height": 12,
+          "texto": "a",
+          "str": "a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 96,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 104,
+          "y": 563,
+          "width": 53,
+          "height": 12,
+          "texto": "empresas",
+          "str": "empresas",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 157,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 166,
+          "y": 563,
+          "width": 54,
+          "height": 12,
+          "texto": "parceiras,",
+          "str": "parceiras,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 220,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 228,
+          "y": 563,
+          "width": 24,
+          "height": 12,
+          "texto": "para",
+          "str": "para",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 252,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 260,
+          "y": 563,
+          "width": 7,
+          "height": 12,
+          "texto": "o",
+          "str": "o",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 267,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 276,
+          "y": 563,
+          "width": 18,
+          "height": 12,
+          "texto": "fim",
+          "str": "fim",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 293,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 302,
+          "y": 563,
+          "width": 56,
+          "height": 12,
+          "texto": "específico",
+          "str": "específico",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 357,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 366,
+          "y": 563,
+          "width": 13,
+          "height": 12,
+          "texto": "de",
+          "str": "de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 379,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 388,
+          "y": 563,
+          "width": 42,
+          "height": 12,
+          "texto": "atender",
+          "str": "atender",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 429,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 438,
+          "y": 563,
+          "width": 6,
+          "height": 12,
+          "texto": "a",
+          "str": "a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 444,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 452,
+          "y": 563,
+          "width": 54,
+          "height": 12,
+          "texto": "prestação",
+          "str": "prestação",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 507,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 515,
+          "y": 563,
+          "width": 13,
+          "height": 12,
+          "texto": "de",
+          "str": "de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 528,
+          "y": 563,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 537,
+          "y": 563,
+          "width": 46,
+          "height": 12,
+          "texto": "serviços",
+          "str": "serviços",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 549,
+          "width": 485,
+          "height": 12,
+          "texto": "decorrente do contrato de seguro, respeitando-se a confidencialidade das informações.",
+          "str": "decorrente do contrato de seguro, respeitando-se a confidencialidade das informações.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 528,
+          "width": 343,
+          "height": 12,
+          "texto": "As Condições Contratuais deste produto protocolizadas pela",
+          "str": "As Condições Contratuais deste produto protocolizadas pela",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 361,
+          "y": 528,
+          "width": 5,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 366,
+          "y": 528,
+          "width": 167,
+          "height": 12,
+          "texto": "Tokio Marine Seguradora S.A",
+          "str": "Tokio Marine Seguradora S.A",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 534,
+          "y": 528,
+          "width": 49,
+          "height": 12,
+          "texto": ". junto a",
+          "str": ". junto a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 513,
+          "width": 324,
+          "height": 12,
+          "texto": "SUSEP poderão ser consultadas no endereço eletrônico",
+          "str": "SUSEP poderão ser consultadas no endereço eletrônico",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 342,
+          "y": 513,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 349,
+          "y": 513,
+          "width": 107,
+          "height": 12,
+          "texto": "www.susep.gov.br",
+          "str": "www.susep.gov.br",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 456,
+          "y": 513,
+          "width": 126,
+          "height": 12,
+          "texto": ", de acordo com o(s)",
+          "str": ", de acordo com o(s)",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 498,
+          "width": 348,
+          "height": 12,
+          "texto": "número(s) de processo(s) constantes nesta Apólice / Endosso.",
+          "str": "número(s) de processo(s) constantes nesta Apólice / Endosso.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 478,
+          "width": 564,
+          "height": 12,
+          "texto": "O segurado poderá consultar a situação cadastral do corretor de seguros e da sociedade seguradora",
+          "str": "O segurado poderá consultar a situação cadastral do corretor de seguros e da sociedade seguradora",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 463,
+          "width": 214,
+          "height": 12,
+          "texto": "no sítio eletrônico www.susep.gov.br.",
+          "str": "no sítio eletrônico www.susep.gov.br.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 442,
+          "width": 38,
+          "height": 12,
+          "texto": "SUSEP",
+          "str": "SUSEP",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 56,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 65,
+          "y": 442,
+          "width": 96,
+          "height": 12,
+          "texto": "Superintendência",
+          "str": "Superintendência",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 160,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 169,
+          "y": 442,
+          "width": 13,
+          "height": 12,
+          "texto": "de",
+          "str": "de",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 182,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 190,
+          "y": 442,
+          "width": 45,
+          "height": 12,
+          "texto": "Seguros",
+          "str": "Seguros",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 235,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 243,
+          "y": 442,
+          "width": 47,
+          "height": 12,
+          "texto": "Privados",
+          "str": "Privados",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 291,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 299,
+          "y": 442,
+          "width": 54,
+          "height": 12,
+          "texto": "Autarquia",
+          "str": "Autarquia",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 353,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 361,
+          "y": 442,
+          "width": 40,
+          "height": 12,
+          "texto": "Federal",
+          "str": "Federal",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 401,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 409,
+          "y": 442,
+          "width": 66,
+          "height": 12,
+          "texto": "responsável",
+          "str": "responsável",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 475,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 483,
+          "y": 442,
+          "width": 23,
+          "height": 12,
+          "texto": "pela",
+          "str": "pela",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 506,
+          "y": 442,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 514,
+          "y": 442,
+          "width": 68,
+          "height": 12,
+          "texto": "fiscalização,",
+          "str": "fiscalização,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 427,
+          "width": 564,
+          "height": 12,
+          "texto": "normatização e controle dos mercados de seguro, previdência complementar aberta, capitalização,",
+          "str": "normatização e controle dos mercados de seguro, previdência complementar aberta, capitalização,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 413,
+          "width": 196,
+          "height": 12,
+          "texto": "resseguro e corretagem de seguros",
+          "str": "resseguro e corretagem de seguros",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 389,
+          "width": 192,
+          "height": 12,
+          "texto": "Atendimento ao Público da SUSEP",
+          "str": "Atendimento ao Público da SUSEP",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 210,
+          "y": 389,
+          "width": 336,
+          "height": 12,
+          "texto": ": 0800 021 8484 (de segunda à sexta, das 9:30 às 17:00).",
+          "str": ": 0800 021 8484 (de segunda à sexta, das 9:30 às 17:00).",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 361,
+          "width": 9,
+          "height": 12,
+          "texto": "A",
+          "str": "A",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 27,
+          "y": 361,
+          "width": 5,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 32,
+          "y": 361,
+          "width": 171,
+          "height": 12,
+          "texto": "Tokio Marine Seguradora S.A.",
+          "str": "Tokio Marine Seguradora S.A.",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 203,
+          "y": 361,
+          "width": 379,
+          "height": 12,
+          "texto": ", baseando-se nas informações constantes da proposta que lhe foi",
+          "str": ", baseando-se nas informações constantes da proposta que lhe foi",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 346,
+          "width": 564,
+          "height": 12,
+          "texto": "apresentada pelo segurado / estipulante, proposta que, servindo de base à emissão do presente",
+          "str": "apresentada pelo segurado / estipulante, proposta que, servindo de base à emissão do presente",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 331,
+          "width": 66,
+          "height": 12,
+          "texto": "documento,",
+          "str": "documento,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 84,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 93,
+          "y": 331,
+          "width": 20,
+          "height": 12,
+          "texto": "fica",
+          "str": "fica",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 113,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 121,
+          "y": 331,
+          "width": 44,
+          "height": 12,
+          "texto": "fazendo",
+          "str": "fazendo",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 165,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 173,
+          "y": 331,
+          "width": 28,
+          "height": 12,
+          "texto": "parte",
+          "str": "parte",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 202,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 210,
+          "y": 331,
+          "width": 56,
+          "height": 12,
+          "texto": "integrante",
+          "str": "integrante",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 266,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 274,
+          "y": 331,
+          "width": 6,
+          "height": 12,
+          "texto": "e",
+          "str": "e",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 281,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 289,
+          "y": 331,
+          "width": 62,
+          "height": 12,
+          "texto": "inseparável",
+          "str": "inseparável",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 351,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 359,
+          "y": 331,
+          "width": 30,
+          "height": 12,
+          "texto": "deste",
+          "str": "deste",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 390,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 398,
+          "y": 331,
+          "width": 51,
+          "height": 12,
+          "texto": "contrato,",
+          "str": "contrato,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 449,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 457,
+          "y": 331,
+          "width": 51,
+          "height": 12,
+          "texto": "obriga-se",
+          "str": "obriga-se",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 508,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 516,
+          "y": 331,
+          "width": 6,
+          "height": 12,
+          "texto": "a",
+          "str": "a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 522,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 531,
+          "y": 331,
+          "width": 31,
+          "height": 12,
+          "texto": "pagar",
+          "str": "pagar",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 561,
+          "y": 331,
+          "width": 8,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 570,
+          "y": 331,
+          "width": 12,
+          "height": 12,
+          "texto": "as",
+          "str": "as",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 316,
+          "width": 71,
+          "height": 12,
+          "texto": "indenizações",
+          "str": "indenizações",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 89,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 102,
+          "y": 316,
+          "width": 20,
+          "height": 12,
+          "texto": "que",
+          "str": "que",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 123,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 136,
+          "y": 316,
+          "width": 16,
+          "height": 12,
+          "texto": "lhe",
+          "str": "lhe",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 152,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 166,
+          "y": 316,
+          "width": 32,
+          "height": 12,
+          "texto": "forem",
+          "str": "forem",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 198,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 212,
+          "y": 316,
+          "width": 42,
+          "height": 12,
+          "texto": "devidas",
+          "str": "devidas",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 254,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 268,
+          "y": 316,
+          "width": 17,
+          "height": 12,
+          "texto": "em",
+          "str": "em",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 285,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 298,
+          "y": 316,
+          "width": 76,
+          "height": 12,
+          "texto": "conformidade",
+          "str": "conformidade",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 374,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 388,
+          "y": 316,
+          "width": 24,
+          "height": 12,
+          "texto": "com",
+          "str": "com",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 411,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 425,
+          "y": 316,
+          "width": 12,
+          "height": 12,
+          "texto": "as",
+          "str": "as",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 437,
+          "y": 316,
+          "width": 14,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 451,
+          "y": 316,
+          "width": 56,
+          "height": 12,
+          "texto": "condições",
+          "str": "condições",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 507,
+          "y": 316,
+          "width": 13,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 520,
+          "y": 316,
+          "width": 62,
+          "height": 12,
+          "texto": "contratuais",
+          "str": "contratuais",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 302,
+          "width": 93,
+          "height": 12,
+          "texto": "convencionadas,",
+          "str": "convencionadas,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 111,
+          "y": 302,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 118,
+          "y": 302,
+          "width": 43,
+          "height": 12,
+          "texto": "insertas",
+          "str": "insertas",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 162,
+          "y": 302,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 169,
+          "y": 302,
+          "width": 69,
+          "height": 12,
+          "texto": "no presente",
+          "str": "no presente",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 238,
+          "y": 302,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 245,
+          "y": 302,
+          "width": 38,
+          "height": 12,
+          "texto": "ou em",
+          "str": "ou em",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 283,
+          "y": 302,
+          "width": 7,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 290,
+          "y": 302,
+          "width": 292,
+          "height": 12,
+          "texto": "seus anexos, às consequências dos eventos aqui",
+          "str": "seus anexos, às consequências dos eventos aqui",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 287,
+          "width": 80,
+          "height": 12,
+          "texto": "discriminados.",
+          "str": "discriminados.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 266,
+          "width": 543,
+          "height": 12,
+          "texto": "Ressalta-se que, qualquer informação inverídica, inexata ou omitida, poderá culminar na perda ao",
+          "str": "Ressalta-se que, qualquer informação inverídica, inexata ou omitida, poderá culminar na perda ao",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 251,
+          "width": 186,
+          "height": 12,
+          "texto": "direito da indenização securitária.",
+          "str": "direito da indenização securitária.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 231,
+          "width": 223,
+          "height": 12,
+          "texto": "Para a validade do presente contrato, a",
+          "str": "Para a validade do presente contrato, a",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 241,
+          "y": 231,
+          "width": 5,
+          "texto": " ",
+          "str": " ",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 246,
+          "y": 231,
+          "width": 170,
+          "height": 12,
+          "texto": "Tokio Marine Seguradora S.A.",
+          "str": "Tokio Marine Seguradora S.A.",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 416,
+          "y": 231,
+          "width": 166,
+          "height": 12,
+          "texto": ", neste ato assistida por seus",
+          "str": ", neste ato assistida por seus",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 216,
+          "width": 268,
+          "height": 12,
+          "texto": "representantes legais, assinam este documento.",
+          "str": "representantes legais, assinam este documento.",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 186,
+          "width": 198,
+          "height": 12,
+          "texto": "Sao Paulo, 23 de outubro de 2026.",
+          "str": "Sao Paulo, 23 de outubro de 2026.",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 162,
+          "width": 94,
+          "height": 12,
+          "texto": "Atenciosamente,",
+          "str": "Atenciosamente,",
+          "fontName": "g_d0_f3",
+          "isBold": false
+        },
+        {
+          "x": 18,
+          "y": 139,
+          "width": 207,
+          "height": 12,
+          "texto": "TOKIO MARINE SEGURADORA S.A.,",
+          "str": "TOKIO MARINE SEGURADORA S.A.,",
+          "fontName": "g_d0_f2",
+          "isBold": false
+        }
+      ]
+    }
+  ]
 }

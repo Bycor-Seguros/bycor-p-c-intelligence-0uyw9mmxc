@@ -1,8 +1,7 @@
-import type {} from 'node'
-
 // Script auxiliar para inspecionar o resultado do parser Tokio
 const g: any = typeof globalThis !== 'undefined' ? globalThis : {}
-const rootDir = (typeof process !== 'undefined' && typeof process.cwd === 'function') ? process.cwd() : ''
+const rootDir =
+  typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : ''
 const fixturePath = 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json'
 
 import {

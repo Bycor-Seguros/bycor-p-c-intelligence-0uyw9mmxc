@@ -260,7 +260,11 @@ async function loadTokioFixture(): Promise<PdfPageText[] | null> {
     // Tenta carregar do diretório de assets diretamente onde o diagnóstico do anexo está instalado
     const assetModules = (import.meta as any).glob('../../assets/*tokio*.json', { eager: true })
     for (const k of Object.keys(assetModules || {})) {
-      if (k.includes('diagnostico-fragmentos') || k.includes('tokiobtfortaleza') || k.includes('tokio')) {
+      if (
+        k.includes('diagnostico-fragmentos') ||
+        k.includes('tokiobtfortaleza') ||
+        k.includes('tokio')
+      ) {
         const mod: any = assetModules[k]
         const data = mod?.default || mod
         if (data?.pages && data.pages.length > 0) {
