@@ -1,7 +1,7 @@
 // Script auxiliar para inspecionar o resultado do parser Tokio
 const g: any = typeof globalThis !== 'undefined' ? globalThis : {}
 const rootDir =
-  typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : ''
+  typeof g.process !== 'undefined' && typeof g.process.cwd === 'function' ? g.process.cwd() : ''
 const fixturePath = 'src/services/__tests__/fixtures/tokio-bt-fortaleza.json'
 
 import {
@@ -46,6 +46,19 @@ export function evaluateTokioGoldenSuite() {
   return { matches, total: TABELA_VERDADE_TOKIO.length }
 }
 
-export function getTokioCurrentResults() {
+export function getTokioCurrentResults(): import('../apoliceReader').ExtractedApoliceCobertura[] {
+  try {
+    const fixtureModules = (import.meta as any).glob('./fixtures/*.json', { eager: true })
+    for (const k of Object.keys(fixtureModules || {})) {
+      if (k.includes('tokio-bt-fortaleza')) {
+        const data = fixtureModules[k]?.default || fixtureModules[k]
+        if (data?.pages && data.pages.length > 0) {
+          return extractTokioCoberturas(data.pages)
+        }
+      }
+    }
+  } catch {
+    // Fallback
+  }
   return []
 }
