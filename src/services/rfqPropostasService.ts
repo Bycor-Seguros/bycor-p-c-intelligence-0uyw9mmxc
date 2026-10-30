@@ -2,6 +2,52 @@ import pb from '@/lib/pocketbase/client'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { normalizarSeguradora } from './seguradoraNormalizer'
 
+export type BasePremioUi = 'liquido' | 'net'
+
+export const BASE_PREMIO_CANONICA = {
+  LIQUIDO: 'Prêmio Líquido (já com comissão)',
+  NET: 'Prêmio Net (sem comissão)',
+} as const
+
+/**
+ * Normaliza o valor de base do prêmio (seja chave curta 'liquido'/'net' ou texto arbitrário)
+ * para os valores canônicos aceitos no schema do PocketBase da coleção propostas.
+ */
+export function normalizarBasePremioParaEscrita(
+  valor?: string | null,
+): 'Prêmio Líquido (já com comissão)' | 'Prêmio Net (sem comissão)' | undefined {
+  if (!valor) return undefined
+  const v = valor.trim().toLowerCase()
+  if (v === 'net' || v.includes('net') || v.includes('sem comissão')) {
+    return BASE_PREMIO_CANONICA.NET
+  }
+  if (
+    v === 'liquido' ||
+    v === 'líquido' ||
+    v.includes('líquido') ||
+    v.includes('liquido') ||
+    v.includes('com comissão')
+  ) {
+    return BASE_PREMIO_CANONICA.LIQUIDO
+  }
+  // Se já for exatamente uma das canônicas
+  if (valor === BASE_PREMIO_CANONICA.NET) return BASE_PREMIO_CANONICA.NET
+  if (valor === BASE_PREMIO_CANONICA.LIQUIDO) return BASE_PREMIO_CANONICA.LIQUIDO
+  return undefined
+}
+
+/**
+ * Mapeamento inverso para repopular os seletores da UI ('liquido' | 'net').
+ */
+export function desnormalizarBasePremioParaUi(valor?: string | null): BasePremioUi {
+  if (!valor) return 'liquido'
+  const v = valor.trim().toLowerCase()
+  if (v === 'net' || v.includes('net') || v.includes('sem comissão')) {
+    return 'net'
+  }
+  return 'liquido'
+}
+
 export type RfqSeguradoraStatus = 'Convidada' | 'Kit entregue' | 'Proposta recebida' | 'Declinou'
 
 export interface RfqSeguradoraRecord {
@@ -380,7 +426,10 @@ export async function registrarPropostaManual(
   if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
   if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
     propPayload.comissao_trabalhada = Number(comissaoTrabalhada)
-  if (basePremio !== undefined) propPayload.base_premio = basePremio
+  if (basePremio !== undefined) {
+    const baseNorm = normalizarBasePremioParaEscrita(basePremio)
+    if (baseNorm) propPayload.base_premio = baseNorm
+  }
   if (vrdDm !== undefined && vrdDm !== null) propPayload.vrd_dm = Number(vrdDm)
   if (vrdMmu !== undefined && vrdMmu !== null) propPayload.vrd_mmu = Number(vrdMmu)
   if (vrdMmp !== undefined && vrdMmp !== null) propPayload.vrd_mmp = Number(vrdMmp)
@@ -591,8 +640,10 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   if (iof !== undefined && iof !== null) formData.append('iof', String(iof))
   if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
     formData.append('comissao_trabalhada', String(comissaoTrabalhada))
-  if (basePremio !== undefined && basePremio !== null)
-    formData.append('base_premio', String(basePremio))
+  if (basePremio !== undefined && basePremio !== null) {
+    const baseNorm = normalizarBasePremioParaEscrita(basePremio)
+    if (baseNorm) formData.append('base_premio', baseNorm)
+  }
 
   if (vrdDm !== undefined && vrdDm !== null) formData.append('vrd_dm', String(vrdDm))
   if (vrdMmu !== undefined && vrdMmu !== null) formData.append('vrd_mmu', String(vrdMmu))

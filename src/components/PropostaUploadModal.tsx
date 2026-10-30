@@ -36,7 +36,12 @@ import {
   LeitorPropostaResultado,
   ExtractedCoberturaItem,
 } from '@/services/propostaReader'
-import { registrarPropostaComArquivo, RfqSeguradoraRecord } from '@/services/rfqPropostasService'
+import {
+  registrarPropostaComArquivo,
+  RfqSeguradoraRecord,
+  desnormalizarBasePremioParaUi,
+} from '@/services/rfqPropostasService'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { normalizarSeguradora } from '@/services/seguradoraNormalizer'
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
@@ -371,10 +376,18 @@ export default function PropostaUploadModal({
 
     if (extractedNet) {
       setPremioNet(String(extractedNet))
-      setBasePremio('net')
+      setBasePremio(
+        seg.basePremio || seg.dadosComplementares?.basePremio
+          ? desnormalizarBasePremioParaUi(seg.basePremio || seg.dadosComplementares?.basePremio)
+          : 'net',
+      )
     } else {
       setPremioNet('')
-      setBasePremio('liquido')
+      setBasePremio(
+        seg.basePremio || seg.dadosComplementares?.basePremio
+          ? desnormalizarBasePremioParaUi(seg.basePremio || seg.dadosComplementares?.basePremio)
+          : 'liquido',
+      )
     }
     setComissaoTrabalhada('')
 
@@ -468,7 +481,8 @@ export default function PropostaUploadModal({
       handleOpenChange(false)
     } catch (err: unknown) {
       console.error(err)
-      alert('Erro ao registrar proposta: ' + (err as Error).message)
+      const msg = getErrorMessage(err)
+      alert('Erro ao registrar proposta: ' + msg)
     } finally {
       setSaving(false)
     }

@@ -22,8 +22,13 @@ export function extractFieldErrors(error: unknown): FieldErrors {
 
 export function getErrorMessage(error: unknown): string {
   if (!(error instanceof ClientResponseError)) {
-    return error instanceof Error ? error.message : 'An unexpected error occurred.'
+    return error instanceof Error ? error.message : 'Ocorreu um erro inesperado.'
   }
-  const msgs = Object.values(extractFieldErrors(error))
-  return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
+  const fieldErrors = extractFieldErrors(error)
+  const entries = Object.entries(fieldErrors)
+  if (entries.length > 0) {
+    const details = entries.map(([field, msg]) => `campo "${field}": ${msg}`).join('; ')
+    return `${error.message || 'Erro de validação'} (${details})`
+  }
+  return error.message || 'Ocorreu um erro inesperado.'
 }

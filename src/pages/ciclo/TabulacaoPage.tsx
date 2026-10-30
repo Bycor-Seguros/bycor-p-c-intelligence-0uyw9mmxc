@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
+import { desnormalizarBasePremioParaUi } from '@/services/rfqPropostasService'
 
 interface PropostaCoverageItem {
   nome?: string
@@ -472,7 +473,10 @@ export default function TabulacaoPage() {
                       {p.comissao_trabalhada !== undefined && p.comissao_trabalhada !== null ? (
                         <span className="font-bold text-[#16578B]">
                           {p.comissao_trabalhada}% (
-                          {p.base_premio === 'net' ? 'base Net' : 'base Líquido'})
+                          {desnormalizarBasePremioParaUi(p.base_premio) === 'net'
+                            ? 'base Net'
+                            : 'base Líquido'}
+                          )
                         </span>
                       ) : (
                         <span className="text-gray-400">—</span>

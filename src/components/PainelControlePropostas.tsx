@@ -49,7 +49,9 @@ import {
   toggleKitEntregue,
   marcarDeclinio,
   registrarPropostaManual,
+  desnormalizarBasePremioParaUi,
 } from '@/services/rfqPropostasService'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 import PropostaUploadModal from '@/components/PropostaUploadModal'
 
 interface PainelControlePropostasProps {
@@ -235,7 +237,7 @@ export function PainelControlePropostas({
         ? p.comissao_trabalhada
         : '',
     )
-    setBasePremio((p?.base_premio as any) === 'net' ? 'net' : 'liquido')
+    setBasePremio(desnormalizarBasePremioParaUi(p?.base_premio))
     setVrdDm(p?.vrd_dm !== undefined && p?.vrd_dm !== null ? p.vrd_dm : '')
     setVrdMmu(p?.vrd_mmu !== undefined && p?.vrd_mmu !== null ? p.vrd_mmu : '')
     setVrdMmp(p?.vrd_mmp !== undefined && p?.vrd_mmp !== null ? p.vrd_mmp : '')
@@ -384,7 +386,8 @@ export function PainelControlePropostas({
       onDataChange?.()
     } catch (err) {
       console.error(err)
-      alert('Erro ao registrar proposta: ' + (err as Error).message)
+      const msg = getErrorMessage(err)
+      alert('Erro ao registrar proposta: ' + msg)
     } finally {
       setSavingProp(false)
     }
@@ -780,8 +783,10 @@ export function PainelControlePropostas({
                             {propostaData?.comissao_trabalhada !== undefined &&
                               propostaData?.comissao_trabalhada !== null && (
                                 <div className="text-[10px] text-blue-700">
-                                  Comis: {propostaData.comissao_trabalhada}% (
-                                  {propostaData.base_premio === 'net' ? 'base Net' : 'base Líquido'}
+                                  Comis: {propostaData.comissao_trabalhada}% ({' '}
+                                  {desnormalizarBasePremioParaUi(propostaData.base_premio) === 'net'
+                                    ? 'base Net'
+                                    : 'base Líquido'}
                                   )
                                 </div>
                               )}
