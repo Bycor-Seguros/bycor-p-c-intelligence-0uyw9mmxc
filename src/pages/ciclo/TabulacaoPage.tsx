@@ -51,6 +51,14 @@ interface PropostaRecord {
   lmi_lmg: number
   premio_liquido: number
   premio_bruto: number
+  premio_net?: number
+  comissao_trabalhada?: number
+  base_premio?: string
+  vrd_dm?: number
+  vrd_mmu?: number
+  vrd_mmp?: number
+  vrd_lc?: number
+  vrd_lc_base?: string
   iof: number
   status: 'Pendente' | 'Tabulada' | 'Selecionada' | 'Não selecionada'
   expand?: {
@@ -415,7 +423,7 @@ export default function TabulacaoPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-gray-800">
-                {/* 1. Valores Financeiros Gerais */}
+                {/* 1. Valores Financeiros Gerais (Tríade de Prêmios & Comissão) */}
                 <tr className="bg-gray-50/80 font-bold text-gray-900">
                   <td className="py-2.5 px-4 sticky left-0 bg-gray-50 border-r">
                     Prêmio Total / Bruto
@@ -423,7 +431,7 @@ export default function TabulacaoPage() {
                   {comparedProposals.map((p) => (
                     <td
                       key={p.id}
-                      className="py-2.5 px-4 border-r text-base text-[#0F2B46] tabular-nums"
+                      className="py-2.5 px-4 border-r text-base text-emerald-800 font-bold tabular-nums"
                     >
                       {p.premio_bruto ? formatCurrency(p.premio_bruto) : '—'}
                     </td>
@@ -431,11 +439,44 @@ export default function TabulacaoPage() {
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
-                    Prêmio Líquido
+                    Prêmio Líquido (com comissão)
                   </td>
                   {comparedProposals.map((p) => (
-                    <td key={p.id} className="py-2 px-4 border-r tabular-nums">
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-semibold text-blue-950"
+                    >
                       {formatCurrency(p.premio_liquido)}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    Prêmio Net (sem comissão)
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                    >
+                      {p.premio_net ? formatCurrency(p.premio_net) : '—'}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    Comissão Trabalhada (%)
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td key={p.id} className="py-2 px-4 border-r tabular-nums text-xs">
+                      {p.comissao_trabalhada !== undefined && p.comissao_trabalhada !== null ? (
+                        <span className="font-bold text-[#16578B]">
+                          {p.comissao_trabalhada}% (
+                          {p.base_premio === 'net' ? 'base Net' : 'base Líquido'})
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -444,7 +485,7 @@ export default function TabulacaoPage() {
                     IOF
                   </td>
                   {comparedProposals.map((p) => (
-                    <td key={p.id} className="py-2 px-4 border-r tabular-nums">
+                    <td key={p.id} className="py-2 px-4 border-r tabular-nums text-gray-600">
                       {formatCurrency(p.iof)}
                     </td>
                   ))}
@@ -456,6 +497,77 @@ export default function TabulacaoPage() {
                   {comparedProposals.map((p) => (
                     <td key={p.id} className="py-2 px-4 border-r tabular-nums font-semibold">
                       {formatCurrency(p.lmi_lmg)}
+                    </td>
+                  ))}
+                </tr>
+
+                {/* 1.1 Bloco VRD (Valor em Risco Declarado) */}
+                <tr className="bg-blue-50/70 font-bold text-[#0F2B46]">
+                  <td
+                    colSpan={comparedProposals.length + 1}
+                    className="py-2 px-4 tracking-wider uppercase text-[10px]"
+                  >
+                    Bloco VRD (Valor em Risco Declarado por Seção)
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    VRD - Danos Materiais (DM)
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                    >
+                      {p.vrd_dm ? formatCurrency(p.vrd_dm) : '—'}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    VRD - MMU
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                    >
+                      {p.vrd_mmu ? formatCurrency(p.vrd_mmu) : '—'}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    VRD - MMP
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                    >
+                      {p.vrd_mmp ? formatCurrency(p.vrd_mmp) : '—'}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    VRD - Lucros Cessantes (LC) & Base
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td
+                      key={p.id}
+                      className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                    >
+                      {p.vrd_lc ? (
+                        <span>
+                          {formatCurrency(p.vrd_lc)}{' '}
+                          <span className="text-[10px] text-gray-500 font-sans">
+                            ({p.vrd_lc_base || 'Lucro Bruto'})
+                          </span>
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -523,18 +635,8 @@ export default function TabulacaoPage() {
                     colSpan={comparedProposals.length + 1}
                     className="py-2 px-4 tracking-wider uppercase text-[10px]"
                   >
-                    Franquias POS & Exclusões Contratuais
+                    Condições Contratuais & Exclusões
                   </td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
-                    POS e Franquias Gerais
-                  </td>
-                  {comparedProposals.map((p) => (
-                    <td key={p.id} className="py-2.5 px-4 border-r text-gray-700">
-                      {p.pos_franquias || 'Conforme condições padrão'}
-                    </td>
-                  ))}
                 </tr>
                 <tr>
                   <td className="py-2.5 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">

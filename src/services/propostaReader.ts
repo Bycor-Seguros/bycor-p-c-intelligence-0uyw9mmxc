@@ -11,6 +11,7 @@ import { matchCanonicalCategory } from '@/services/riskCardReader'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { extractTextFromPdf, PdfPageText } from '@/services/pdfTextExtractor'
 import { extractAxaCoberturas, parseAxaPosLegenda } from '@/services/apoliceReader'
+import { isCoberturaBasica, isCoberturaLucrosCessantes } from '@/services/submissionKitService'
 
 export interface ExtractedCoberturaItem {
   cobertura: string
@@ -134,7 +135,23 @@ export interface PropostaSegmentoExtracao {
     lucrosCessantesCausas?: string
     primeiraParcelaValor?: number | null
     demaisParcelasValor?: number | null
+    vrdDm?: number | null
+    vrdMmu?: number | null
+    vrdMmp?: number | null
+    vrdLc?: number | null
+    vrdLcBase?: string
+    premioNet?: number | null
+    comissaoTrabalhada?: number | null
+    basePremio?: string
   }
+  vrdDm?: number | null
+  vrdMmu?: number | null
+  vrdMmp?: number | null
+  vrdLc?: number | null
+  vrdLcBase?: string
+  premioNet?: number | null
+  comissaoTrabalhada?: number | null
+  basePremio?: string
 }
 
 export interface LeitorPropostaResultado {
@@ -920,6 +937,95 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
 
   const finalPremioLiq = premioLiquido || (premioLiquidoSum > 0 ? premioLiquidoSum : null)
 
+  // Extração ou pré-preenchimento de VRD (Danos Materiais e Lucros Cessantes)
+  // Regra do usuário: pré-preencher VRD quando derivar da proposta:
+  // DM pelo LMI da cobertura básica/Danos Materiais e LC pelo LMI da cobertura de Lucros Cessantes
+  let vrdDmExtracted: number | null = null
+  let vrdMmuExtracted: number | null = null
+  let vrdMmpExtracted: number | null = null
+  let vrdLcExtracted: number | null = null
+  let vrdLcBaseExtracted: string = 'Lucro Bruto'
+
+  // Busca detalhamento textual específico se existir no documento
+  // Ex AXA RN: "1 60.000.000,00 20.000.000,00 0,00 80.000.000,00 15.000.000,00"
+  // "Valor em Risco Total de Danos Materiais 80.000.000,00"
+  // "Valor em Risco Total de Lucros Cessantes 15.000.000,00"
+  const vrDmMatch = fullText.match(
+    /Valor\s+em\s+Risco\s+Total\s+de\s+Danos\s+Materiais[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  if (vrDmMatch) {
+    vrdDmExtracted = parsePtBrNumber(vrDmMatch[1])
+  }
+  const vrLcMatch = fullText.match(
+    /Valor\s+em\s+Risco\s+Total\s+de\s+Lucros\s+Cessantes[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  if (vrLcMatch) {
+    vrdLcExtracted = parsePtBrNumber(vrLcMatch[1])
+  }
+
+  // Tabela detalhada 1.2: Prédio, MMU, MMP, Valor em Risco (DM), Lucros Cessantes
+  const tabelaVrdMatch = fullText.match(
+    /\b1\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})\s+([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+  )
+  if (tabelaVrdMatch) {
+    vrdMmuExtracted = parsePtBrNumber(tabelaVrdMatch[2])
+    vrdMmpExtracted = parsePtBrNumber(tabelaVrdMatch[3])
+    if (!vrdDmExtracted) vrdDmExtracted = parsePtBrNumber(tabelaVrdMatch[4])
+    if (!vrdLcExtracted) vrdLcExtracted = parsePtBrNumber(tabelaVrdMatch[5])
+  }
+
+  // Se não extraiu explicitamente do texto do bloco VRD, deriva das coberturas extraídas:
+  // DM = LMI da básica / Danos Materiais
+  // LC = LMI da cobertura de Lucros Cessantes
+  if (!vrdDmExtracted) {
+    const basica = coberturas.find(
+      (c) =>
+        isCoberturaBasica({ nome: c.cobertura, categoriaNormalizada: c.categoriaNormalizada }) ||
+        c.categoriaNormalizada.includes('Incêndio') ||
+        /^Inc[êe]ndio/i.test(c.cobertura),
+    )
+    if (basica?.lmi) {
+      vrdDmExtracted = basica.lmi
+    }
+  }
+
+  if (!vrdLcExtracted) {
+    const lc = coberturas.find(
+      (c) =>
+        isCoberturaLucrosCessantes({
+          nome: c.cobertura,
+          categoriaNormalizada: c.categoriaNormalizada,
+        }) ||
+        c.categoriaNormalizada.includes('Lucros Cessantes') ||
+        /Lucros\s+Cessantes/i.test(c.cobertura),
+    )
+    if (lc?.lmi) {
+      vrdLcExtracted = lc.lmi
+    }
+  }
+
+  // Detecta base de LC a partir do texto
+  if (
+    /Lucros\s+Cessantes\s*\[\s*Ll\s*\+\s*Df\s*\]/i.test(fullText) ||
+    /Lucro\s+L[íi]quido/i.test(fullText)
+  ) {
+    vrdLcBaseExtracted = 'Lucro Líquido (LL)'
+  } else if (/Despesas\s+Fixas/i.test(fullText)) {
+    vrdLcBaseExtracted = 'Despesas Fixas'
+  }
+
+  // Extração de Prêmio Net quando a proposta o apresentar (persistir em premio_net)
+  // Formatos comuns: "Prêmio Net[:\s]*R$ ...", "Premio Net[:\s]*...", "Prêmio sem comissão", etc.
+  let premioNetExtracted: number | null = null
+  const prNetMatch =
+    fullText.match(
+      /Pr[êe]mio\s+Net(?:\s*\(sem\s+comiss[ãa]o\))?[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    ) ||
+    fullText.match(/Pr[êe]mio\s+sem\s+comiss[ãa]o[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+  if (prNetMatch) {
+    premioNetExtracted = parsePtBrNumber(prNetMatch[1])
+  }
+
   return {
     numeroCotacao: cotacao || '',
     versao: versao || '1',
@@ -935,12 +1041,24 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
     numeroParcelas,
     posFranquiasGerais,
     coberturas,
+    vrdDm: vrdDmExtracted,
+    vrdMmu: vrdMmuExtracted,
+    vrdMmp: vrdMmpExtracted,
+    vrdLc: vrdLcExtracted,
+    vrdLcBase: vrdLcBaseExtracted,
+    premioNet: premioNetExtracted,
     dadosComplementares: {
       seguradoNome,
       seguradoCnpj,
       atividade: localRiscoAtividade,
       primeiraParcelaValor,
       demaisParcelasValor,
+      vrdDm: vrdDmExtracted,
+      vrdMmu: vrdMmuExtracted,
+      vrdMmp: vrdMmpExtracted,
+      vrdLc: vrdLcExtracted,
+      vrdLcBase: vrdLcBaseExtracted,
+      premioNet: premioNetExtracted,
     },
   }
 }
@@ -3659,6 +3777,14 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
         rawTextPreview: previewLines,
         statusExtracao,
         diagnostico: diagnosticoSeg,
+        vrdDm: extracted.vrdDm ?? null,
+        vrdMmu: extracted.vrdMmu ?? null,
+        vrdMmp: extracted.vrdMmp ?? null,
+        vrdLc: extracted.vrdLc ?? null,
+        vrdLcBase: extracted.vrdLcBase ?? 'Lucro Bruto',
+        premioNet: extracted.premioNet ?? null,
+        comissaoTrabalhada: extracted.comissaoTrabalhada ?? null,
+        basePremio: extracted.basePremio ?? undefined,
         dadosComplementares: extracted.dadosComplementares,
       })
     }

@@ -31,7 +31,15 @@ export interface RfqSeguradoraRecord {
       lmi_lmg?: number
       premio_liquido?: number
       premio_bruto?: number
+      premio_net?: number
       iof?: number
+      comissao_trabalhada?: number
+      base_premio?: string
+      vrd_dm?: number
+      vrd_mmu?: number
+      vrd_mmp?: number
+      vrd_lc?: number
+      vrd_lc_base?: string
       data_proposta?: string
       pos_franquias?: string
       status?: string
@@ -61,7 +69,15 @@ export interface RegistrarPropostaParams {
   lmiLmg?: number
   premioLiquido?: number
   premioBruto?: number
+  premioNet?: number
   iof?: number
+  comissaoTrabalhada?: number
+  basePremio?: string
+  vrdDm?: number
+  vrdMmu?: number
+  vrdMmp?: number
+  vrdLc?: number
+  vrdLcBase?: string
   posFranquias?: string
   clausulas?: string
   exclusoes?: string
@@ -82,8 +98,16 @@ export interface RegistrarPropostaUploadParams {
   vigenciaFim?: string
   premioLiquido?: number | null
   premioBruto?: number | null
+  premioNet?: number | null
   iof?: number | null
+  comissaoTrabalhada?: number | null
+  basePremio?: string
   lmiLmg?: number | null
+  vrdDm?: number | null
+  vrdMmu?: number | null
+  vrdMmp?: number | null
+  vrdLc?: number | null
+  vrdLcBase?: string
   posFranquias?: string
   formaPagamento?: string
   clausulas?: string
@@ -315,6 +339,14 @@ export async function registrarPropostaManual(
     lmiLmg,
     premioLiquido,
     premioBruto,
+    premioNet,
+    comissaoTrabalhada,
+    basePremio,
+    vrdDm,
+    vrdMmu,
+    vrdMmp,
+    vrdLc,
+    vrdLcBase,
     posFranquias,
     clausulas,
     exclusoes,
@@ -335,14 +367,25 @@ export async function registrarPropostaManual(
     rfq: rfqId,
     seguradora: seguradoraId,
     data_proposta: dataProposta || new Date().toISOString().slice(0, 10),
-    lmi_lmg: lmiLmg ? Number(lmiLmg) : 0,
-    premio_liquido: premioLiquido ? Number(premioLiquido) : 0,
-    premio_bruto: premioBruto ? Number(premioBruto) : 0,
+    lmi_lmg: lmiLmg !== undefined && lmiLmg !== null ? Number(lmiLmg) : 0,
+    premio_liquido:
+      premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0,
+    premio_bruto: premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0,
     pos_franquias: posFranquias?.trim() || '',
     clausulas: clausulas?.trim() || '',
     exclusoes: exclusoes?.trim() || '',
     status: 'Pendente',
   }
+
+  if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
+  if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
+    propPayload.comissao_trabalhada = Number(comissaoTrabalhada)
+  if (basePremio !== undefined) propPayload.base_premio = basePremio
+  if (vrdDm !== undefined && vrdDm !== null) propPayload.vrd_dm = Number(vrdDm)
+  if (vrdMmu !== undefined && vrdMmu !== null) propPayload.vrd_mmu = Number(vrdMmu)
+  if (vrdMmp !== undefined && vrdMmp !== null) propPayload.vrd_mmp = Number(vrdMmp)
+  if (vrdLc !== undefined && vrdLc !== null) propPayload.vrd_lc = Number(vrdLc)
+  if (vrdLcBase !== undefined) propPayload.vrd_lc_base = vrdLcBase
 
   if (iof !== undefined) {
     propPayload.iof = iof ? Number(iof) : 0
@@ -481,8 +524,16 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     vigenciaFim,
     premioLiquido,
     premioBruto,
+    premioNet,
     iof,
+    comissaoTrabalhada,
+    basePremio,
     lmiLmg,
+    vrdDm,
+    vrdMmu,
+    vrdMmp,
+    vrdLc,
+    vrdLcBase,
     posFranquias,
     formaPagamento,
     clausulas,
@@ -535,7 +586,20 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     formData.append('premio_liquido', String(premioLiquido))
   if (premioBruto !== undefined && premioBruto !== null)
     formData.append('premio_bruto', String(premioBruto))
+  if (premioNet !== undefined && premioNet !== null)
+    formData.append('premio_net', String(premioNet))
   if (iof !== undefined && iof !== null) formData.append('iof', String(iof))
+  if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
+    formData.append('comissao_trabalhada', String(comissaoTrabalhada))
+  if (basePremio !== undefined && basePremio !== null)
+    formData.append('base_premio', String(basePremio))
+
+  if (vrdDm !== undefined && vrdDm !== null) formData.append('vrd_dm', String(vrdDm))
+  if (vrdMmu !== undefined && vrdMmu !== null) formData.append('vrd_mmu', String(vrdMmu))
+  if (vrdMmp !== undefined && vrdMmp !== null) formData.append('vrd_mmp', String(vrdMmp))
+  if (vrdLc !== undefined && vrdLc !== null) formData.append('vrd_lc', String(vrdLc))
+  if (vrdLcBase !== undefined && vrdLcBase !== null)
+    formData.append('vrd_lc_base', String(vrdLcBase))
 
   if (posFranquias) formData.append('pos_franquias', posFranquias)
   if (clausulas) formData.append('clausulas', clausulas)

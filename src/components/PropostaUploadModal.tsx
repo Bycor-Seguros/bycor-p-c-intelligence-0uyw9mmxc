@@ -90,6 +90,7 @@ export default function PropostaUploadModal({
   const [vigenciaFim, setVigenciaFim] = useState<string>('')
   const [premioLiquido, setPremioLiquido] = useState<string>('')
   const [premioBruto, setPremioBruto] = useState<string>('')
+  const [premioNet, setPremioNet] = useState<string>('')
   const [iof, setIof] = useState<string>('')
   const [custoApolice, setCustoApolice] = useState<string>('')
   const [lmiLmg, setLmiLmg] = useState<string>('')
@@ -99,6 +100,17 @@ export default function PropostaUploadModal({
   const [clausulas, setClausulas] = useState<string>('')
   const [exclusoes, setExclusoes] = useState<string>('')
   const [coberturas, setCoberturas] = useState<ExtractedCoberturaItem[]>([])
+
+  // Bloco VRD (Danos Materiais, MMU, MMP, Lucros Cessantes + seletor base LC)
+  const [vrdDm, setVrdDm] = useState<string>('')
+  const [vrdMmu, setVrdMmu] = useState<string>('')
+  const [vrdMmp, setVrdMmp] = useState<string>('')
+  const [vrdLc, setVrdLc] = useState<string>('')
+  const [vrdLcBase, setVrdLcBase] = useState<string>('Lucro Bruto')
+
+  // Comissão trabalhada e base do prêmio (reativo)
+  const [comissaoTrabalhada, setComissaoTrabalhada] = useState<string>('')
+  const [basePremio, setBasePremio] = useState<'liquido' | 'net'>('liquido')
 
   // Estado para exclusão com confirmação e edição inline de coberturas
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null)
@@ -195,6 +207,14 @@ export default function PropostaUploadModal({
     setDeletingIndex(null)
     setEditingIndex(null)
     setShowAddForm(false)
+    setVrdDm('')
+    setVrdMmu('')
+    setVrdMmp('')
+    setVrdLc('')
+    setVrdLcBase('Lucro Bruto')
+    setComissaoTrabalhada('')
+    setBasePremio('liquido')
+    setPremioNet('')
   }
 
   // Funções de manipulação do quadro de coberturas
@@ -308,6 +328,56 @@ export default function PropostaUploadModal({
     setFormaPagamento(seg.formaPagamento || '')
     setNumeroParcelas(seg.numeroParcelas ? String(seg.numeroParcelas) : '')
     setCoberturas(seg.coberturas || [])
+
+    // Popula campos VRD extraídos / derivados
+    setVrdDm(
+      seg.vrdDm !== null && seg.vrdDm !== undefined
+        ? String(seg.vrdDm)
+        : seg.dadosComplementares?.vrdDm !== null && seg.dadosComplementares?.vrdDm !== undefined
+          ? String(seg.dadosComplementares.vrdDm)
+          : '',
+    )
+    setVrdMmu(
+      seg.vrdMmu !== null && seg.vrdMmu !== undefined
+        ? String(seg.vrdMmu)
+        : seg.dadosComplementares?.vrdMmu !== null && seg.dadosComplementares?.vrdMmu !== undefined
+          ? String(seg.dadosComplementares.vrdMmu)
+          : '',
+    )
+    setVrdMmp(
+      seg.vrdMmp !== null && seg.vrdMmp !== undefined
+        ? String(seg.vrdMmp)
+        : seg.dadosComplementares?.vrdMmp !== null && seg.dadosComplementares?.vrdMmp !== undefined
+          ? String(seg.dadosComplementares.vrdMmp)
+          : '',
+    )
+    setVrdLc(
+      seg.vrdLc !== null && seg.vrdLc !== undefined
+        ? String(seg.vrdLc)
+        : seg.dadosComplementares?.vrdLc !== null && seg.dadosComplementares?.vrdLc !== undefined
+          ? String(seg.dadosComplementares.vrdLc)
+          : '',
+    )
+    setVrdLcBase(seg.vrdLcBase || seg.dadosComplementares?.vrdLcBase || 'Lucro Bruto')
+
+    // Prêmio net e comissão
+    const extractedNet =
+      seg.premioNet !== null && seg.premioNet !== undefined
+        ? seg.premioNet
+        : seg.dadosComplementares?.premioNet !== null &&
+            seg.dadosComplementares?.premioNet !== undefined
+          ? seg.dadosComplementares.premioNet
+          : null
+
+    if (extractedNet) {
+      setPremioNet(String(extractedNet))
+      setBasePremio('net')
+    } else {
+      setPremioNet('')
+      setBasePremio('liquido')
+    }
+    setComissaoTrabalhada('')
+
     setStep('preview')
   }
 
@@ -369,8 +439,16 @@ export default function PropostaUploadModal({
         vigenciaFim: vigenciaFim || undefined,
         premioLiquido: premioLiquido ? Number(premioLiquido) : null,
         premioBruto: premioBruto ? Number(premioBruto) : null,
+        premioNet: premioNet ? Number(premioNet) : null,
         iof: iof ? Number(iof) : null,
+        comissaoTrabalhada: comissaoTrabalhada ? Number(comissaoTrabalhada) : null,
+        basePremio: basePremio,
         lmiLmg: lmiLmg ? Number(lmiLmg) : null,
+        vrdDm: vrdDm ? Number(vrdDm) : null,
+        vrdMmu: vrdMmu ? Number(vrdMmu) : null,
+        vrdMmp: vrdMmp ? Number(vrdMmp) : null,
+        vrdLc: vrdLc ? Number(vrdLc) : null,
+        vrdLcBase: vrdLcBase || undefined,
         posFranquias: posFranquias.trim() || undefined,
         formaPagamento: formaPagamento.trim() || undefined,
         clausulas: clausulas.trim() || undefined,
@@ -807,49 +885,233 @@ export default function PropostaUploadModal({
                 <span>Condições Financeiras da Oferta</span>
               </span>
 
+              {/* BLOCO DE PRÊMIOS E COMISSÃO TRABALHADA */}
+              <div className="p-3 bg-gray-50/80 rounded-lg border border-gray-200 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-gray-800 text-[11px] flex items-center gap-1.5">
+                    <span>Comissão Trabalhada & Base do Prêmio</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-medium">
+                      Apresentação da Cotação:
+                    </span>
+                    <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBasePremio('liquido')
+                          // Reatribui líquido/net reativamente
+                          const c = parseFloat(comissaoTrabalhada) || 0
+                          const pLiq = parseFloat(premioLiquido) || 0
+                          if (pLiq > 0 && c >= 0 && c < 100) {
+                            const net = pLiq * (1 - c / 100)
+                            setPremioNet(net.toFixed(2))
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                          basePremio === 'liquido'
+                            ? 'bg-[#16578B] text-white'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Prêmio Líquido (com comissão)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBasePremio('net')
+                          // Reatribui líquido/net reativamente
+                          const c = parseFloat(comissaoTrabalhada) || 0
+                          const pNet = parseFloat(premioNet) || 0
+                          if (pNet > 0 && c >= 0 && c < 100) {
+                            const liq = pNet / (1 - c / 100)
+                            setPremioLiquido(liq.toFixed(2))
+                            const iofVal = parseFloat(iof) || 0
+                            setPremioBruto((liq + iofVal).toFixed(2))
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                          basePremio === 'net'
+                            ? 'bg-[#16578B] text-white'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Prêmio Net (sem comissão)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-gray-700">
+                      Comissão Trabalhada (%)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="99.9"
+                      value={comissaoTrabalhada}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setComissaoTrabalhada(val)
+                        const c = parseFloat(val) || 0
+                        const iofVal = parseFloat(iof) || 0
+
+                        if (basePremio === 'liquido') {
+                          const pLiq = parseFloat(premioLiquido) || 0
+                          if (pLiq > 0) {
+                            const net = pLiq * (1 - c / 100)
+                            setPremioNet(net.toFixed(2))
+                            if (!premioBruto || pLiq + iofVal > 0) {
+                              setPremioBruto((pLiq + iofVal).toFixed(2))
+                            }
+                          }
+                        } else {
+                          // base Net
+                          const pNet = parseFloat(premioNet) || 0
+                          if (pNet > 0 && c < 100) {
+                            const pLiq = pNet / (1 - c / 100)
+                            setPremioLiquido(pLiq.toFixed(2))
+                            setPremioBruto((pLiq + iofVal).toFixed(2))
+                          }
+                        }
+                      }}
+                      placeholder="Ex: 15 ou 20"
+                      className="h-8 text-xs font-mono font-bold text-blue-900"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">
+                        Prêmio Net (sem comissão)
+                      </Label>
+                      {premioNet && (
+                        <span className="text-[10px] font-mono text-gray-600">
+                          {formatCurrency(premioNet)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={premioNet}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPremioNet(val)
+                        if (basePremio === 'net') {
+                          const pNet = parseFloat(val) || 0
+                          const c = parseFloat(comissaoTrabalhada) || 0
+                          const iofVal = parseFloat(iof) || 0
+                          if (pNet > 0 && c < 100) {
+                            const pLiq = pNet / (1 - c / 100)
+                            setPremioLiquido(pLiq.toFixed(2))
+                            setPremioBruto((pLiq + iofVal).toFixed(2))
+                          }
+                        }
+                      }}
+                      placeholder="0,00"
+                      className={`h-8 text-xs font-semibold ${
+                        basePremio === 'net' ? 'border-[#16578B] bg-blue-50/30' : ''
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">
+                        Prêmio Líquido (com comissão)
+                      </Label>
+                      {premioLiquido && (
+                        <span className="text-[10px] font-mono text-gray-600">
+                          {formatCurrency(premioLiquido)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={premioLiquido}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPremioLiquido(val)
+                        const pLiq = parseFloat(val) || 0
+                        const c = parseFloat(comissaoTrabalhada) || 0
+                        const iofVal = parseFloat(iof) || 0
+                        if (basePremio === 'liquido') {
+                          if (pLiq > 0) {
+                            const net = pLiq * (1 - c / 100)
+                            setPremioNet(net.toFixed(2))
+                            setPremioBruto((pLiq + iofVal).toFixed(2))
+                          }
+                        } else {
+                          // se base for net mas editou liquido
+                          setPremioBruto((pLiq + iofVal).toFixed(2))
+                        }
+                      }}
+                      placeholder="0,00"
+                      className={`h-8 text-xs font-semibold ${
+                        basePremio === 'liquido' ? 'border-[#16578B] bg-blue-50/30' : ''
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">
+                        Prêmio Bruto (Líquido + IOF)
+                      </Label>
+                      {premioBruto && (
+                        <span className="text-[10px] font-mono text-emerald-700">
+                          {formatCurrency(premioBruto)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={premioBruto}
+                      onChange={(e) => setPremioBruto(e.target.value)}
+                      placeholder="0,00"
+                      className="h-8 text-xs font-bold text-emerald-800"
+                    />
+                  </div>
+                </div>
+
+                {/* Resumo derivado em pill badges */}
+                <div className="p-2 bg-white rounded border border-gray-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="text-gray-500 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>Tríade de Prêmios:</span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono">
+                    <span>
+                      Net:{' '}
+                      <strong className="text-gray-800">
+                        {premioNet ? formatCurrency(premioNet) : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                    <span className="text-gray-300">•</span>
+                    <span>
+                      Líquido:{' '}
+                      <strong className="text-blue-900">
+                        {premioLiquido ? formatCurrency(premioLiquido) : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                    <span className="text-gray-300">•</span>
+                    <span>
+                      Bruto:{' '}
+                      <strong className="text-emerald-700">
+                        {premioBruto ? formatCurrency(premioBruto) : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-[11px] font-semibold text-gray-700">
-                      Prêmio Total / Bruto (R$)
-                    </Label>
-                    {premioBruto && (
-                      <span className="text-[10px] font-mono text-emerald-700">
-                        {formatCurrency(premioBruto)}
-                      </span>
-                    )}
-                  </div>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={premioBruto}
-                    onChange={(e) => setPremioBruto(e.target.value)}
-                    placeholder="0,00"
-                    className="h-8 text-xs font-bold text-emerald-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-[11px] font-semibold text-gray-700">
-                      Prêmio Líquido (R$)
-                    </Label>
-                    {premioLiquido && (
-                      <span className="text-[10px] font-mono text-gray-600">
-                        {formatCurrency(premioLiquido)}
-                      </span>
-                    )}
-                  </div>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={premioLiquido}
-                    onChange={(e) => setPremioLiquido(e.target.value)}
-                    placeholder="0,00"
-                    className="h-8 text-xs font-semibold"
-                  />
-                </div>
-
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <Label className="text-[11px] font-semibold text-gray-700">
@@ -884,14 +1146,20 @@ export default function PropostaUploadModal({
                     type="number"
                     step="0.01"
                     value={iof}
-                    onChange={(e) => setIof(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setIof(val)
+                      const iofNum = parseFloat(val) || 0
+                      const liqNum = parseFloat(premioLiquido) || 0
+                      if (liqNum > 0) {
+                        setPremioBruto((liqNum + iofNum).toFixed(2))
+                      }
+                    }}
                     placeholder="0,00"
                     className="h-8 text-xs text-gray-600"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <Label className="text-[11px] font-semibold text-gray-700">
@@ -925,7 +1193,9 @@ export default function PropostaUploadModal({
                     className="h-8 text-xs"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold text-gray-700">Nº de Parcelas</Label>
                   <Input
@@ -939,17 +1209,112 @@ export default function PropostaUploadModal({
                 </div>
               </div>
 
-              <div className="space-y-1 pt-1">
-                <Label className="text-[11px] font-semibold text-gray-700">
-                  Franquias Gerais / P.O.S.
-                </Label>
-                <Input
-                  type="text"
-                  value={posFranquias}
-                  onChange={(e) => setPosFranquias(e.target.value)}
-                  placeholder="Ex: 10% com mínimo de R$ 5.000 para Danos Elétricos"
-                  className="h-8 text-xs"
-                />
+              {/* BLOCO VRD (VALOR EM RISCO DECLARADO) — SUBSTITUI O CAMPO FRANQUIAS GERAIS / P.O.S. */}
+              <div className="p-3 bg-blue-50/40 rounded-xl border border-blue-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#16578B]" />
+                    <span>Bloco VRD (Valor em Risco Declarado)</span>
+                  </span>
+                  <span className="text-[10px] text-gray-500">
+                    Editável pelo analista • Gravado em campos numéricos por seção
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">
+                        VRD - Danos Materiais (DM)
+                      </Label>
+                      {vrdDm && (
+                        <span className="text-[9px] font-mono text-gray-500">
+                          {formatCurrency(vrdDm)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={vrdDm}
+                      onChange={(e) => setVrdDm(e.target.value)}
+                      placeholder="0,00"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">VRD - MMU</Label>
+                      {vrdMmu && (
+                        <span className="text-[9px] font-mono text-gray-500">
+                          {formatCurrency(vrdMmu)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={vrdMmu}
+                      onChange={(e) => setVrdMmu(e.target.value)}
+                      placeholder="0,00"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">VRD - MMP</Label>
+                      {vrdMmp && (
+                        <span className="text-[9px] font-mono text-gray-500">
+                          {formatCurrency(vrdMmp)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={vrdMmp}
+                      onChange={(e) => setVrdMmp(e.target.value)}
+                      placeholder="0,00"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-gray-700">
+                        VRD - Lucros Cessantes (LC)
+                      </Label>
+                      {vrdLc && (
+                        <span className="text-[9px] font-mono text-gray-500">
+                          {formatCurrency(vrdLc)}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={vrdLc}
+                      onChange={(e) => setVrdLc(e.target.value)}
+                      placeholder="0,00"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-gray-700">Base da LC</Label>
+                    <select
+                      value={vrdLcBase}
+                      onChange={(e) => setVrdLcBase(e.target.value)}
+                      className="w-full h-8 rounded border border-gray-300 bg-white px-2 text-xs font-medium text-gray-800"
+                    >
+                      <option value="Lucro Bruto">Lucro Bruto</option>
+                      <option value="Despesas Fixas">Despesas Fixas</option>
+                      <option value="Lucro Líquido (LL)">Lucro Líquido (LL)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 

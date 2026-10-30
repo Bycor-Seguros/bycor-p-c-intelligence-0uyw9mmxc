@@ -693,6 +693,12 @@ export async function runAllSuites() {
         assertEqual(axaResult.numeroParcelas, 4, 'Número de Parcelas Máximo Sem Juros')
         assertEqual(axaResult.lmiTotal, 95500000, 'LMI Total (LMGA)')
 
+        // VRD pré-preenchido e derivado
+        // DM = 80.000.000 (LMI Incêndio Básica / Valor em Risco DM)
+        // LC = 15.000.000 (LMI Lucros Cessantes)
+        assertEqual(axaResult.vrdDm, 80000000, 'VRD Danos Materiais')
+        assertEqual(axaResult.vrdLc, 15000000, 'VRD Lucros Cessantes')
+
         assertEqual(
           axaResult.dadosComplementares?.seguradoNome,
           'CONDOMÍNIO SÃO INTERNATIONAL SQUARE',
