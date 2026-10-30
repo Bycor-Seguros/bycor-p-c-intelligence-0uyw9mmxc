@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-30T02:41:13.459Z",
+  "generatedAt": "2026-10-30T03:13:29.389Z",
   "collections": [
     {
       "name": "users",
@@ -1481,6 +1481,56 @@
         {
           "name": "forma_pagamento",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vrd_dm",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vrd_mmu",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vrd_mmp",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vrd_lc",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vrd_lc_base",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Lucro Bruto", "Despesas Fixas", "Lucro Líquido (LL)"]
+        },
+        {
+          "name": "comissao_trabalhada",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "base_premio",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Prêmio Líquido (já com comissão)", "Prêmio Net (sem comissão)"]
+        },
+        {
+          "name": "premio_net",
+          "type": "number",
           "required": false,
           "system": false
         }
