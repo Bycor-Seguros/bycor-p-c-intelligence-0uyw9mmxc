@@ -714,16 +714,45 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
     const formaPagMatch = fullText.match(/4\.2\s*Forma\s+de\s+Pagamento[:\s]*([^\n\r]+)/i)
     if (formaPagMatch) {
       formaPagamento = formaPagMatch[1].trim()
-      // Identifica número máximo de parcelas ofertado
-      // "até 7 parcelas" -> 7
-      const maxParcMatch = formaPagamento.match(/at[ée]\s*(\d+)\s*parcelas/gi)
-      if (maxParcMatch && maxParcMatch.length > 0) {
-        let maxP = 0
-        for (const mp of maxParcMatch) {
-          const num = parseInt(mp.replace(/\D/g, ''), 10)
-          if (!isNaN(num) && num > maxP) maxP = num
+
+      // Regra permanente do usuário: o Número de Parcelas extraído deve ser o MÁXIMO SEM JUROS ofertado
+      // 1) Procura cláusula explícita de "sem juros": ex.: "Até 4 parcelas sem juros" ou "4x sem juros"
+      const semJurosMatch =
+        formaPagamento.match(
+          /at[ée]\s*(\d+)\s*parcelas?\s*(?:sem\s+juros|com\s+juros\s*de\s*0(?:[.,]0+)?%)/i,
+        ) || formaPagamento.match(/(\d+)\s*(?:x|parcelas?)\s*sem\s+juros/i)
+
+      if (semJurosMatch) {
+        numeroParcelas = parseInt(semJurosMatch[1], 10)
+      } else {
+        // 2) Se não houver cláusula explícita "sem juros" no texto resumo, analisa a tabela de parcelamento
+        // Linhas da tabela de parcelamento da AXA:
+        // "1 (á vista) 32.314,71 0,00 2.384,83 34.699,54 34.699,54 0,00%"
+        // "4 (1+3) 32.314,71 0,00 2.384,83 34.699,54 8.674,89 0,00%"
+        // "5 (1+4) 32.314,71 1.292,33 2.480,20 36.087,25 7.217,45 2,00%"
+        const tabelaZeroJuros = fullText.matchAll(/(\d+)\s*\([^)]+\)[\s\S]*?0[,.]00%/gi)
+        let maxZeroJurosTable = 0
+        for (const m of tabelaZeroJuros) {
+          const num = parseInt(m[1], 10)
+          if (!isNaN(num) && num > maxZeroJurosTable) {
+            maxZeroJurosTable = num
+          }
         }
-        if (maxP > 0) numeroParcelas = maxP
+
+        if (maxZeroJurosTable > 0) {
+          numeroParcelas = maxZeroJurosTable
+        } else {
+          // 3) Fallback para parcelas gerais apenas se não houver divisão com/sem juros identificada
+          const maxParcMatch = formaPagamento.match(/at[ée]\s*(\d+)\s*parcelas/gi)
+          if (maxParcMatch && maxParcMatch.length > 0) {
+            let maxP = 0
+            for (const mp of maxParcMatch) {
+              const num = parseInt(mp.replace(/\D/g, ''), 10)
+              if (!isNaN(num) && num > maxP) maxP = num
+            }
+            if (maxP > 0) numeroParcelas = maxP
+          }
+        }
       }
     }
   }

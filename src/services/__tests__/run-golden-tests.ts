@@ -690,7 +690,7 @@ export async function runAllSuites() {
         assertEqual(axaResult.premioLiquido, 32314.71, 'Prêmio Líquido')
         assertEqual(axaResult.iof, 2384.83, 'IOF')
         assertEqual(axaResult.premioTotal, 34699.54, 'Prêmio Total')
-        assertEqual(axaResult.numeroParcelas, 7, 'Número de Parcelas Máximo')
+        assertEqual(axaResult.numeroParcelas, 4, 'Número de Parcelas Máximo Sem Juros')
         assertEqual(axaResult.lmiTotal, 95500000, 'LMI Total (LMGA)')
 
         assertEqual(
