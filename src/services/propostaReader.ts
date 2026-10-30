@@ -10,6 +10,7 @@
 import { matchCanonicalCategory } from '@/services/riskCardReader'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { extractTextFromPdf, PdfPageText } from '@/services/pdfTextExtractor'
+import { extractAxaCoberturas, parseAxaPosLegenda } from '@/services/apoliceReader'
 
 export interface ExtractedCoberturaItem {
   cobertura: string
@@ -524,27 +525,57 @@ export function detectDocumentBoundaries(pages: PdfPageText[]): Array<{
 // PARSERS ESPECÍFICOS POR SEGURADORA
 // ==========================================
 
-function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtracao> {
+export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtracao> {
   const fullText = pages.map((p) => p.text).join('\n')
   const lines = pages.flatMap((p) => p.lines)
+
+  // Detecta se é o layout de Riscos Nomeados (Carta Cotação AXA RN)
+  const isAxaRnLayout =
+    /RISCOS\s+NOMEADOS/i.test(fullText) ||
+    /Carta\s+Cota[çc][ãa]o/i.test(fullText) ||
+    /2\.\s*Coberturas\s+do\s+seguro/i.test(fullText) ||
+    /4\.\s*Demonstrativo\s+de\s+Pr[êe]mio/i.test(fullText)
 
   // Cotação e Versão reais do segmento
   let cotacao = ''
   let versao = ''
 
-  // Formato: "Cotação: 3840019 - V2" ou "Cotação nº 3840019" ou "Cotação: 3840019"
-  const cotMatch = fullText.match(/Cota[çc][ãa]o\s*(?:n[º°.]?)?[:\s]*([0-9]+(?:\s*-\s*V\d+)?)/i)
-  if (cotMatch) {
-    cotacao = cotMatch[1].replace(/\s+/g, ' ').trim()
-    const innerV = cotacao.match(/-?\s*V(\d+)/i)
-    if (innerV) {
-      versao = `V${innerV[1]}`
+  if (isAxaRnLayout) {
+    // Ex: "Ref.: Carta Cotação nº C4513405 / 2026 – Opção B1"
+    const cartaMatch = fullText.match(
+      /Carta\s+Cota[çc][ãa]o\s*n[º°.]?\s*([A-Za-z0-9]+(?:\s*\/\s*\d+)?(?:\s*[-–—]\s*Op[çc][ãa]o\s+[A-Za-z0-9]+)?)/i,
+    )
+    if (cartaMatch) {
+      cotacao = cartaMatch[1].replace(/\s+/g, ' ').trim()
+      const opcMatch = cotacao.match(/Op[çc][ãa]o\s+([A-Za-z0-9]+)/i)
+      if (opcMatch) {
+        versao = opcMatch[1].trim()
+      }
+    } else {
+      const numAxaMatch = fullText.match(/N[ÚU]MERO\s+AXA[:\s]*([0-9./-]+)/i)
+      if (numAxaMatch) {
+        cotacao = numAxaMatch[1].trim()
+      }
     }
   }
 
-  const verMatch = fullText.match(/Vers[ãa]o[:\s]*([A-Za-z0-9/]+)/i)
-  if (verMatch) {
-    versao = verMatch[1].trim()
+  // Fallback para outros layouts AXA (ex: Empresa Flex: "Cotação: 3840019 - V2")
+  if (!cotacao) {
+    const cotMatch = fullText.match(/Cota[çc][ãa]o\s*(?:n[º°.]?)?[:\s]*([0-9]+(?:\s*-\s*V\d+)?)/i)
+    if (cotMatch) {
+      cotacao = cotMatch[1].replace(/\s+/g, ' ').trim()
+      const innerV = cotacao.match(/-?\s*V(\d+)/i)
+      if (innerV) {
+        versao = `V${innerV[1]}`
+      }
+    }
+  }
+
+  if (!versao) {
+    const verMatch = fullText.match(/Vers[ãa]o[:\s]*([A-Za-z0-9/]+)/i)
+    if (verMatch) {
+      versao = verMatch[1].trim()
+    }
   }
 
   // Datas
@@ -553,44 +584,170 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
   let vigenciaInicio = ''
   let vigenciaFim = ''
 
-  const dtCotMatch = fullText.match(/Data da Cota[çc][ãa]o[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
-  if (dtCotMatch) dataCotacao = parsePtBrDate(dtCotMatch[1])
+  // Data da cotação no cabeçalho (ex: "28 de Outubro de 2026")
+  const mesesPt: Record<string, string> = {
+    janeiro: '01',
+    fevereiro: '02',
+    março: '03',
+    marco: '03',
+    abril: '04',
+    maio: '05',
+    junho: '06',
+    julho: '07',
+    agosto: '08',
+    setembro: '09',
+    outubro: '10',
+    novembro: '11',
+    dezembro: '12',
+  }
+  const dataExtensoMatch = fullText.match(
+    /(\d{1,2})\s+de\s+(janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/i,
+  )
+  if (dataExtensoMatch) {
+    const d = dataExtensoMatch[1].padStart(2, '0')
+    const mStr = dataExtensoMatch[2].toLowerCase()
+    const mo = mesesPt[mStr] || '01'
+    const y = dataExtensoMatch[3]
+    dataCotacao = `${y}-${mo}-${d}`
+  } else {
+    const dtCotMatch = fullText.match(/Data da Cota[çc][ãa]o[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+    if (dtCotMatch) dataCotacao = parsePtBrDate(dtCotMatch[1])
+  }
 
   const valMatch = fullText.match(/Validade da Cota[çc][ãa]o[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
   if (valMatch) validadeCotacao = parsePtBrDate(valMatch[1])
 
-  const vigIniMatch = fullText.match(/In[íi]cio de vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
-  if (vigIniMatch) vigenciaInicio = parsePtBrDate(vigIniMatch[1])
+  // Vigência
+  // Layout AXA RN: "Início de Vigência: Fim de Vigência: \n A partir das 24h do dia 31/10/2026 Até as 24h do dia 31/10/2027"
+  const vigRnMatch = fullText.match(
+    /(?:A\s+partir\s+das\s+24h\s+do\s+dia|In[íi]cio\s+de\s+Vig[êe]ncia[:\s]*)\s*(\d{1,2}\/\d{1,2}\/\d{4})[\s\S]*?(?:At[ée]\s+as\s+24h\s+do\s+dia|Fim\s+de\s+Vig[êe]ncia[:\s]*)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+  )
+  if (vigRnMatch) {
+    vigenciaInicio = parsePtBrDate(vigRnMatch[1])
+    vigenciaFim = parsePtBrDate(vigRnMatch[2])
+  } else {
+    const vigIniMatch = fullText.match(/In[íi]cio de vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+    if (vigIniMatch) vigenciaInicio = parsePtBrDate(vigIniMatch[1])
 
-  const vigFimMatch = fullText.match(/Fim de vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
-  if (vigFimMatch) vigenciaFim = parsePtBrDate(vigFimMatch[1])
+    const vigFimMatch = fullText.match(/Fim de vig[êe]ncia[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i)
+    if (vigFimMatch) vigenciaFim = parsePtBrDate(vigFimMatch[1])
+  }
+
+  // Proponente, Cossegurado e Dados de Risco
+  let seguradoNome = ''
+  let seguradoCnpj = ''
+  let cosseguradoNome = ''
+  let cosseguradoCnpj = ''
+  let localRiscoEndereco = ''
+  let localRiscoAtividade = ''
+  let corretorNome = ''
+
+  const propMatch = fullText.match(
+    /(?:Proponente|Segurado)[:\s]+([^\n\r]+?)(?:\s+CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}))?(?:\n|$)/i,
+  )
+  if (propMatch) {
+    seguradoNome = propMatch[1].trim()
+    if (propMatch[2]) seguradoCnpj = propMatch[2].trim()
+  }
+  if (!seguradoCnpj) {
+    const cnpjMatch = fullText.match(
+      /(?:Proponente|Segurado)[\s\S]*?CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i,
+    )
+    if (cnpjMatch) seguradoCnpj = cnpjMatch[1].trim()
+  }
+
+  const cossMatch = fullText.match(
+    /Cossegurado\(s\)?:[\s\S]*?([^\n\r]+?)\s+CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i,
+  )
+  if (cossMatch) {
+    cosseguradoNome = cossMatch[1].trim()
+    cosseguradoCnpj = cossMatch[2].trim()
+  }
+
+  const endMatch = fullText.match(
+    /1\.1\s*Locais\s+de\s+Risco[\s\S]*?1\s+([^\n\r]+?)\s+(Hotel[^\n\r]*|Comercial[^\n\r]*|Industrial[^\n\r]*)/i,
+  )
+  if (endMatch) {
+    localRiscoEndereco = endMatch[1].trim()
+    localRiscoAtividade = endMatch[2].trim()
+  }
+
+  const corrMatch = fullText.match(
+    /3\.1\s*Corretagem:[\s\S]*?Corretor[^\n]*\n([A-Z0-9\s.,–-]+?)(?:\s+100|\s+N[º°]|\n)/i,
+  )
+  if (corrMatch) {
+    corretorNome = corrMatch[1].replace(/\s+/g, ' ').trim()
+  }
 
   // Valores de Forma de Pagamento e Prêmio
   let premioTotal: number | null = null
   let premioLiquido: number | null = null
   let iof: number | null = null
   let formaPagamento = ''
+  let numeroParcelas: number | null = null
+  let primeiraParcelaValor: number | null = null
+  let demaisParcelasValor: number | null = null
 
-  // Ex: "A vista - boleto R$ 10.362,77 R$ 0,00 R$ 0,00 R$ 712,21"
-  const aVistaMatch = fullText.match(
-    /A vista\s*-\s*boleto\s*R\$\s*([\d.,]+)\s*R\$\s*[\d.,]+\s*R\$\s*[\d.,]+\s*R\$\s*([\d.,]+)/i,
-  )
-  if (aVistaMatch) {
-    premioTotal = parsePtBrNumber(aVistaMatch[1])
-    iof = parsePtBrNumber(aVistaMatch[2])
-    formaPagamento = 'À vista - boleto'
-  } else {
-    // Linha genérica de forma de pagamento com parcelas
-    const parceladoMatch = fullText.match(
-      /(\d+x\s*(?:sem juros|com juros)?\s*-\s*boleto)\s*R\$\s*([\d.,]+)/i,
+  if (isAxaRnLayout) {
+    // 4.1 Prêmio LIQUIDO de seguro para 100% do risco: R$ 32.314,71
+    const prLiqRn = fullText.match(
+      /Pr[êe]mio\s+LIQUIDO\s+de\s+seguro\s+para\s+100%\s+do\s+risco[:\s]*R?\$?\s*([\d.,]+)/i,
     )
-    if (parceladoMatch) {
-      formaPagamento = parceladoMatch[1].trim()
-      premioTotal = parsePtBrNumber(parceladoMatch[2])
+    if (prLiqRn) {
+      premioLiquido = parsePtBrNumber(prLiqRn[1])
+    }
+
+    // Tabela de parcelamento (página 11):
+    // "1 (á vista) 32.314,71 0,00 2.384,83 34.699,54 34.699,54 0,00%"
+    // Ou linhas: 1 (á vista) ... / 1 (0+1) ...
+    const aVistaRn = fullText.match(
+      /1\s*\([áa]\s*vista\)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i,
+    )
+    if (aVistaRn) {
+      if (!premioLiquido) premioLiquido = parsePtBrNumber(aVistaRn[1])
+      iof = parsePtBrNumber(aVistaRn[3])
+      premioTotal = parsePtBrNumber(aVistaRn[4])
+      primeiraParcelaValor = parsePtBrNumber(aVistaRn[5])
+    }
+
+    // Forma de Pagamento texto: "Até 4 parcelas sem juros, ou até 7 parcelas, com juros de 2,0% ao mês."
+    const formaPagMatch = fullText.match(/4\.2\s*Forma\s+de\s+Pagamento[:\s]*([^\n\r]+)/i)
+    if (formaPagMatch) {
+      formaPagamento = formaPagMatch[1].trim()
+      // Identifica número máximo de parcelas ofertado
+      // "até 7 parcelas" -> 7
+      const maxParcMatch = formaPagamento.match(/at[ée]\s*(\d+)\s*parcelas/gi)
+      if (maxParcMatch && maxParcMatch.length > 0) {
+        let maxP = 0
+        for (const mp of maxParcMatch) {
+          const num = parseInt(mp.replace(/\D/g, ''), 10)
+          if (!isNaN(num) && num > maxP) maxP = num
+        }
+        if (maxP > 0) numeroParcelas = maxP
+      }
     }
   }
 
-  // Busca de prêmio total se ainda nulo
+  // Se ainda não achou prêmio ou forma de pagamento nos blocos RN, aplica parsing genérico AXA
+  if (!premioTotal) {
+    const aVistaMatch = fullText.match(
+      /A vista\s*-\s*boleto\s*R\$\s*([\d.,]+)\s*R\$\s*[\d.,]+\s*R\$\s*[\d.,]+\s*R\$\s*([\d.,]+)/i,
+    )
+    if (aVistaMatch) {
+      premioTotal = parsePtBrNumber(aVistaMatch[1])
+      iof = parsePtBrNumber(aVistaMatch[2])
+      formaPagamento = 'À vista - boleto'
+    } else {
+      const parceladoMatch = fullText.match(
+        /(\d+x\s*(?:sem juros|com juros)?\s*-\s*boleto)\s*R\$\s*([\d.,]+)/i,
+      )
+      if (parceladoMatch) {
+        formaPagamento = parceladoMatch[1].trim()
+        premioTotal = parsePtBrNumber(parceladoMatch[2])
+      }
+    }
+  }
+
   if (!premioTotal) {
     const prTotalMatch = fullText.match(/Pr[êe]mio\s+(?:Total|Bruto)[:\s]*R?\$?\s*([\d.,]+)/i)
     if (prTotalMatch) {
@@ -598,69 +755,137 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
     }
   }
 
-  // Busca de prêmio líquido
-  const prLiqMatch = fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d.,]+)/i)
-  if (prLiqMatch) {
-    premioLiquido = parsePtBrNumber(prLiqMatch[1])
+  if (!premioLiquido) {
+    const prLiqMatch = fullText.match(/Pr[êe]mio\s+L[íi]quido[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (prLiqMatch) {
+      premioLiquido = parsePtBrNumber(prLiqMatch[1])
+    }
   }
 
-  // Tabela ADICIONAIS E/OU SUBLIMITES
-  // Cobertura Local Limite Máximo de Indenização Prêmio Líquido Franquia
+  if (!iof) {
+    const iofMatch = fullText.match(/IOF(?:\s*\([^)]+\))?[:\s]*R?\$?\s*([\d.,]+)/i)
+    if (iofMatch) {
+      iof = parsePtBrNumber(iofMatch[1])
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Coberturas do Seguro
+  // -------------------------------------------------------------------------
   const coberturas: ExtractedCoberturaItem[] = []
-  let insideTable = false
   let premioLiquidoSum = 0
   let lmiSum = 0
+  let posFranquiasGerais = ''
+  let lmiTotalCalculado: number | null = null
 
-  for (const line of lines) {
-    if (line.includes('ADICIONAIS E/OU SUBLIMITES') || line.includes('QUADRO DE COBERTURAS')) {
-      insideTable = true
-      continue
-    }
-    if (
-      insideTable &&
-      (line.includes('PROTECIONAIS DO RISCO') ||
-        line.includes('Serviço De Assistência') ||
-        line.includes('OBSERVAÇÕES IMPORTANTES') ||
-        line.includes('CLÁUSULAS APLICÁVEIS'))
-    ) {
-      insideTable = false
-      break
+  if (isAxaRnLayout) {
+    // 1. Extração do Mapa de Legenda P.O.S. (*) = 10%, etc.
+    const posMap = parseAxaPosLegenda(fullText)
+    const posLegendaItems = Object.entries(posMap).map(([k, v]) => `(${k}) = P.O.S. ${v}`)
+    if (posLegendaItems.length > 0) {
+      posFranquiasGerais = posLegendaItems.join('; ')
     }
 
-    if (insideTable) {
-      // Regex para linha de cobertura AXA:
-      // Nome da Cobertura ... R$ 70.000,00 ... R$ 653,35 ... Franquia
-      const cobMatch = line.match(
-        /^([A-Za-zÀ-ÿ0-9\s/\-_()]+?)\s+(?:\d\s+)?R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\s*(.*)$/i,
+    // 2. Extração de Coberturas via parser AXA completo
+    // Seleciona as páginas que contêm coberturas (páginas com "2. Coberturas do seguro", "Danos Materiais", "Responsabilidade Civil", "Lucros Cessantes")
+    const cobPages = pages.filter((p) => {
+      const t = p.text
+      return (
+        /2\.\s*Coberturas\s+do\s+seguro/i.test(t) ||
+        /Danos\s+Materiais/i.test(t) ||
+        /Responsabilidade\s+Civil/i.test(t) ||
+        /Lucros\s+Cessantes/i.test(t) ||
+        /Franq(?:uia)?s\s*\/\s*P\.O\.S\./i.test(t)
       )
-      if (cobMatch) {
-        const nomeCob = cobMatch[1].trim()
-        const lmiVal = parsePtBrNumber(cobMatch[2])
-        const premVal = parsePtBrNumber(cobMatch[3])
-        const franq = cobMatch[4].trim()
+    })
 
-        if (nomeCob && !nomeCob.toLowerCase().startsWith('cobertura') && lmiVal !== null) {
-          coberturas.push({
-            cobertura: nomeCob,
-            categoriaNormalizada: matchCanonicalCategory(nomeCob),
-            lmi: lmiVal,
-            premioLiquido: premVal,
-            franquia: franq || 'Não informada',
-          })
-          if (lmiVal) lmiSum += lmiVal
-          if (premVal) premioLiquidoSum += premVal
+    const rawAxaCobs = extractAxaCoberturas(cobPages.length > 0 ? cobPages : pages, fullText)
+
+    for (const c of rawAxaCobs) {
+      coberturas.push({
+        cobertura: c.nome,
+        categoriaNormalizada: c.categoriaNormalizada || matchCanonicalCategory(c.nome),
+        lmi: c.lmi,
+        premioLiquido: null,
+        franquia: c.franquiaPos || 'Não informada',
+      })
+      if (c.lmi) lmiSum += c.lmi
+    }
+
+    // LMI Total / Limite da proposta:
+    // No layout AXA RN:
+    // - VR DM: 80.000.000,00
+    // - LC: 15.000.000,00
+    // - VR Total DM+LC: 95.000.000,00
+    // - LMGA: 95.500.000,00
+    // - Básica Incêndio: 80.000.000,00
+    const lmgaMatch = fullText.match(/LMGA[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i)
+    const vrDmLcMatch = fullText.match(
+      /Valor\s+em\s+Risco\s+Total\s+de\s+DM\s*\+\s*LC[:\s]*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    )
+    const basicaCob = coberturas.find(
+      (c) => c.categoriaNormalizada.includes('Incêndio') || c.cobertura.startsWith('Incêndio'),
+    )
+
+    if (lmgaMatch) {
+      lmiTotalCalculado = parsePtBrNumber(lmgaMatch[1])
+    } else if (vrDmLcMatch) {
+      lmiTotalCalculado = parsePtBrNumber(vrDmLcMatch[1])
+    } else if (basicaCob?.lmi) {
+      lmiTotalCalculado = basicaCob.lmi
+    }
+  } else {
+    // Tabela padrão AXA Empresa Flex (ADICIONAIS E/OU SUBLIMITES)
+    let insideTable = false
+
+    for (const line of lines) {
+      if (line.includes('ADICIONAIS E/OU SUBLIMITES') || line.includes('QUADRO DE COBERTURAS')) {
+        insideTable = true
+        continue
+      }
+      if (
+        insideTable &&
+        (line.includes('PROTECIONAIS DO RISCO') ||
+          line.includes('Serviço De Assistência') ||
+          line.includes('OBSERVAÇÕES IMPORTANTES') ||
+          line.includes('CLÁUSULAS APLICÁVEIS'))
+      ) {
+        insideTable = false
+        break
+      }
+
+      if (insideTable) {
+        const cobMatch = line.match(
+          /^([A-Za-zÀ-ÿ0-9\s/\-_()]+?)\s+(?:\d\s+)?R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\s*(.*)$/i,
+        )
+        if (cobMatch) {
+          const nomeCob = cobMatch[1].trim()
+          const lmiVal = parsePtBrNumber(cobMatch[2])
+          const premVal = parsePtBrNumber(cobMatch[3])
+          const franq = cobMatch[4].trim()
+
+          if (nomeCob && !nomeCob.toLowerCase().startsWith('cobertura') && lmiVal !== null) {
+            coberturas.push({
+              cobertura: nomeCob,
+              categoriaNormalizada: matchCanonicalCategory(nomeCob),
+              lmi: lmiVal,
+              premioLiquido: premVal,
+              franquia: franq || 'Não informada',
+            })
+            if (lmiVal) lmiSum += lmiVal
+            if (premVal) premioLiquidoSum += premVal
+          }
         }
       }
     }
-  }
 
-  // Se não extraiu do texto, busca LMI da Básica
-  if (lmiSum === 0) {
-    const basicaMatch = fullText.match(
-      /(?:B[áa]sica|Inc[êe]ndio)[^R\n]*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
-    )
-    if (basicaMatch) {
-      lmiSum = parsePtBrNumber(basicaMatch[1]) || 0
+    if (lmiSum === 0) {
+      const basicaMatch = fullText.match(
+        /(?:B[áa]sica|Inc[êe]ndio)[^R\n]*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+      )
+      if (basicaMatch) {
+        lmiSum = parsePtBrNumber(basicaMatch[1]) || 0
+      }
     }
   }
 
@@ -676,9 +901,18 @@ function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegmentoExtrac
     premioTotal,
     premioLiquido: finalPremioLiq,
     iof,
-    lmiTotal: lmiSum > 0 ? lmiSum : null,
+    lmiTotal: lmiTotalCalculado || (lmiSum > 0 ? lmiSum : null),
     formaPagamento: formaPagamento || 'Boleto bancário',
+    numeroParcelas,
+    posFranquiasGerais,
     coberturas,
+    dadosComplementares: {
+      seguradoNome,
+      seguradoCnpj,
+      atividade: localRiscoAtividade,
+      primeiraParcelaValor,
+      demaisParcelasValor,
+    },
   }
 }
 

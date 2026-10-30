@@ -15,6 +15,7 @@ import {
   extractCleanCnpj,
   ExtractedApoliceCobertura,
 } from '../apoliceReader'
+import { extractAxaDetails } from '../propostaReader'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
@@ -287,8 +288,51 @@ console.log('=================================================================\n
 // =========================================================================
 // EXECUÇÃO PRINCIPAL
 // =========================================================================
+async function loadAxaRnFixture(): Promise<PdfPageText[] | null> {
+  try {
+    const g: any = typeof globalThis !== 'undefined' ? globalThis : {}
+    const proc = g.process
+    if (proc && typeof proc.cwd === 'function') {
+      const fsModName = 'node:fs'
+      const pathModName = 'node:path'
+      const fs = await import(/* @vite-ignore */ fsModName)
+      const path = await import(/* @vite-ignore */ pathModName)
+      const fixturePath = path.resolve(
+        proc.cwd(),
+        'src/services/__tests__/fixtures/axa-rn-international-square.json',
+      )
+      if (fs.existsSync(fixturePath)) {
+        const raw = fs.readFileSync(fixturePath, 'utf8')
+        const data = JSON.parse(raw)
+        if (data?.pages && data.pages.length > 0) {
+          return data.pages
+        }
+      }
+    }
+  } catch {
+    // Continua para Vite glob
+  }
+
+  try {
+    const fixtureModules = (import.meta as any).glob('./fixtures/*.json', { eager: true })
+    for (const k of Object.keys(fixtureModules || {})) {
+      if (k.includes('axa-rn-international-square')) {
+        const data = fixtureModules[k]?.default || fixtureModules[k]
+        if (data?.pages && data.pages.length > 0) {
+          return data.pages
+        }
+      }
+    }
+  } catch {
+    // Vite glob indisponível
+  }
+
+  return null
+}
+
 export async function runAllSuites() {
   const tokioPages = await loadTokioFixture()
+  const axaRnPages = await loadAxaRnFixture()
 
   // =========================================================================
   // SUITE A: TOKIO MARINE EMPRESARIAL - GOLDEN TEST (17 COBERTURAS TRAVADAS)
@@ -622,6 +666,359 @@ export async function runAllSuites() {
     assertEqual(flexRes.seguradoNome, 'BT SORRISO HOTEIS LTDA', 'Nome Segurado')
     assertEqual(flexRes.seguradoCnpj, '62.805.347/0001-69', 'CNPJ Segurado')
   })
+
+  // =========================================================================
+  // SUITE C: AXA RISCOS NOMEADOS PROPOSTA - GOLDEN TEST (40 COBERTURAS)
+  // =========================================================================
+  console.log('\nSUITE C: AXA Riscos Nomeados Proposta - Golden Test (São International Square)')
+
+  if (!axaRnPages) {
+    const pendingMsg = 'fixture axa-rn-international-square.json não carregado'
+    runPendingTest('AXA RN Proposta', 'Asserções de Cabeçalho e Valores da Proposta', pendingMsg)
+    runPendingTest('AXA RN Proposta', 'Quadro Completo de Coberturas (40 Coberturas)', pendingMsg)
+  } else {
+    const axaResult = extractAxaDetails(axaRnPages)
+
+    runTest(
+      'AXA RN Proposta',
+      'Asserções de Cabeçalho e Valores da Proposta (Número, Proponente, Vigência, Prêmio, Parcelas)',
+      () => {
+        assertEqual(axaResult.numeroCotacao, 'C4513405 / 2026 – Opção B1', 'Carta Cotação nº')
+        assertEqual(axaResult.versao, 'B1', 'Versão / Opção')
+        assertEqual(axaResult.vigenciaInicio, '2026-10-31', 'Início Vigência')
+        assertEqual(axaResult.vigenciaFim, '2027-10-31', 'Fim Vigência')
+        assertEqual(axaResult.premioLiquido, 32314.71, 'Prêmio Líquido')
+        assertEqual(axaResult.iof, 2384.83, 'IOF')
+        assertEqual(axaResult.premioTotal, 34699.54, 'Prêmio Total')
+        assertEqual(axaResult.numeroParcelas, 7, 'Número de Parcelas Máximo')
+        assertEqual(axaResult.lmiTotal, 95500000, 'LMI Total (LMGA)')
+
+        assertEqual(
+          axaResult.dadosComplementares?.seguradoNome,
+          'CONDOMÍNIO SÃO INTERNATIONAL SQUARE',
+          'Nome do Segurado/Proponente',
+        )
+        assertEqual(
+          axaResult.dadosComplementares?.seguradoCnpj,
+          '24.742.208/0002-25',
+          'CNPJ do Proponente',
+        )
+      },
+    )
+
+    runTest(
+      'AXA RN Proposta',
+      'Quadro Completo de Coberturas: Total Exato de 40 Linhas (32 DM + 7 RC + 1 LC)',
+      () => {
+        assertEqual(
+          axaResult.coberturas?.length || 0,
+          40,
+          'Total de 40 coberturas extraídas da proposta AXA RN',
+        )
+      },
+    )
+
+    // Asserções individuais das 40 coberturas com nomes, LMIs e franquias
+    const TABELA_VERDADE_AXA_RN: Array<{
+      id: number
+      nomePattern: RegExp
+      nomeDesc: string
+      lmi: number
+      franquia: string
+    }> = [
+      {
+        id: 1,
+        nomePattern: /Inc[êe]ndio.*Queda De Raio.*Explos[ãa]o/i,
+        nomeDesc: 'Incêndio Básica',
+        lmi: 80000000.0,
+        franquia: '10% min R$ 10.000,00',
+      },
+      {
+        id: 2,
+        nomePattern: /Alagamento E Inunda[çc][ãa]o/i,
+        nomeDesc: 'Alagamento E Inundação',
+        lmi: 500000.0,
+        franquia: '20% min R$ 20.000,00',
+      },
+      {
+        id: 3,
+        nomePattern: /An[úu]ncios E Letreiros/i,
+        nomeDesc: 'Anúncios E Letreiros Luminosos',
+        lmi: 200000.0,
+        franquia: '10% min R$ 2.000,00',
+      },
+      {
+        id: 4,
+        nomePattern: /Danos El[ée]tricos/i,
+        nomeDesc: 'Danos Elétricos',
+        lmi: 500000.0,
+        franquia: '15% min R$ 10.000,00',
+      },
+      {
+        id: 5,
+        nomePattern: /Danos Por [ÁA]gua/i,
+        nomeDesc: 'Danos Por Água',
+        lmi: 500000.0,
+        franquia: '20% min R$ 10.000,00',
+      },
+      {
+        id: 6,
+        nomePattern: /Demoli[çc][ãa]o E Desentulho/i,
+        nomeDesc: 'Demolição E Desentulho',
+        lmi: 500000.0,
+        franquia: '10% min R$ 1.000,00',
+      },
+      {
+        id: 7,
+        nomePattern: /Sprinklers|Derrame D['’]Água/i,
+        nomeDesc: 'Derrame D’Água (Sprinklers)',
+        lmi: 1000000.0,
+        franquia: '15% min R$ 5.000,00',
+      },
+      {
+        id: 8,
+        nomePattern: /Desmoronamento/i,
+        nomeDesc: 'Desmoronamento',
+        lmi: 1000000.0,
+        franquia: '15% min R$ 20.000,00',
+      },
+      {
+        id: 9,
+        nomePattern: /Honor[áa]rios De Peritos/i,
+        nomeDesc: 'Despesas Com Honorários De Peritos – Danos Materiais',
+        lmi: 300000.0,
+        franquia: '10% min R$ 1.000,00',
+      },
+      {
+        id: 10,
+        nomePattern: /Recomposi[çc][ãa]o De Registros/i,
+        nomeDesc: 'Despesas Com Recomposição De Registros E Documentos',
+        lmi: 10000.0,
+        franquia: '10% min R$ 1.000,00',
+      },
+      {
+        id: 11,
+        nomePattern: /Salvamento E Conten[çc][ãa]o/i,
+        nomeDesc: 'Despesas De Salvamento E Contenção De Sinistros',
+        lmi: 500000.0,
+        franquia: 'De acordo com o evento e/ou cobertura acionada',
+      },
+      {
+        id: 12,
+        nomePattern: /Deteriora[çc][ãa]o De Mercadorias.*Frigorificados/i,
+        nomeDesc: 'Deterioração De Mercadorias Em Ambientes Frigorificados',
+        lmi: 50000.0,
+        franquia: '20% min R$ 5.000,00',
+      },
+      {
+        id: 13,
+        nomePattern: /Equipamentos Arrendados Ou Cedidos/i,
+        nomeDesc: 'Equipamentos Arrendados Ou Cedidos A Terceiros',
+        lmi: 250000.0,
+        franquia: '10% min R$ 5.000,00',
+      },
+      {
+        id: 14,
+        nomePattern: /Equipamentos Eletr[ôo]nicos Sem Roubo/i,
+        nomeDesc: 'Equipamentos Eletrônicos Sem Roubo (A)',
+        lmi: 250000.0,
+        franquia: '25% min R$ 5.000,00',
+      },
+      {
+        id: 15,
+        nomePattern: /Equipamentos Estacion[áa]rios/i,
+        nomeDesc: 'Equipamentos Estacionários',
+        lmi: 300000.0,
+        franquia: '15% min R$ 5.000,00',
+      },
+      {
+        id: 16,
+        nomePattern: /Equipamentos M[óo]veis/i,
+        nomeDesc: 'Equipamentos Móveis',
+        lmi: 50000.0,
+        franquia: '10% min R$ 5.000,00',
+      },
+      {
+        id: 17,
+        nomePattern: /Equipamentos Ou Objetos Port[áa]teis/i,
+        nomeDesc: 'Equipamentos Ou Objetos Portáteis',
+        lmi: 50000.0,
+        franquia: '20% min R$ 500,00 por equipamento',
+      },
+      {
+        id: 18,
+        nomePattern: /Fidelidade/i,
+        nomeDesc: 'Fidelidade',
+        lmi: 100000.0,
+        franquia: '10% min R$ 1.000,00',
+      },
+      {
+        id: 19,
+        nomePattern: /Obras De Arte/i,
+        nomeDesc: 'Obras De Arte',
+        lmi: 100000.0,
+        franquia: '10% min R$ 1.000,00',
+      },
+      {
+        id: 20,
+        nomePattern: /Pequenas Obras De Engenharia/i,
+        nomeDesc: 'Pequenas Obras De Engenharia, Para Ampliações, Reparos Ou Reformas',
+        lmi: 300000.0,
+        franquia: '10% min R$ 10.000,00',
+      },
+      {
+        id: 21,
+        nomePattern: /Perda Ou Pagamento De Aluguel/i,
+        nomeDesc: 'Perda Ou Pagamento De Aluguel',
+        lmi: 1000000.0,
+        franquia: 'Os primeiros 10 dias corridos PI: 12 meses',
+      },
+      {
+        id: 22,
+        nomePattern: /Quebra De M[aá]quinas/i,
+        nomeDesc: 'Quebra De Maquinas',
+        lmi: 250000.0,
+        franquia: '15% min R$ 10.000,00',
+      },
+      {
+        id: 23,
+        nomePattern: /Quebra De Vidros/i,
+        nomeDesc: 'Quebra De Vidros, Espelhos, Mármores E Granitos',
+        lmi: 300000.0,
+        franquia: '10% min R$ 2.000,00',
+      },
+      {
+        id: 24,
+        nomePattern: /Roubo De Valores Dos H[óo]spedes.*Cofre-Forte/i,
+        nomeDesc: 'Roubo De Valores Dos Hóspedes No Interior De Cofre-Forte',
+        lmi: 10000.0,
+        franquia: '10% min R$ 2.500,00',
+      },
+      {
+        id: 25,
+        nomePattern: /Roubo De Valores Em Tr[âa]nsito/i,
+        nomeDesc: 'Roubo De Valores Em Trânsito Em Mãos De Portadores',
+        lmi: 10000.0,
+        franquia: '10% min R$ 2.500,00',
+      },
+      {
+        id: 26,
+        nomePattern: /Roubo De Valores No Interior Do Estabelecimento/i,
+        nomeDesc: 'Roubo De Valores No Interior Do Estabelecimento',
+        lmi: 10000.0,
+        franquia: '10% min R$ 2.500,00',
+      },
+      {
+        id: 27,
+        nomePattern: /^Roubo E\/Ou Furto Qualificado De Bens$/i,
+        nomeDesc: 'Roubo E/Ou Furto Qualificado De Bens',
+        lmi: 250000.0,
+        franquia: '10% min R$ 5.000,00',
+      },
+      {
+        id: 28,
+        nomePattern: /Roubo E\/Ou Furto Qualificado De Bens Dos H[óo]spedes/i,
+        nomeDesc: 'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes',
+        lmi: 50000.0,
+        franquia: '10% min R$ 5.000,00',
+      },
+      {
+        id: 29,
+        nomePattern: /Terremoto E Tremores De Terra/i,
+        nomeDesc: 'Terremoto E Tremores De Terra',
+        lmi: 500000.0,
+        franquia: '15% min R$ 5.000,00',
+      },
+      {
+        id: 30,
+        nomePattern: /Tumulto.*Lock-Out/i,
+        nomeDesc: 'Tumulto, Greves, “Lock-Out”, Atos Dolosos, Vandalismo E Comoção Civil',
+        lmi: 1000000.0,
+        franquia: '15% min R$ 5.000,00',
+      },
+      {
+        id: 31,
+        nomePattern: /Vazamento De Tanques E Tubula[çc][õo]es/i,
+        nomeDesc: 'Vazamento De Tanques E Tubulações',
+        lmi: 500000.0,
+        franquia: '20% min R$ 10.000,00',
+      },
+      {
+        id: 32,
+        nomePattern: /Vendaval.*Impacto De Ve[íi]culos/i,
+        nomeDesc: 'Vendaval, Furacão, Granizo, Tornado e Fumaça',
+        lmi: 500000.0,
+        franquia: '20% min R$ 10.000,00',
+      },
+      {
+        id: 33,
+        nomePattern: /Responsabilidade Civil Condom[íi]nio Empresarial/i,
+        nomeDesc: 'RC Condomínio Empresarial',
+        lmi: 1000000.0,
+        franquia: '30% min R$ 3.000,00 por reclamante',
+      },
+      {
+        id: 34,
+        nomePattern: /Responsabilidade Civil Estabelecimentos De Hospedagem/i,
+        nomeDesc: 'RC Hospedagem, Restaurantes, Boates E Similares',
+        lmi: 1000000.0,
+        franquia: '10% min R$ 3.000,00 por reclamante',
+      },
+      {
+        id: 35,
+        nomePattern: /Responsabilidade Civil Danos Morais/i,
+        nomeDesc: 'RC Danos Morais',
+        lmi: 500000.0,
+        franquia: 'Prejuízos somados a cobertura acionada',
+      },
+      {
+        id: 36,
+        nomePattern: /Responsabilidade Civil Do Empregador/i,
+        nomeDesc: 'RC Do Empregador',
+        lmi: 1000000.0,
+        franquia: '10% min R$ 3.000,00 por reclamante',
+      },
+      {
+        id: 37,
+        nomePattern: /Responsabilidade Civil Guarda De Ve[íi]culos De Terceiros/i,
+        nomeDesc: 'RC Guarda De Veículos De Terceiros – Compreensiva',
+        lmi: 250000.0,
+        franquia: '10% min R$ 3.000,00 por veículo',
+      },
+      {
+        id: 38,
+        nomePattern: /Responsabilidade Civil Port[õo]es Autom[áa]ticos/i,
+        nomeDesc: 'RC Portões Automáticos',
+        lmi: 250000.0,
+        franquia: '10% min R$ 3.000,00 por veículo',
+      },
+      {
+        id: 39,
+        nomePattern: /Responsabilidade Civil S[íi]ndico/i,
+        nomeDesc: 'RC Síndico',
+        lmi: 1000000.0,
+        franquia: '10% min R$ 3.000,00 por reclamante',
+      },
+      {
+        id: 40,
+        nomePattern: /Lucros Cessantes.*Decorrentes De Inc[êe]ndio/i,
+        nomeDesc: 'Lucros Cessantes [Ll+Df]',
+        lmi: 15000000.0,
+        franquia: 'Os primeiros 15 dias corridos PI: 12 meses',
+      },
+    ]
+
+    for (const item of TABELA_VERDADE_AXA_RN) {
+      runTest('AXA RN Coberturas', `Cobertura ${item.id}/40: ${item.nomeDesc}`, () => {
+        const found = axaResult.coberturas?.find((c) => item.nomePattern.test(c.cobertura))
+        assert(Boolean(found), `Cobertura "${item.nomeDesc}" não encontrada`)
+        if (found) {
+          assertEqual(found.lmi, item.lmi, `LMI ${item.nomeDesc}`)
+          assertEqual(found.franquia, item.franquia, `Franquia ${item.nomeDesc}`)
+        }
+      })
+    }
+  }
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO
