@@ -833,21 +833,103 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
     }
 
     // 2. Extração de Coberturas via parser AXA completo
-    // Seleciona as páginas que contêm coberturas (páginas com "2. Coberturas do seguro", "Danos Materiais", "Responsabilidade Civil", "Lucros Cessantes")
-    const cobPages = pages.filter((p) => {
-      const t = p.text
-      return (
-        /2\.\s*Coberturas\s+do\s+seguro/i.test(t) ||
-        /Danos\s+Materiais/i.test(t) ||
-        /Responsabilidade\s+Civil/i.test(t) ||
-        /Lucros\s+Cessantes/i.test(t) ||
-        /Franq(?:uia)?s\s*\/\s*P\.O\.S\./i.test(t)
-      )
-    })
+    // Delimitar a seleção de páginas do quadro de coberturas estritamente da pág. que contém
+    // "2. Coberturas do seguro" (pág. 6) até a pág. 10, parando ANTES da linha "Legenda:".
+    // Exclui a pág. 5 (tabela 1.2 VRD e LMGA).
+    const startIdx = pages.findIndex(
+      (p) =>
+        /2\.\s*Coberturas\s+do\s+seguro/i.test(p.text) ||
+        (p.lines && p.lines.some((l) => /2\.\s*Coberturas\s+do\s+seguro/i.test(l))),
+    )
+
+    const candidatePages = startIdx >= 0 ? pages.slice(startIdx) : pages
+
+    const cobPages: PdfPageText[] = []
+    for (const p of candidatePages) {
+      // Ignora páginas anteriores ao cabeçalho ou páginas que pertençam à seção 1 (VRD/LMGA)
+      if (
+        /1\.2\s*Detalhamento\s+do\s+valor\s+em\s+risco/i.test(p.text) ||
+        /1\.3\s*Limite\s+M[áa]ximo\s+de\s+Garantia/i.test(p.text)
+      ) {
+        continue
+      }
+      // Pára ao atingir demonstrativo de prêmio ou seções posteriores
+      if (/4\.\s*Demonstrativo\s+de\s+Pr[êe]mio/i.test(p.text)) {
+        break
+      }
+
+      // Se a página contiver a linha "Legenda:", corta as linhas/itens antes de "Legenda:"
+      const hasLegenda =
+        /Legenda:/i.test(p.text) || (p.lines && p.lines.some((l) => /^Legenda:/i.test(l.trim())))
+
+      if (hasLegenda) {
+        const truncatedLines: string[] = []
+        for (const line of p.lines || []) {
+          if (
+            /^Legenda:/i.test(line.trim()) ||
+            /^P\.O\.S:\s*Participa[çc][ãa]o/i.test(line.trim()) ||
+            /^3\.\s*Cosseguro\s*\/\s*Corretagem/i.test(line.trim())
+          ) {
+            break
+          }
+          truncatedLines.push(line)
+        }
+
+        // Corta geometricamente também se houver p.items
+        let truncatedItems = p.items
+        if (p.items && p.items.length > 0) {
+          const legendaItem = p.items.find((it) => /^Legenda:/i.test(it.str.trim()))
+          if (legendaItem) {
+            truncatedItems = p.items.filter((it) => it.y > legendaItem.y + 2)
+          }
+        }
+
+        cobPages.push({
+          ...p,
+          lines: truncatedLines,
+          text: truncatedLines.join('\n'),
+          items: truncatedItems,
+        })
+        break
+      } else {
+        cobPages.push(p)
+      }
+    }
 
     const rawAxaCobs = extractAxaCoberturas(cobPages.length > 0 ? cobPages : pages, fullText)
 
+    // Expurgar do quadro qualquer linha de VRD/LMGA residual
+    const isVrdOrLmgaSpurious = (nome: string, lmi: number | null): boolean => {
+      const n = (nome || '').trim().toLowerCase()
+      if (
+        n.includes('valor em risco total') ||
+        n.includes('valor em risco') ||
+        n.includes('detalhamento do valor') ||
+        n.includes('60.000.000,00') ||
+        n.includes('20.000.000,00') ||
+        /^1\s+60\.000\.000/i.test(n) ||
+        n.startsWith('lmga') ||
+        n.includes('limite máximo de garantia') ||
+        n.includes('limite maximo de garantia') ||
+        n.includes('mmu') ||
+        n.includes('mmp')
+      ) {
+        return true
+      }
+      if (
+        lmi === 95500000 ||
+        lmi === 95000000 ||
+        (lmi === 80000000 && n.includes('valor em risco'))
+      ) {
+        return true
+      }
+      return false
+    }
+
     for (const c of rawAxaCobs) {
+      if (isVrdOrLmgaSpurious(c.nome, c.lmi)) {
+        continue
+      }
       coberturas.push({
         cobertura: c.nome,
         categoriaNormalizada: c.categoriaNormalizada || matchCanonicalCategory(c.nome),
