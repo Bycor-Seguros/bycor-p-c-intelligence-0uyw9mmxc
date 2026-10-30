@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-30T03:42:18.075Z",
+  "generatedAt": "2026-10-30T12:31:13.111Z",
   "collections": [
     {
       "name": "users",
@@ -1530,6 +1530,18 @@
         },
         {
           "name": "premio_net",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "agravo",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "premio_net_pos_agravo",
           "type": "number",
           "required": false,
           "system": false

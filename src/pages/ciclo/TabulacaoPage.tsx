@@ -53,6 +53,8 @@ interface PropostaRecord {
   premio_liquido: number
   premio_bruto: number
   premio_net?: number
+  agravo?: number
+  premio_net_pos_agravo?: number
   comissao_trabalhada?: number
   base_premio?: string
   vrd_dm?: number
@@ -463,6 +465,54 @@ export default function TabulacaoPage() {
                       {p.premio_net ? formatCurrency(p.premio_net) : '—'}
                     </td>
                   ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    Agravo (%)
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td key={p.id} className="py-2 px-4 border-r tabular-nums text-xs">
+                      {p.agravo !== undefined && p.agravo !== null && Number(p.agravo) > 0 ? (
+                        <span className="font-bold text-amber-800 font-mono">{p.agravo}%</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    Prêmio Net Pós Agravo
+                  </td>
+                  {comparedProposals.map((p) => {
+                    const temAgr =
+                      p.agravo !== undefined && p.agravo !== null && Number(p.agravo) > 0
+                    const posAgravo =
+                      p.premio_net_pos_agravo ||
+                      (temAgr && p.premio_net
+                        ? Number((p.premio_net * (1 + Number(p.agravo) / 100)).toFixed(2))
+                        : null)
+
+                    return (
+                      <td
+                        key={p.id}
+                        className="py-2 px-4 border-r tabular-nums font-mono text-gray-800"
+                      >
+                        {temAgr && posAgravo ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-amber-950">
+                              {formatCurrency(posAgravo)}
+                            </span>
+                            <span className="text-[9px] uppercase font-sans font-semibold text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+                              calc
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">

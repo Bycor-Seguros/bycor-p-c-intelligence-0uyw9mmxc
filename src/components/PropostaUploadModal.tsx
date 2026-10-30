@@ -113,8 +113,9 @@ export default function PropostaUploadModal({
   const [vrdLc, setVrdLc] = useState<string>('')
   const [vrdLcBase, setVrdLcBase] = useState<string>('Lucro Bruto')
 
-  // Comissão trabalhada e base do prêmio (reativo)
+  // Comissão trabalhada, agravo e base do prêmio (reativo)
   const [comissaoTrabalhada, setComissaoTrabalhada] = useState<string>('')
+  const [agravo, setAgravo] = useState<string>('')
   const [basePremio, setBasePremio] = useState<'liquido' | 'net'>('liquido')
 
   // Estado para exclusão com confirmação e edição inline de coberturas
@@ -218,6 +219,7 @@ export default function PropostaUploadModal({
     setVrdLc('')
     setVrdLcBase('Lucro Bruto')
     setComissaoTrabalhada('')
+    setAgravo('')
     setBasePremio('liquido')
     setPremioNet('')
   }
@@ -390,6 +392,7 @@ export default function PropostaUploadModal({
       )
     }
     setComissaoTrabalhada('')
+    setAgravo('')
 
     setStep('preview')
   }
@@ -436,6 +439,13 @@ export default function PropostaUploadModal({
       return
     }
 
+    const agravoNum = agravo ? Number(agravo) : null
+    const pNetNum = premioNet ? Number(premioNet) : null
+    const premioNetPosAgravoNum =
+      agravoNum !== null && agravoNum > 0 && pNetNum !== null
+        ? Number((pNetNum * (1 + agravoNum / 100)).toFixed(2))
+        : null
+
     try {
       setSaving(true)
       const res = await registrarPropostaComArquivo({
@@ -453,6 +463,8 @@ export default function PropostaUploadModal({
         premioLiquido: premioLiquido ? Number(premioLiquido) : null,
         premioBruto: premioBruto ? Number(premioBruto) : null,
         premioNet: premioNet ? Number(premioNet) : null,
+        agravo: agravoNum,
+        premioNetPosAgravo: premioNetPosAgravoNum,
         iof: iof ? Number(iof) : null,
         comissaoTrabalhada: comissaoTrabalhada ? Number(comissaoTrabalhada) : null,
         basePremio: basePremio,
@@ -899,231 +911,342 @@ export default function PropostaUploadModal({
                 <span>Condições Financeiras da Oferta</span>
               </span>
 
-              {/* BLOCO DE PRÊMIOS E COMISSÃO TRABALHADA */}
-              <div className="p-3 bg-gray-50/80 rounded-lg border border-gray-200 space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-gray-800 text-[11px] flex items-center gap-1.5">
-                    <span>Comissão Trabalhada & Base do Prêmio</span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-500 font-medium">
-                      Apresentação da Cotação:
-                    </span>
-                    <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBasePremio('liquido')
-                          // Reatribui líquido/net reativamente
-                          const c = parseFloat(comissaoTrabalhada) || 0
-                          const pLiq = parseFloat(premioLiquido) || 0
-                          if (pLiq > 0 && c >= 0 && c < 100) {
-                            const net = pLiq * (1 - c / 100)
-                            setPremioNet(net.toFixed(2))
-                          }
-                        }}
-                        className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                          basePremio === 'liquido'
-                            ? 'bg-[#16578B] text-white'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        Prêmio Líquido (com comissão)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBasePremio('net')
-                          // Reatribui líquido/net reativamente
-                          const c = parseFloat(comissaoTrabalhada) || 0
-                          const pNet = parseFloat(premioNet) || 0
-                          if (pNet > 0 && c >= 0 && c < 100) {
-                            const liq = pNet / (1 - c / 100)
-                            setPremioLiquido(liq.toFixed(2))
-                            const iofVal = parseFloat(iof) || 0
-                            setPremioBruto((liq + iofVal).toFixed(2))
-                          }
-                        }}
-                        className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                          basePremio === 'net'
-                            ? 'bg-[#16578B] text-white'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        Prêmio Net (sem comissão)
-                      </button>
+              {/* BLOCO DE PRÊMIOS, AGRAVO E COMISSÃO TRABALHADA */}
+              {(() => {
+                const agravoNum = parseFloat(agravo) || 0
+                const pNetNum = parseFloat(premioNet) || 0
+                const temAgravoVal = agravoNum > 0 && pNetNum > 0
+                const pNetPosAgravoCalc = temAgravoVal ? pNetNum * (1 + agravoNum / 100) : null
+
+                return (
+                  <div className="p-3 bg-gray-50/80 rounded-lg border border-gray-200 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-gray-800 text-[11px] flex items-center gap-1.5">
+                        <span>Comissão, Agravo & Base do Prêmio</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-500 font-medium">
+                          Apresentação da Cotação:
+                        </span>
+                        <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBasePremio('liquido')
+                              const c = parseFloat(comissaoTrabalhada) || 0
+                              const agr = parseFloat(agravo) || 0
+                              const pLiq = parseFloat(premioLiquido) || 0
+                              if (pLiq > 0 && c >= 0 && c < 100) {
+                                const net = pLiq * (1 - c / 100)
+                                setPremioNet(net.toFixed(2))
+                                if (agr > 0) {
+                                  const netPos = net * (1 + agr / 100)
+                                  const liqRecalc = netPos / (1 - c / 100)
+                                  setPremioLiquido(liqRecalc.toFixed(2))
+                                  const iofVal = parseFloat(iof) || 0
+                                  setPremioBruto((liqRecalc + iofVal).toFixed(2))
+                                }
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                              basePremio === 'liquido'
+                                ? 'bg-[#16578B] text-white'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Prêmio Líquido (com comissão)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBasePremio('net')
+                              const c = parseFloat(comissaoTrabalhada) || 0
+                              const agr = parseFloat(agravo) || 0
+                              const pNet = parseFloat(premioNet) || 0
+                              if (pNet > 0 && c >= 0 && c < 100) {
+                                const netBaseParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                const liq = netBaseParaLiq / (1 - c / 100)
+                                setPremioLiquido(liq.toFixed(2))
+                                const iofVal = parseFloat(iof) || 0
+                                setPremioBruto((liq + iofVal).toFixed(2))
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                              basePremio === 'net'
+                                ? 'bg-[#16578B] text-white'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Prêmio Net (sem comissão)
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-gray-700">
-                      Comissão Trabalhada (%)
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="99.9"
-                      value={comissaoTrabalhada}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setComissaoTrabalhada(val)
-                        const c = parseFloat(val) || 0
-                        const iofVal = parseFloat(iof) || 0
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                      {/* Comissão Trabalhada */}
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold text-gray-700">
+                          Comissão Trabalhada (%)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="99.9"
+                          value={comissaoTrabalhada}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setComissaoTrabalhada(val)
+                            const c = parseFloat(val) || 0
+                            const agr = parseFloat(agravo) || 0
+                            const iofVal = parseFloat(iof) || 0
 
-                        if (basePremio === 'liquido') {
-                          const pLiq = parseFloat(premioLiquido) || 0
-                          if (pLiq > 0) {
-                            const net = pLiq * (1 - c / 100)
-                            setPremioNet(net.toFixed(2))
-                            if (!premioBruto || pLiq + iofVal > 0) {
+                            if (basePremio === 'liquido') {
+                              const pLiq = parseFloat(premioLiquido) || 0
+                              if (pLiq > 0 && c < 100) {
+                                const net = pLiq * (1 - c / 100)
+                                setPremioNet(net.toFixed(2))
+                                if (agr > 0) {
+                                  const netPos = net * (1 + agr / 100)
+                                  const liqRecalc = netPos / (1 - c / 100)
+                                  setPremioLiquido(liqRecalc.toFixed(2))
+                                  setPremioBruto((liqRecalc + iofVal).toFixed(2))
+                                } else {
+                                  setPremioBruto((pLiq + iofVal).toFixed(2))
+                                }
+                              }
+                            } else {
+                              // base Net
+                              const pNet = parseFloat(premioNet) || 0
+                              if (pNet > 0 && c < 100) {
+                                const netParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                const pLiq = netParaLiq / (1 - c / 100)
+                                setPremioLiquido(pLiq.toFixed(2))
+                                setPremioBruto((pLiq + iofVal).toFixed(2))
+                              }
+                            }
+                          }}
+                          placeholder="Ex: 15 ou 20"
+                          className="h-8 text-xs font-mono font-bold text-blue-900"
+                        />
+                      </div>
+
+                      {/* Agravo (%) */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-gray-700">
+                            Agravo (%)
+                          </Label>
+                          <span className="text-[10px] text-gray-400 font-normal">opcional</span>
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={agravo}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setAgravo(val)
+                            const agr = parseFloat(val) || 0
+                            const c = parseFloat(comissaoTrabalhada) || 0
+                            const iofVal = parseFloat(iof) || 0
+
+                            if (basePremio === 'liquido') {
+                              // Agravo age sobre o Net.
+                              // Se base é líquido, o Net original deriva do líquido digitado (ou do net já em tela)
+                              const pLiq = parseFloat(premioLiquido) || 0
+                              const netOriginal =
+                                parseFloat(premioNet) ||
+                                (pLiq > 0 && c < 100 ? pLiq * (1 - c / 100) : 0)
+                              if (netOriginal > 0) {
+                                setPremioNet(netOriginal.toFixed(2))
+                                const netPos = agr > 0 ? netOriginal * (1 + agr / 100) : netOriginal
+                                if (c < 100) {
+                                  const liqNovo = netPos / (1 - c / 100)
+                                  setPremioLiquido(liqNovo.toFixed(2))
+                                  setPremioBruto((liqNovo + iofVal).toFixed(2))
+                                }
+                              }
+                            } else {
+                              // base Net
+                              const pNet = parseFloat(premioNet) || 0
+                              if (pNet > 0 && c < 100) {
+                                const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                const pLiq = netPos / (1 - c / 100)
+                                setPremioLiquido(pLiq.toFixed(2))
+                                setPremioBruto((pLiq + iofVal).toFixed(2))
+                              }
+                            }
+                          }}
+                          placeholder="Ex: 10"
+                          className="h-8 text-xs font-mono font-bold text-amber-900 bg-amber-50/30"
+                        />
+                      </div>
+
+                      {/* Prêmio Net */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-gray-700">
+                            Prêmio Net (sem comissão)
+                          </Label>
+                          {premioNet && (
+                            <span className="text-[10px] font-mono text-gray-600">
+                              {formatCurrency(premioNet)}
+                            </span>
+                          )}
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={premioNet}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setPremioNet(val)
+                            const pNet = parseFloat(val) || 0
+                            const c = parseFloat(comissaoTrabalhada) || 0
+                            const agr = parseFloat(agravo) || 0
+                            const iofVal = parseFloat(iof) || 0
+
+                            if (basePremio === 'net' && pNet > 0 && c < 100) {
+                              const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                              const pLiq = netPos / (1 - c / 100)
+                              setPremioLiquido(pLiq.toFixed(2))
                               setPremioBruto((pLiq + iofVal).toFixed(2))
                             }
-                          }
-                        } else {
-                          // base Net
-                          const pNet = parseFloat(premioNet) || 0
-                          if (pNet > 0 && c < 100) {
-                            const pLiq = pNet / (1 - c / 100)
-                            setPremioLiquido(pLiq.toFixed(2))
-                            setPremioBruto((pLiq + iofVal).toFixed(2))
-                          }
-                        }
-                      }}
-                      placeholder="Ex: 15 ou 20"
-                      className="h-8 text-xs font-mono font-bold text-blue-900"
-                    />
-                  </div>
+                          }}
+                          placeholder="0,00"
+                          className={`h-8 text-xs font-semibold ${
+                            basePremio === 'net' ? 'border-[#16578B] bg-blue-50/30' : ''
+                          }`}
+                        />
+                      </div>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] font-semibold text-gray-700">
-                        Prêmio Net (sem comissão)
-                      </Label>
-                      {premioNet && (
-                        <span className="text-[10px] font-mono text-gray-600">
-                          {formatCurrency(premioNet)}
-                        </span>
-                      )}
+                      {/* Prêmio Líquido */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-gray-700">
+                            Prêmio Líquido (com comissão)
+                          </Label>
+                          {premioLiquido && (
+                            <span className="text-[10px] font-mono text-gray-600">
+                              {formatCurrency(premioLiquido)}
+                            </span>
+                          )}
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={premioLiquido}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setPremioLiquido(val)
+                            const pLiq = parseFloat(val) || 0
+                            const c = parseFloat(comissaoTrabalhada) || 0
+                            const agr = parseFloat(agravo) || 0
+                            const iofVal = parseFloat(iof) || 0
+
+                            if (basePremio === 'liquido') {
+                              if (pLiq > 0 && c < 100) {
+                                const net = pLiq * (1 - c / 100)
+                                setPremioNet(net.toFixed(2))
+                                if (agr > 0) {
+                                  const netPos = net * (1 + agr / 100)
+                                  const liqRecalc = netPos / (1 - c / 100)
+                                  setPremioBruto((liqRecalc + iofVal).toFixed(2))
+                                } else {
+                                  setPremioBruto((pLiq + iofVal).toFixed(2))
+                                }
+                              }
+                            } else {
+                              setPremioBruto((pLiq + iofVal).toFixed(2))
+                            }
+                          }}
+                          placeholder="0,00"
+                          className={`h-8 text-xs font-semibold ${
+                            basePremio === 'liquido' ? 'border-[#16578B] bg-blue-50/30' : ''
+                          }`}
+                        />
+                      </div>
+
+                      {/* Prêmio Bruto */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-gray-700">
+                            Prêmio Bruto (Líquido + IOF)
+                          </Label>
+                          {premioBruto && (
+                            <span className="text-[10px] font-mono text-emerald-700">
+                              {formatCurrency(premioBruto)}
+                            </span>
+                          )}
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={premioBruto}
+                          onChange={(e) => setPremioBruto(e.target.value)}
+                          placeholder="0,00"
+                          className="h-8 text-xs font-bold text-emerald-800"
+                        />
+                      </div>
                     </div>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={premioNet}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setPremioNet(val)
-                        if (basePremio === 'net') {
-                          const pNet = parseFloat(val) || 0
-                          const c = parseFloat(comissaoTrabalhada) || 0
-                          const iofVal = parseFloat(iof) || 0
-                          if (pNet > 0 && c < 100) {
-                            const pLiq = pNet / (1 - c / 100)
-                            setPremioLiquido(pLiq.toFixed(2))
-                            setPremioBruto((pLiq + iofVal).toFixed(2))
-                          }
-                        }
-                      }}
-                      placeholder="0,00"
-                      className={`h-8 text-xs font-semibold ${
-                        basePremio === 'net' ? 'border-[#16578B] bg-blue-50/30' : ''
-                      }`}
-                    />
-                  </div>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] font-semibold text-gray-700">
-                        Prêmio Líquido (com comissão)
-                      </Label>
-                      {premioLiquido && (
-                        <span className="text-[10px] font-mono text-gray-600">
-                          {formatCurrency(premioLiquido)}
+                    {/* Resumo derivado em pill badges com Quarteto de Prêmios */}
+                    <div className="p-2 bg-white rounded border border-gray-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                      <div className="text-gray-500 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span className="font-semibold">
+                          {temAgravoVal ? 'Quarteto de Prêmios Derivados:' : 'Tríade de Prêmios:'}
                         </span>
-                      )}
-                    </div>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={premioLiquido}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setPremioLiquido(val)
-                        const pLiq = parseFloat(val) || 0
-                        const c = parseFloat(comissaoTrabalhada) || 0
-                        const iofVal = parseFloat(iof) || 0
-                        if (basePremio === 'liquido') {
-                          if (pLiq > 0) {
-                            const net = pLiq * (1 - c / 100)
-                            setPremioNet(net.toFixed(2))
-                            setPremioBruto((pLiq + iofVal).toFixed(2))
-                          }
-                        } else {
-                          // se base for net mas editou liquido
-                          setPremioBruto((pLiq + iofVal).toFixed(2))
-                        }
-                      }}
-                      placeholder="0,00"
-                      className={`h-8 text-xs font-semibold ${
-                        basePremio === 'liquido' ? 'border-[#16578B] bg-blue-50/30' : ''
-                      }`}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] font-semibold text-gray-700">
-                        Prêmio Bruto (Líquido + IOF)
-                      </Label>
-                      {premioBruto && (
-                        <span className="text-[10px] font-mono text-emerald-700">
-                          {formatCurrency(premioBruto)}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 font-mono">
+                        <span>
+                          Net:{' '}
+                          <strong className="text-gray-800">
+                            {premioNet ? formatCurrency(premioNet) : 'R$ 0,00'}
+                          </strong>
                         </span>
-                      )}
-                    </div>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={premioBruto}
-                      onChange={(e) => setPremioBruto(e.target.value)}
-                      placeholder="0,00"
-                      className="h-8 text-xs font-bold text-emerald-800"
-                    />
-                  </div>
-                </div>
 
-                {/* Resumo derivado em pill badges */}
-                <div className="p-2 bg-white rounded border border-gray-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                  <div className="text-gray-500 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>Tríade de Prêmios:</span>
+                        {temAgravoVal && pNetPosAgravoCalc !== null && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span className="bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-amber-900">
+                              Net Pós Agravo ({agravoNum}%):{' '}
+                              <strong className="font-bold text-amber-950">
+                                {formatCurrency(pNetPosAgravoCalc)}
+                              </strong>{' '}
+                              <span className="text-[9px] uppercase font-sans font-semibold text-amber-700">
+                                [calculado]
+                              </span>
+                            </span>
+                          </>
+                        )}
+
+                        <span className="text-gray-300">•</span>
+                        <span>
+                          Líquido:{' '}
+                          <strong className="text-blue-900">
+                            {premioLiquido ? formatCurrency(premioLiquido) : 'R$ 0,00'}
+                          </strong>
+                          {temAgravoVal && (
+                            <span className="text-[9px] text-blue-600 font-sans ml-1">
+                              (derivado)
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-gray-300">•</span>
+                        <span>
+                          Bruto:{' '}
+                          <strong className="text-emerald-700">
+                            {premioBruto ? formatCurrency(premioBruto) : 'R$ 0,00'}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 font-mono">
-                    <span>
-                      Net:{' '}
-                      <strong className="text-gray-800">
-                        {premioNet ? formatCurrency(premioNet) : 'R$ 0,00'}
-                      </strong>
-                    </span>
-                    <span className="text-gray-300">•</span>
-                    <span>
-                      Líquido:{' '}
-                      <strong className="text-blue-900">
-                        {premioLiquido ? formatCurrency(premioLiquido) : 'R$ 0,00'}
-                      </strong>
-                    </span>
-                    <span className="text-gray-300">•</span>
-                    <span>
-                      Bruto:{' '}
-                      <strong className="text-emerald-700">
-                        {premioBruto ? formatCurrency(premioBruto) : 'R$ 0,00'}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-              </div>
+                )
+              })()}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1">

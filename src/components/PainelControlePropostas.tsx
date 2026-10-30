@@ -101,6 +101,7 @@ export function PainelControlePropostas({
   const [premioLiquido, setPremioLiquido] = useState<number | ''>('')
   const [premioBruto, setPremioBruto] = useState<number | ''>('')
   const [premioNet, setPremioNet] = useState<number | ''>('')
+  const [agravo, setAgravo] = useState<number | ''>('')
   const [iof, setIof] = useState<number | ''>('')
   const [comissaoTrabalhada, setComissaoTrabalhada] = useState<number | ''>('')
   const [basePremio, setBasePremio] = useState<'liquido' | 'net'>('liquido')
@@ -231,6 +232,7 @@ export function PainelControlePropostas({
     )
     setPremioBruto(p?.premio_bruto !== undefined && p?.premio_bruto !== null ? p.premio_bruto : '')
     setPremioNet(p?.premio_net !== undefined && p?.premio_net !== null ? p.premio_net : '')
+    setAgravo(p?.agravo !== undefined && p?.agravo !== null ? p.agravo : '')
     setIof(p?.iof !== undefined && p?.iof !== null ? p.iof : '')
     setComissaoTrabalhada(
       p?.comissao_trabalhada !== undefined && p?.comissao_trabalhada !== null
@@ -364,6 +366,11 @@ export function PainelControlePropostas({
         premioLiquido: premioLiquido === '' ? undefined : Number(premioLiquido),
         premioBruto: premioBruto === '' ? undefined : Number(premioBruto),
         premioNet: premioNet === '' ? undefined : Number(premioNet),
+        agravo: agravo === '' ? undefined : Number(agravo),
+        premioNetPosAgravo:
+          agravo !== '' && Number(agravo) > 0 && premioNet !== ''
+            ? Number((Number(premioNet) * (1 + Number(agravo) / 100)).toFixed(2))
+            : undefined,
         iof: iof === '' ? undefined : Number(iof),
         comissaoTrabalhada: comissaoTrabalhada === '' ? undefined : Number(comissaoTrabalhada),
         basePremio,
@@ -780,6 +787,30 @@ export function PainelControlePropostas({
                                   : '—'}
                               </span>
                             </div>
+                            {propostaData?.agravo !== undefined &&
+                              propostaData?.agravo !== null &&
+                              Number(propostaData.agravo) > 0 && (
+                                <div className="text-[10px] text-amber-800 font-mono">
+                                  Net Pós Agravo ({propostaData.agravo}%):{' '}
+                                  <strong>
+                                    {propostaData.premio_net_pos_agravo
+                                      ? formatCurrency(propostaData.premio_net_pos_agravo)
+                                      : propostaData.premio_net
+                                        ? formatCurrency(
+                                            Number(
+                                              (
+                                                propostaData.premio_net *
+                                                (1 + Number(propostaData.agravo) / 100)
+                                              ).toFixed(2),
+                                            ),
+                                          )
+                                        : '—'}
+                                  </strong>{' '}
+                                  <span className="text-[9px] uppercase font-sans text-amber-700">
+                                    [calc]
+                                  </span>
+                                </div>
+                              )}
                             {propostaData?.comissao_trabalhada !== undefined &&
                               propostaData?.comissao_trabalhada !== null && (
                                 <div className="text-[10px] text-blue-700">
@@ -1073,8 +1104,10 @@ export function PainelControlePropostas({
                     setPremioNet(val)
                     if (basePremio === 'net' && val !== '') {
                       const c = typeof comissaoTrabalhada === 'number' ? comissaoTrabalhada : 0
+                      const agr = typeof agravo === 'number' ? agravo : 0
                       if (c < 100) {
-                        const liq = Number(val) / (1 - c / 100)
+                        const netPos = agr > 0 ? Number(val) * (1 + agr / 100) : Number(val)
+                        const liq = netPos / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
                         const iofVal = typeof iof === 'number' ? iof : 0
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
@@ -1082,6 +1115,55 @@ export function PainelControlePropostas({
                     }
                   }}
                   className="h-8 text-xs font-semibold bg-white"
+                />
+              </div>
+
+              {/* Campo Agravo (%) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">Agravo (%)</Label>
+                  <span className="text-[10px] text-gray-400">opcional</span>
+                </div>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ex: 10"
+                  value={agravo}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : Number(e.target.value)
+                    setAgravo(val)
+                    const agr = typeof val === 'number' ? val : 0
+                    const c = typeof comissaoTrabalhada === 'number' ? comissaoTrabalhada : 0
+                    const iofVal = typeof iof === 'number' ? iof : 0
+
+                    if (basePremio === 'liquido') {
+                      const pLiq = typeof premioLiquido === 'number' ? premioLiquido : 0
+                      const netOriginal =
+                        typeof premioNet === 'number' && premioNet > 0
+                          ? premioNet
+                          : pLiq > 0 && c < 100
+                            ? pLiq * (1 - c / 100)
+                            : 0
+                      if (netOriginal > 0) {
+                        setPremioNet(Number(netOriginal.toFixed(2)))
+                        const netPos = agr > 0 ? netOriginal * (1 + agr / 100) : netOriginal
+                        if (c < 100) {
+                          const liqNovo = netPos / (1 - c / 100)
+                          setPremioLiquido(Number(liqNovo.toFixed(2)))
+                          setPremioBruto(Number((liqNovo + iofVal).toFixed(2)))
+                        }
+                      }
+                    } else {
+                      if (typeof premioNet === 'number' && premioNet > 0 && c < 100) {
+                        const netPos = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
+                        const liq = netPos / (1 - c / 100)
+                        setPremioLiquido(Number(liq.toFixed(2)))
+                        setPremioBruto(Number((liq + iofVal).toFixed(2)))
+                      }
+                    }
+                  }}
+                  className="h-8 text-xs font-mono font-bold text-amber-900 bg-amber-50/40"
                 />
               </div>
 
@@ -1105,16 +1187,25 @@ export function PainelControlePropostas({
                     const val = e.target.value === '' ? '' : Number(e.target.value)
                     setComissaoTrabalhada(val)
                     const c = typeof val === 'number' ? val : 0
+                    const agr = typeof agravo === 'number' ? agravo : 0
                     const iofVal = typeof iof === 'number' ? iof : 0
                     if (basePremio === 'liquido') {
-                      if (typeof premioLiquido === 'number' && premioLiquido > 0) {
+                      if (typeof premioLiquido === 'number' && premioLiquido > 0 && c < 100) {
                         const net = premioLiquido * (1 - c / 100)
                         setPremioNet(Number(net.toFixed(2)))
-                        setPremioBruto(Number((premioLiquido + iofVal).toFixed(2)))
+                        if (agr > 0) {
+                          const netPos = net * (1 + agr / 100)
+                          const liqRecalc = netPos / (1 - c / 100)
+                          setPremioLiquido(Number(liqRecalc.toFixed(2)))
+                          setPremioBruto(Number((liqRecalc + iofVal).toFixed(2)))
+                        } else {
+                          setPremioBruto(Number((premioLiquido + iofVal).toFixed(2)))
+                        }
                       }
                     } else {
                       if (typeof premioNet === 'number' && premioNet > 0 && c < 100) {
-                        const liq = premioNet / (1 - c / 100)
+                        const netParaLiq = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
+                        const liq = netParaLiq / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
                       }
@@ -1138,6 +1229,61 @@ export function PainelControlePropostas({
                 </select>
               </div>
             </div>
+
+            {/* Pill resumo derivado no modal */}
+            {(() => {
+              const agr = typeof agravo === 'number' ? agravo : 0
+              const pNet = typeof premioNet === 'number' ? premioNet : 0
+              const temAgravoVal = agr > 0 && pNet > 0
+              const netPosCalc = temAgravoVal ? Number((pNet * (1 + agr / 100)).toFixed(2)) : null
+
+              return (
+                <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="text-gray-600 flex items-center gap-1.5 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>{temAgravoVal ? 'Quarteto de Prêmios:' : 'Tríade de Prêmios:'}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 font-mono">
+                    <span>
+                      Net:{' '}
+                      <strong className="text-gray-800">
+                        {typeof premioNet === 'number' ? formatCurrency(premioNet) : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                    {temAgravoVal && netPosCalc !== null && (
+                      <>
+                        <span className="text-gray-300">•</span>
+                        <span className="bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-amber-900">
+                          Net Pós Agravo ({agr}%):{' '}
+                          <strong className="text-amber-950 font-bold">
+                            {formatCurrency(netPosCalc)}
+                          </strong>{' '}
+                          <span className="text-[9px] uppercase font-sans font-semibold text-amber-700">
+                            [calculado]
+                          </span>
+                        </span>
+                      </>
+                    )}
+                    <span className="text-gray-300">•</span>
+                    <span>
+                      Líquido:{' '}
+                      <strong className="text-blue-900">
+                        {typeof premioLiquido === 'number'
+                          ? formatCurrency(premioLiquido)
+                          : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                    <span className="text-gray-300">•</span>
+                    <span>
+                      Bruto:{' '}
+                      <strong className="text-emerald-700">
+                        {typeof premioBruto === 'number' ? formatCurrency(premioBruto) : 'R$ 0,00'}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Bloco VRD (Substitui Franquias Gerais / P.O.S.) */}
             <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200 space-y-2">

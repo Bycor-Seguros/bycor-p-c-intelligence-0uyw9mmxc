@@ -78,6 +78,8 @@ export interface RfqSeguradoraRecord {
       premio_liquido?: number
       premio_bruto?: number
       premio_net?: number
+      agravo?: number
+      premio_net_pos_agravo?: number
       iof?: number
       comissao_trabalhada?: number
       base_premio?: string
@@ -116,6 +118,8 @@ export interface RegistrarPropostaParams {
   premioLiquido?: number
   premioBruto?: number
   premioNet?: number
+  agravo?: number
+  premioNetPosAgravo?: number
   iof?: number
   comissaoTrabalhada?: number
   basePremio?: string
@@ -145,6 +149,8 @@ export interface RegistrarPropostaUploadParams {
   premioLiquido?: number | null
   premioBruto?: number | null
   premioNet?: number | null
+  agravo?: number | null
+  premioNetPosAgravo?: number | null
   iof?: number | null
   comissaoTrabalhada?: number | null
   basePremio?: string
@@ -161,6 +167,98 @@ export interface RegistrarPropostaUploadParams {
   coberturas?: any[]
   arquivo?: File | null
   arquivoExtracaoJson?: any
+}
+
+/**
+ * Utilitário central de cálculo de prêmios com suporte a Agravo (%) e Comissão Trabalhada (%)
+ * Regra:
+ *  - Caso Base Net: Net Pós Agravo = Net * (1 + agravo%), Líquido = Net Pós Agravo / (1 - comissao%), Bruto = Líquido + IOF.
+ *  - Caso Base Líquido: Net = Líquido * (1 - comissao%), Net Pós Agravo = Net * (1 + agravo%), Líquido Recalculado = Net Pós Agravo / (1 - comissao%), Bruto = Líquido + IOF.
+ *  - Se agravo não preenchido ou 0: Net Pós Agravo = Net (ou undefined se sem agravo).
+ */
+export function calcularFluxoPremios(params: {
+  base: BasePremioUi
+  premioNet?: number | null
+  premioLiquido?: number | null
+  comissaoPerc?: number | null
+  agravoPerc?: number | null
+  iof?: number | null
+}): {
+  net: number | null
+  agravoPerc: number
+  netPosAgravo: number | null
+  temAgravo: boolean
+  liquido: number | null
+  iof: number
+  bruto: number | null
+} {
+  const { base, iof = 0 } = params
+  const comissao = params.comissaoPerc ?? 0
+  const agravo = params.agravoPerc ?? 0
+  const iofVal = iof ?? 0
+  const temAgravo = typeof agravo === 'number' && agravo > 0
+
+  let netBase: number | null = null
+  let liqCalculado: number | null = null
+  let netPosAgravo: number | null = null
+
+  if (base === 'liquido') {
+    const liqInput = params.premioLiquido ?? 0
+    if (liqInput > 0) {
+      if (comissao >= 0 && comissao < 100) {
+        netBase = liqInput * (1 - comissao / 100)
+      } else {
+        netBase = liqInput
+      }
+
+      if (temAgravo && netBase !== null) {
+        netPosAgravo = netBase * (1 + agravo / 100)
+        if (comissao >= 0 && comissao < 100) {
+          liqCalculado = netPosAgravo / (1 - comissao / 100)
+        } else {
+          liqCalculado = netPosAgravo
+        }
+      } else {
+        netPosAgravo = netBase
+        liqCalculado = liqInput
+      }
+    }
+  } else {
+    // Base Net
+    const netInput = params.premioNet ?? 0
+    if (netInput > 0) {
+      netBase = netInput
+      if (temAgravo) {
+        netPosAgravo = netBase * (1 + agravo / 100)
+      } else {
+        netPosAgravo = netBase
+      }
+
+      const netParaLiq = temAgravo && netPosAgravo !== null ? netPosAgravo : netBase
+      if (comissao >= 0 && comissao < 100) {
+        liqCalculado = netParaLiq / (1 - comissao / 100)
+      } else {
+        liqCalculado = netParaLiq
+      }
+    }
+  }
+
+  const brutoCalculado = liqCalculado !== null ? liqCalculado + iofVal : null
+
+  return {
+    net: netBase !== null ? Number(netBase.toFixed(2)) : null,
+    agravoPerc: agravo,
+    netPosAgravo:
+      temAgravo && netPosAgravo !== null
+        ? Number(netPosAgravo.toFixed(2))
+        : netBase !== null
+          ? Number(netBase.toFixed(2))
+          : null,
+    temAgravo,
+    liquido: liqCalculado !== null ? Number(liqCalculado.toFixed(2)) : null,
+    iof: Number(iofVal.toFixed(2)),
+    bruto: brutoCalculado !== null ? Number(brutoCalculado.toFixed(2)) : null,
+  }
 }
 
 export interface MarcarDeclinioParams {
@@ -386,6 +484,8 @@ export async function registrarPropostaManual(
     premioLiquido,
     premioBruto,
     premioNet,
+    agravo,
+    premioNetPosAgravo,
     comissaoTrabalhada,
     basePremio,
     vrdDm,
@@ -424,6 +524,9 @@ export async function registrarPropostaManual(
   }
 
   if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
+  if (agravo !== undefined && agravo !== null) propPayload.agravo = Number(agravo)
+  if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null)
+    propPayload.premio_net_pos_agravo = Number(premioNetPosAgravo)
   if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
     propPayload.comissao_trabalhada = Number(comissaoTrabalhada)
   if (basePremio !== undefined) {
@@ -574,6 +677,8 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     premioLiquido,
     premioBruto,
     premioNet,
+    agravo,
+    premioNetPosAgravo,
     iof,
     comissaoTrabalhada,
     basePremio,
@@ -637,6 +742,9 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     formData.append('premio_bruto', String(premioBruto))
   if (premioNet !== undefined && premioNet !== null)
     formData.append('premio_net', String(premioNet))
+  if (agravo !== undefined && agravo !== null) formData.append('agravo', String(agravo))
+  if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null)
+    formData.append('premio_net_pos_agravo', String(premioNetPosAgravo))
   if (iof !== undefined && iof !== null) formData.append('iof', String(iof))
   if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
     formData.append('comissao_trabalhada', String(comissaoTrabalhada))
