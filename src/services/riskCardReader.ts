@@ -321,16 +321,28 @@ export function matchCanonicalCategory(rawName: string): string {
   if (norm.includes('quebra de maquinas')) {
     return 'Quebra de Máquinas'
   }
-  if (norm.includes('eletronicos')) {
+  if (norm.includes('eletronico') || norm.includes('eletronicos')) {
     return 'Equipamentos Eletrônicos'
   }
-  if (norm.includes('moveis') && norm.includes('equipamentos')) {
+  if (
+    (norm.includes('movel') || norm.includes('moveis')) &&
+    (norm.includes('equipamento') || norm.includes('equipamentos'))
+  ) {
     return 'Equipamentos Móveis'
   }
-  if (norm.includes('estacionarios') && norm.includes('equipamentos')) {
+  if (
+    (norm.includes('estacionario') || norm.includes('estacionarios')) &&
+    (norm.includes('equipamento') || norm.includes('equipamentos'))
+  ) {
     return 'Equipamentos Estacionários'
   }
-  if (norm.includes('portateis') && norm.includes('equipamentos')) {
+  if (
+    (norm.includes('portatil') || norm.includes('portateis')) &&
+    (norm.includes('equipamento') ||
+      norm.includes('equipamentos') ||
+      norm.includes('objeto') ||
+      norm.includes('objetos'))
+  ) {
     return 'Equipamentos Portáteis'
   }
   if (norm.includes('arrendados') || norm.includes('cedidos')) {

@@ -28,6 +28,7 @@ import {
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
 import { desnormalizarBasePremioParaUi } from '@/services/rfqPropostasService'
+import { matchCanonicalCategory } from '@/services/riskCardReader'
 
 interface PropostaCoverageItem {
   nome?: string
@@ -184,10 +185,16 @@ export default function TabulacaoPage() {
     setEditModalOpen(true)
   }
 
+  // Retorna a categoria canônica normalizada da cobertura
+  const getCanonicalCat = (c: PropostaCoverageItem): string => {
+    const rawCat = c.categoria_normalizada || c.categoriaNormalizada || c.cobertura || c.nome || ''
+    return rawCat ? matchCanonicalCategory(rawCat) : ''
+  }
+
   // Normalizar item de cobertura para acesso consistente
   const getCoverageFields = (c: PropostaCoverageItem) => {
     const nome = c.nome || c.cobertura || 'Cobertura'
-    const cat = c.categoria_normalizada || c.categoriaNormalizada || ''
+    const cat = getCanonicalCat(c)
     const lmi = c.lmi !== undefined && c.lmi !== null ? Number(c.lmi) : 0
     const franquia = c.franquia || 'Conforme apólice'
     const premio =
@@ -245,7 +252,7 @@ export default function TabulacaoPage() {
     const set = new Set<string>()
     comparedProposals.forEach((p) => {
       ;(p.coberturas || []).forEach((c) => {
-        const cat = c.categoria_normalizada || c.categoriaNormalizada
+        const cat = getCanonicalCat(c)
         if (cat) set.add(cat)
       })
     })
@@ -262,9 +269,7 @@ export default function TabulacaoPage() {
     ]
     const rows = distinctCategories.map((cat) => {
       const values = comparedProposals.map((p) => {
-        const found = (p.coberturas || []).find(
-          (c) => (c.categoria_normalizada || c.categoriaNormalizada) === cat,
-        )
+        const found = (p.coberturas || []).find((c) => getCanonicalCat(c) === cat)
         return found && found.lmi !== null && found.lmi !== undefined ? found.lmi : 0
       })
       return [`"${cat}"`, ...values].join(';')
@@ -662,9 +667,7 @@ export default function TabulacaoPage() {
                         {cat}
                       </td>
                       {comparedProposals.map((p) => {
-                        const cov = (p.coberturas || []).find(
-                          (c) => (c.categoria_normalizada || c.categoriaNormalizada) === cat,
-                        )
+                        const cov = (p.coberturas || []).find((c) => getCanonicalCat(c) === cat)
                         const covFields = cov ? getCoverageFields(cov) : null
                         return (
                           <td key={p.id} className="py-2 px-4 border-r">
