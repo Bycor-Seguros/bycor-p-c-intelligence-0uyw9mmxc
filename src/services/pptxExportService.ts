@@ -1,0 +1,719 @@
+/**
+ * Gerador de apresentações comerciais (.pptx) em formato Microsoft Office OpenXML PresentationML.
+ * Produz um pacote ZIP válido com todos os componentes obrigatórios (ContentTypes, Rels, Theme, SlideMaster, SlideLayout, Slides).
+ */
+import { createZipArchive, SimpleZipFile } from './zipArchiveService'
+import { formatCurrency, formatDate } from '@/lib/formatters'
+
+export interface PptxCoverageItem {
+  nome: string
+  lmi: number | null
+  franquia: string
+}
+
+export interface PptxPresentationData {
+  clienteNome: string
+  razaoSocial?: string
+  cidade?: string
+  uf?: string
+  areaConstruida?: number
+  seguradoraNome: string
+  premioBruto: number
+  lmiLmg: number
+  recomendacao: string
+  coberturas: PptxCoverageItem[]
+}
+
+function escapeXml(unsafe: string | number | null | undefined): string {
+  if (unsafe === null || unsafe === undefined) return ''
+  const str = String(unsafe)
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+/**
+ * Constrói o pacote PPTX completo com 4 slides:
+ * 1. Capa Institucional Bycor (Apresentação Comercial ao Segurado)
+ * 2. Perfil Operacional & Estrutura Financeira da Apólice Recomendada
+ * 3. Tabela de Coberturas e Limites Tabulados
+ * 4. Parecer Técnico da Corretora & Recomendação de Contratação
+ */
+export function generatePresentationPptx(data: PptxPresentationData): Uint8Array {
+  const files: SimpleZipFile[] = []
+
+  // 1. [Content_Types].xml
+  files.push({
+    name: '[Content_Types].xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide3.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide4.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`,
+  })
+
+  // 2. _rels/.rels
+  files.push({
+    name: '_rels/.rels',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`,
+  })
+
+  // 3. docProps/core.xml
+  const nowIso = new Date().toISOString()
+  files.push({
+    name: 'docProps/core.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>${escapeXml(data.clienteNome)} - Apresentação Comercial Bycor</dc:title>
+  <dc:creator>Bycor P&amp;C Intelligence</dc:creator>
+  <cp:lastModifiedBy>Bycor P&amp;C Intelligence</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${nowIso}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${nowIso}</dcterms:modified>
+</cp:coreProperties>`,
+  })
+
+  // 4. docProps/app.xml
+  files.push({
+    name: 'docProps/app.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <TotalTime>0</TotalTime>
+  <Words>0</Words>
+  <Application>Bycor P&amp;C Intelligence</Application>
+  <PresentationFormat>On-screen Show (16:9)</PresentationFormat>
+  <Paragraphs>0</Paragraphs>
+  <Slides>4</Slides>
+  <Notes>0</Notes>
+  <HiddenSlides>0</HiddenSlides>
+  <MMClips>0</MMClips>
+  <ScaleCrop>false</ScaleCrop>
+  <HeadingPairs>
+    <vt:vector size="2" baseType="variant">
+      <vt:variant><vt:lpstr>Tema</vt:lpstr></vt:variant>
+      <vt:variant><vt:i4>1</vt:i4></vt:variant>
+    </vt:vector>
+  </HeadingPairs>
+  <TitlesOfParts>
+    <vt:vector size="1" baseType="lpstr">
+      <vt:lpstr>Bycor Theme</vt:lpstr>
+    </vt:vector>
+  </TitlesOfParts>
+  <Company>Bycor Consultoria e Corretora de Seguros</Company>
+  <LinksUpToDate>false</LinksUpToDate>
+  <SharedDoc>false</SharedDoc>
+  <HyperlinksChanged>false</HyperlinksChanged>
+  <AppVersion>16.0000</AppVersion>
+</Properties>`,
+  })
+
+  // 5. ppt/_rels/presentation.xml.rels
+  files.push({
+    name: 'ppt/_rels/presentation.xml.rels',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide3.xml"/>
+  <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide4.xml"/>
+</Relationships>`,
+  })
+
+  // 6. ppt/presentation.xml (16:9 widescreen: 12192000 x 6858000)
+  files.push({
+    name: 'ppt/presentation.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldMasterIdLst>
+    <p:sldMasterId id="2147483648" r:id="rId1"/>
+  </p:sldMasterIdLst>
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rId3"/>
+    <p:sldId id="257" r:id="rId4"/>
+    <p:sldId id="258" r:id="rId5"/>
+    <p:sldId id="259" r:id="rId6"/>
+  </p:sldIdLst>
+  <p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>
+  <p:notesSz cx="6858000" cy="9144000"/>
+</p:presentation>`,
+  })
+
+  // 7. ppt/theme/theme1.xml
+  files.push({
+    name: 'ppt/theme/theme1.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Bycor Theme">
+  <a:themeElements>
+    <a:clrScheme name="Bycor Palette">
+      <a:dk1><a:srgbClr val="0F2B46"/></a:dk1>
+      <a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="16578B"/></a:dk2>
+      <a:lt2><a:srgbClr val="F5F7FA"/></a:lt2>
+      <a:accent1><a:srgbClr val="0F2B46"/></a:accent1>
+      <a:accent2><a:srgbClr val="16578B"/></a:accent2>
+      <a:accent3><a:srgbClr val="0D9488"/></a:accent3>
+      <a:accent4><a:srgbClr val="D97706"/></a:accent4>
+      <a:accent5><a:srgbClr val="16A34A"/></a:accent5>
+      <a:accent6><a:srgbClr val="64748B"/></a:accent6>
+      <a:hlink><a:srgbClr val="16578B"/></a:hlink>
+      <a:folHlink><a:srgbClr val="0F2B46"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="Bycor Fonts">
+      <a:majorFont><a:latin typeface="Arial"/></a:majorFont>
+      <a:minorFont><a:latin typeface="Arial"/></a:minorFont>
+    </a:fontScheme>
+    <a:fmtScheme name="Bycor Scheme">
+      <a:fillStyleLst><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:fillStyleLst>
+      <a:lnStyleLst><a:ln w="9525"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:ln></a:lnStyleLst>
+      <a:effectStyleLst><a:effectLst/></a:effectStyleLst>
+      <a:bgFillStyleLst><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:bgFillStyleLst>
+    </a:fmtScheme>
+  </a:themeElements>
+</a:theme>`,
+  })
+
+  // 8. ppt/slideMasters/slideMaster1.xml
+  files.push({
+    name: 'ppt/slideMasters/slideMaster1.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+  <p:sldLayoutIdLst>
+    <p:sldLayoutId id="2147483649" r:id="rId1"/>
+  </p:sldLayoutIdLst>
+</p:sldMaster>`,
+  })
+
+  // 9. ppt/slideMasters/_rels/slideMaster1.xml.rels
+  files.push({
+    name: 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>`,
+  })
+
+  // 10. ppt/slideLayouts/slideLayout1.xml
+  files.push({
+    name: 'ppt/slideLayouts/slideLayout1.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">
+  <p:cSld name="Blank">
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sldLayout>`,
+  })
+
+  // 11. ppt/slideLayouts/_rels/slideLayout1.xml.rels
+  files.push({
+    name: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>`,
+  })
+
+  // Helper para criar slide rels
+  const makeSlideRel = () => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>`
+
+  files.push({ name: 'ppt/slides/_rels/slide1.xml.rels', content: makeSlideRel() })
+  files.push({ name: 'ppt/slides/_rels/slide2.xml.rels', content: makeSlideRel() })
+  files.push({ name: 'ppt/slides/_rels/slide3.xml.rels', content: makeSlideRel() })
+  files.push({ name: 'ppt/slides/_rels/slide4.xml.rels', content: makeSlideRel() })
+
+  // SLIDE 1: Capa Executiva
+  files.push({
+    name: 'ppt/slides/slide1.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <!-- Background Header Navy Card -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="BgNavy"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="914400" y="914400"/><a:ext cx="10363200" cy="5029200"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="16578B"/></a:solidFill></a:ln>
+        </p:spPr>
+      </p:sp>
+      <!-- Tag Bycor -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="Tag"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="1371600" y="1463040"/><a:ext cx="3657600" cy="457200"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1400" b="1"><a:solidFill><a:srgbClr val="60A5FA"/></a:solidFill></a:rPr>
+              <a:t>BYCOR CONSULTORIA E CORRETORA DE SEGUROS</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Title -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="4" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="1371600" y="2103120"/><a:ext cx="9144000" cy="1371600"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="3600" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>
+              <a:t>Apresentação Comercial ao Segurado</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="2000"><a:solidFill><a:srgbClr val="94A3B8"/></a:solidFill></a:rPr>
+              <a:t>Relatório Técnico de Recomendação &amp; Minuta Executiva P&amp;C</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Cliente & Data Box -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="5" name="ClientBox"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="1371600" y="3840480"/><a:ext cx="9144000" cy="1371600"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1600" b="1"><a:solidFill><a:srgbClr val="93C5FD"/></a:solidFill></a:rPr>
+              <a:t>Cliente / Empreendimento: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr sz="1800" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.clienteNome)}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1400"><a:solidFill><a:srgbClr val="CBD5E1"/></a:solidFill></a:rPr>
+              <a:t>Data de Emissão: ${escapeXml(formatDate(new Date().toISOString()))} | Versão Executiva 1.0</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>`,
+  })
+
+  // SLIDE 2: Perfil Operacional & Estrutura da Apólice Recomendada
+  files.push({
+    name: 'ppt/slides/slide2.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <!-- Slide Title -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="731520" y="548640"/><a:ext cx="10728960" cy="731520"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="2400" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>1. Perfil Operacional &amp; Estrutura Recomendada</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Box 1: Perfil Segurado -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="CardPerfil"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="1828800"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="F8FAFC"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="E2E8F0"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1400" b="1"><a:solidFill><a:srgbClr val="16578B"/></a:solidFill></a:rPr>
+              <a:t>DADOS OPERACIONAIS DO CLIENTE</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300" b="1"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:rPr>
+              <a:t>Empreendimento: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr sz="1300"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.clienteNome)}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300" b="1"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:rPr>
+              <a:t>Razão Social: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr sz="1300"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.razaoSocial || 'Não informado')}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300" b="1"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:rPr>
+              <a:t>Localização: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr sz="1300"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.cidade || 'São Paulo')} - ${escapeXml(data.uf || 'SP')}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300" b="1"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:rPr>
+              <a:t>Área Construída: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr sz="1300"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.areaConstruida ? `${data.areaConstruida} m²` : '—')}</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Card 1: Seguradora Líder -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="4" name="CardSeguradora"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="731520" y="3566160"/><a:ext cx="3383280" cy="2377440"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="EFF6FF"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="BFDBFE"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill></a:rPr>
+              <a:t>SEGURADORA RECOMENDADA</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1800" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.seguradoraNome)}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr>
+              <a:t>Avaliação técnica aprovada no comitê de colocação de risco Bycor.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Card 2: LMI / LMG Consolidado -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="5" name="CardLmi"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="4404360" y="3566160"/><a:ext cx="3383280" cy="2377440"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="F8FAFC"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="CBD5E1"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr>
+              <a:t>LMI / LMG CONSOLIDADO</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1800" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(formatCurrency(data.lmiLmg))}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr>
+              <a:t>Garantia patrimonial máxima contratada por evento.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Card 3: Investimento Prêmio Total -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="6" name="CardPremio"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="8077200" y="3566160"/><a:ext cx="3383280" cy="2377440"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="F0FDF4"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="BBF7D0"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="16A34A"/></a:solidFill></a:rPr>
+              <a:t>INVESTIMENTO (PRÊMIO TOTAL)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1800" b="1"><a:solidFill><a:srgbClr val="14532D"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(formatCurrency(data.premioBruto))}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="15803D"/></a:solidFill></a:rPr>
+              <a:t>Com IOF de 7,38% incluso · Condições negociadas.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>`,
+  })
+
+  // SLIDE 3: Tabela de Coberturas Tabuladas
+  // Gera linhas XML da tabela
+  const cobsList = data.coberturas.length > 0 ? data.coberturas.slice(0, 8) : []
+  const tableRowsXml = [
+    // Header row
+    `<a:tr h="365760">
+      <a:tc>
+        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Garantia / Cobertura Contratada</a:t></a:r></a:p></a:txBody>
+        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
+      </a:tc>
+      <a:tc>
+        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Limite (LMI)</a:t></a:r></a:p></a:txBody>
+        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
+      </a:tc>
+      <a:tc>
+        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Franquia / POS</a:t></a:r></a:p></a:txBody>
+        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
+      </a:tc>
+    </a:tr>`,
+  ]
+
+  if (cobsList.length > 0) {
+    cobsList.forEach((c, idx) => {
+      const bgClr = idx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
+      tableRowsXml.push(`
+        <a:tr h="320040">
+          <a:tc>
+            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(c.nome)}</a:t></a:r></a:p></a:txBody>
+            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
+          </a:tc>
+          <a:tc>
+            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(formatCurrency(c.lmi))}</a:t></a:r></a:p></a:txBody>
+            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
+          </a:tc>
+          <a:tc>
+            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="475569"/></a:solidFill></a:rPr><a:t>${escapeXml(c.franquia)}</a:t></a:r></a:p></a:txBody>
+            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
+          </a:tc>
+        </a:tr>
+      `)
+    })
+  } else {
+    tableRowsXml.push(`
+      <a:tr h="320040">
+        <a:tc>
+          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr><a:t>Incêndio Básica (Danos Materiais)</a:t></a:r></a:p></a:txBody>
+        </a:tc>
+        <a:tc>
+          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(formatCurrency(data.lmiLmg))}</a:t></a:r></a:p></a:txBody>
+        </a:tc>
+        <a:tc>
+          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="475569"/></a:solidFill></a:rPr><a:t>Padrão de mercado</a:t></a:r></a:p></a:txBody>
+        </a:tc>
+      </a:tr>
+    `)
+  }
+
+  files.push({
+    name: 'ppt/slides/slide3.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <!-- Title -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="731520" y="548640"/><a:ext cx="10728960" cy="731520"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="2400" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>2. Resumo de Coberturas Incluídas</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Table Frame -->
+      <p:graphicFrame>
+        <p:nvGraphicFramePr>
+          <p:cNvPr id="3" name="CoberturasTable"/>
+          <p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>
+          <p:nvPr/>
+        </p:nvGraphicFramePr>
+        <p:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="4572000"/></a:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblPr/>
+              <a:tblGrid>
+                <a:gridCol w="5120640"/>
+                <a:gridCol w="2743200"/>
+                <a:gridCol w="2865120"/>
+              </a:tblGrid>
+              ${tableRowsXml.join('')}
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+    </p:spTree>
+  </p:cSld>
+</p:sld>`,
+  })
+
+  // SLIDE 4: Parecer Técnico & Recomendação da Corretora
+  files.push({
+    name: 'ppt/slides/slide4.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <!-- Title -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="731520" y="548640"/><a:ext cx="10728960" cy="731520"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="2400" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>3. Parecer Técnico &amp; Recomendação da Corretora</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Parecer Card -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="CardParecer"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="3200400"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="F8FAFC"/></a:solidFill>
+          <a:ln w="12700"><a:solidFill><a:srgbClr val="CBD5E1"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300" b="1"><a:solidFill><a:srgbClr val="16578B"/></a:solidFill></a:rPr>
+              <a:t>PARECER TÉCNICO BYCOR CONSULTORIA:</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1300"><a:solidFill><a:srgbClr val="1E293B"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.recomendacao)}</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Assinatura Bycor -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="4" name="Assinatura1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="731520" y="5029200"/><a:ext cx="4572000" cy="1188720"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>BYCOR Seguros</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr>
+              <a:t>Consultoria Técnica P&amp;C</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <!-- Assinatura Segurado -->
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="5" name="Assinatura2"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="6888480" y="5029200"/><a:ext cx="4572000" cy="1188720"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
+              <a:t>${escapeXml(data.clienteNome)}</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:r>
+              <a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr>
+              <a:t>Assinatura de Aceite do Segurado</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>`,
+  })
+
+  return createZipArchive(files)
+}

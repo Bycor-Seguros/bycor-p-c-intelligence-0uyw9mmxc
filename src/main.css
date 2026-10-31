@@ -74,6 +74,17 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 12mm 12mm 12mm 12mm;
+    }
+    body {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+  }
+
   section[aria-label='Notifications alt+T'] {
     padding: 0 !important;
     margin: 0 !important;

@@ -281,21 +281,21 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex bg-[#F5F7FA]">
       {/* Desktop Fixed Sidebar (248px) */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-[248px] lg:fixed lg:inset-y-0 bg-[#0F2B46] border-r border-[#0B1D31] z-30 shadow-lg">
+      <aside className="hidden lg:flex lg:flex-col lg:w-[248px] lg:fixed lg:inset-y-0 bg-[#0F2B46] border-r border-[#0B1D31] z-30 shadow-lg print:hidden">
         {renderNavContent()}
       </aside>
 
       {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm transition-opacity print:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Mobile Drawer (248px) */}
       <div
-        className={`fixed inset-y-0 left-0 w-[248px] bg-[#0F2B46] z-50 transform lg:hidden transition-transform duration-200 ease-in-out shadow-2xl ${
+        className={`fixed inset-y-0 left-0 w-[248px] bg-[#0F2B46] z-50 transform lg:hidden transition-transform duration-200 ease-in-out shadow-2xl print:hidden ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -303,9 +303,9 @@ export default function Layout() {
       </div>
 
       {/* Main Layout Area */}
-      <div className="flex-1 lg:pl-[248px] flex flex-col min-w-0">
+      <div className="flex-1 lg:pl-[248px] flex flex-col min-w-0 print:pl-0">
         {/* Topbar (60px) */}
-        <header className="h-[60px] bg-white border-b border-[#E4E9F0] sticky top-0 z-20 px-4 sm:px-6 flex items-center justify-between shadow-sm">
+        <header className="h-[60px] bg-white border-b border-[#E4E9F0] sticky top-0 z-20 px-4 sm:px-6 flex items-center justify-between shadow-sm print:hidden">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -384,12 +384,12 @@ export default function Layout() {
         </header>
 
         {/* Content View */}
-        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto animate-fade-in-up">
+        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto animate-fade-in-up print:p-0 print:m-0 print:max-w-none print:w-full">
           <Outlet />
         </main>
 
         {/* Footer */}
-        <footer className="h-10 bg-[#0F2B46] text-gray-300 text-[11px] px-6 flex items-center justify-between border-t border-[#0B1D31]">
+        <footer className="h-10 bg-[#0F2B46] text-gray-300 text-[11px] px-6 flex items-center justify-between border-t border-[#0B1D31] print:hidden">
           <span>BYCOR Seguros — Sistema Interno P&C · MVP Fase 0</span>
           <span className="hidden sm:inline text-gray-400">
             São Paulo · Contas Médias & Segmento Hotéis & Resorts
