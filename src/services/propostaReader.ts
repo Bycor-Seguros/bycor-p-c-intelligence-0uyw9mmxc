@@ -3835,6 +3835,22 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
       const previewLines = segmentPages[0]?.lines.slice(0, 8).join('\n') || ''
       const docDisplayNum = numCot || `Proposta #${idx + 1}`
 
+      // Regra de IOF no leitor de propostas (C2):
+      // Quando a proposta NÃO informar IOF (ou vier 0), derivar: IOF = Líquido * 7,38% e Bruto = Líquido + IOF.
+      // Quando a proposta informar IOF explícito, usar o valor informado e Bruto = Líquido + IOF (se Bruto não vier).
+      const pLiqRaw = extracted.premioLiquido ?? null
+      let pIofRaw = extracted.iof ?? null
+      let pTotalRaw = extracted.premioTotal ?? null
+
+      if (pLiqRaw !== null && pLiqRaw > 0) {
+        if (pIofRaw === null || pIofRaw === 0) {
+          pIofRaw = Number((pLiqRaw * 0.0738).toFixed(2))
+        }
+        if (pTotalRaw === null || pTotalRaw === 0) {
+          pTotalRaw = Number((pLiqRaw + pIofRaw).toFixed(2))
+        }
+      }
+
       documentos.push({
         id: docId,
         titulo: `${seguradora.nomeCanonica} — Cotação ${docDisplayNum}${versaoCot} [Págs. ${b.paginaInicio} a ${b.paginaFim}]`,
@@ -3847,9 +3863,9 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
         validadeCotacao: extracted.validadeCotacao || '',
         vigenciaInicio: extracted.vigenciaInicio || '',
         vigenciaFim: extracted.vigenciaFim || '',
-        premioLiquido: extracted.premioLiquido ?? null,
-        premioTotal: extracted.premioTotal ?? null,
-        iof: extracted.iof ?? null,
+        premioLiquido: pLiqRaw,
+        premioTotal: pTotalRaw,
+        iof: pIofRaw,
         custoApolice: extracted.custoApolice ?? null,
         lmiTotal: extracted.lmiTotal ?? null,
         formaPagamento: extracted.formaPagamento || '',

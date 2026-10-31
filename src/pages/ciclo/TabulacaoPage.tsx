@@ -538,11 +538,20 @@ export default function TabulacaoPage() {
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
                     IOF
                   </td>
-                  {comparedProposals.map((p) => (
-                    <td key={p.id} className="py-2 px-4 border-r tabular-nums text-gray-600">
-                      {formatCurrency(p.iof)}
-                    </td>
-                  ))}
+                  {comparedProposals.map((p) => {
+                    const liqVal = p.premio_liquido || 0
+                    const iofVal =
+                      p.iof !== undefined && p.iof !== null && Number(p.iof) > 0
+                        ? Number(p.iof)
+                        : liqVal > 0
+                          ? Number((liqVal * 0.0738).toFixed(2))
+                          : 0
+                    return (
+                      <td key={p.id} className="py-2 px-4 border-r tabular-nums text-gray-600">
+                        {formatCurrency(iofVal)}
+                      </td>
+                    )
+                  })}
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">

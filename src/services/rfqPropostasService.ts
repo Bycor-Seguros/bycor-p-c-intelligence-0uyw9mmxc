@@ -176,6 +176,8 @@ export interface RegistrarPropostaUploadParams {
  *  - Caso Base Líquido: Net = Líquido * (1 - comissao%), Net Pós Agravo = Net * (1 + agravo%), Líquido Recalculado = Net Pós Agravo / (1 - comissao%), Bruto = Líquido + IOF.
  *  - Se agravo não preenchido ou 0: Net Pós Agravo = Net (ou undefined se sem agravo).
  */
+export const ALIQUOTA_IOF_PADRAO = 0.0738 // 7,38% conforme regra C2 (confirmada contra AXA International Square)
+
 export function calcularFluxoPremios(params: {
   base: BasePremioUi
   premioNet?: number | null
@@ -191,11 +193,11 @@ export function calcularFluxoPremios(params: {
   liquido: number | null
   iof: number
   bruto: number | null
+  iofDerivado: boolean
 } {
-  const { base, iof = 0 } = params
+  const { base, iof } = params
   const comissao = params.comissaoPerc ?? 0
   const agravo = params.agravoPerc ?? 0
-  const iofVal = iof ?? 0
   const temAgravo = typeof agravo === 'number' && agravo > 0
 
   let netBase: number | null = null
@@ -243,7 +245,20 @@ export function calcularFluxoPremios(params: {
     }
   }
 
-  const brutoCalculado = liqCalculado !== null ? liqCalculado + iofVal : null
+  // Regra de IOF no fluxo de prêmios:
+  // (1) Se IOF informado explicitamente (> 0), usa o valor informado e Bruto = Líquido + IOF.
+  // (2) Se IOF NÃO informado (ou vier 0), deriva: IOF = Líquido * 7,38% e Bruto = Líquido + IOF
+  //     inclusive quando o Líquido é derivado da cadeia Net/Agravo (Net Pós Agravo / (1 - comissão)).
+  const temIofExplicito = typeof iof === 'number' && iof > 0
+  const iofDerivado = !temIofExplicito
+  const iofCalculado = temIofExplicito
+    ? iof
+    : liqCalculado !== null && liqCalculado > 0
+      ? Number((liqCalculado * ALIQUOTA_IOF_PADRAO).toFixed(2))
+      : 0
+
+  const brutoCalculado =
+    liqCalculado !== null ? Number((liqCalculado + iofCalculado).toFixed(2)) : null
 
   return {
     net: netBase !== null ? Number(netBase.toFixed(2)) : null,
@@ -256,8 +271,9 @@ export function calcularFluxoPremios(params: {
           : null,
     temAgravo,
     liquido: liqCalculado !== null ? Number(liqCalculado.toFixed(2)) : null,
-    iof: Number(iofVal.toFixed(2)),
-    bruto: brutoCalculado !== null ? Number(brutoCalculado.toFixed(2)) : null,
+    iof: Number(iofCalculado.toFixed(2)),
+    bruto: brutoCalculado,
+    iofDerivado,
   }
 }
 
@@ -514,14 +530,25 @@ export async function registrarPropostaManual(
     seguradora: seguradoraId,
     data_proposta: dataProposta || new Date().toISOString().slice(0, 10),
     lmi_lmg: lmiLmg !== undefined && lmiLmg !== null ? Number(lmiLmg) : 0,
-    premio_liquido:
-      premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0,
-    premio_bruto: premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0,
     pos_franquias: posFranquias?.trim() || '',
     clausulas: clausulas?.trim() || '',
     exclusoes: exclusoes?.trim() || '',
     status: 'Pendente',
   }
+
+  const liqNum = premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0
+  let iofNum = iof !== undefined && iof !== null ? Number(iof) : 0
+  if ((!iofNum || iofNum === 0) && liqNum > 0) {
+    iofNum = Number((liqNum * ALIQUOTA_IOF_PADRAO).toFixed(2))
+  }
+  let brutoNum = premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0
+  if ((!brutoNum || brutoNum === 0) && liqNum > 0) {
+    brutoNum = Number((liqNum + iofNum).toFixed(2))
+  }
+
+  propPayload.premio_liquido = liqNum
+  propPayload.premio_bruto = brutoNum
+  propPayload.iof = iofNum
 
   if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
   if (agravo !== undefined && agravo !== null) propPayload.agravo = Number(agravo)
@@ -538,10 +565,6 @@ export async function registrarPropostaManual(
   if (vrdMmp !== undefined && vrdMmp !== null) propPayload.vrd_mmp = Number(vrdMmp)
   if (vrdLc !== undefined && vrdLc !== null) propPayload.vrd_lc = Number(vrdLc)
   if (vrdLcBase !== undefined) propPayload.vrd_lc_base = vrdLcBase
-
-  if (iof !== undefined) {
-    propPayload.iof = iof ? Number(iof) : 0
-  }
 
   if (coberturas !== undefined) {
     propPayload.coberturas = coberturas
@@ -735,17 +758,26 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   formData.append('data_proposta', dataProposta || new Date().toISOString().slice(0, 10))
   formData.append('status', 'Pendente')
 
+  const uploadLiq =
+    premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0
+  let uploadIof = iof !== undefined && iof !== null ? Number(iof) : 0
+  if ((!uploadIof || uploadIof === 0) && uploadLiq > 0) {
+    uploadIof = Number((uploadLiq * ALIQUOTA_IOF_PADRAO).toFixed(2))
+  }
+  let uploadBruto = premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0
+  if ((!uploadBruto || uploadBruto === 0) && uploadLiq > 0) {
+    uploadBruto = Number((uploadLiq + uploadIof).toFixed(2))
+  }
+
   if (lmiLmg !== undefined && lmiLmg !== null) formData.append('lmi_lmg', String(lmiLmg))
-  if (premioLiquido !== undefined && premioLiquido !== null)
-    formData.append('premio_liquido', String(premioLiquido))
-  if (premioBruto !== undefined && premioBruto !== null)
-    formData.append('premio_bruto', String(premioBruto))
+  if (uploadLiq > 0) formData.append('premio_liquido', String(uploadLiq))
+  if (uploadBruto > 0) formData.append('premio_bruto', String(uploadBruto))
+  if (uploadIof > 0) formData.append('iof', String(uploadIof))
   if (premioNet !== undefined && premioNet !== null)
     formData.append('premio_net', String(premioNet))
   if (agravo !== undefined && agravo !== null) formData.append('agravo', String(agravo))
   if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null)
     formData.append('premio_net_pos_agravo', String(premioNetPosAgravo))
-  if (iof !== undefined && iof !== null) formData.append('iof', String(iof))
   if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
     formData.append('comissao_trabalhada', String(comissaoTrabalhada))
   if (basePremio !== undefined && basePremio !== null) {

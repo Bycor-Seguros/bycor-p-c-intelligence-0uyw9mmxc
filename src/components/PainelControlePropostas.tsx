@@ -786,6 +786,17 @@ export function PainelControlePropostas({
                                   ? formatCurrency(propostaData.premio_liquido)
                                   : '—'}
                               </span>
+                              <span>•</span>
+                              <span>
+                                IOF:{' '}
+                                {propostaData?.premio_liquido
+                                  ? formatCurrency(
+                                      propostaData?.iof && Number(propostaData.iof) > 0
+                                        ? Number(propostaData.iof)
+                                        : Number((propostaData.premio_liquido * 0.0738).toFixed(2)),
+                                    )
+                                  : '—'}
+                              </span>
                             </div>
                             {propostaData?.agravo !== undefined &&
                               propostaData?.agravo !== null &&
@@ -1034,9 +1045,18 @@ export function PainelControlePropostas({
                   step="0.01"
                   placeholder="Ex: 69215.24"
                   value={premioLiquido}
-                  onChange={(e) =>
-                    setPremioLiquido(e.target.value === '' ? '' : Number(e.target.value))
-                  }
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : Number(e.target.value)
+                    setPremioLiquido(val)
+                    if (typeof val === 'number' && val > 0) {
+                      const iofVal =
+                        typeof iof === 'number' && iof > 0 ? iof : Number((val * 0.0738).toFixed(2))
+                      if (typeof iof !== 'number' || iof === 0) {
+                        setIof(iofVal)
+                      }
+                      setPremioBruto(Number((val + iofVal).toFixed(2)))
+                    }
+                  }}
                   className="h-8 text-xs font-semibold bg-white"
                 />
               </div>
@@ -1078,7 +1098,15 @@ export function PainelControlePropostas({
                   step="0.01"
                   placeholder="Ex: 5108.08"
                   value={iof}
-                  onChange={(e) => setIof(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : Number(e.target.value)
+                    setIof(val)
+                    const iofVal = typeof val === 'number' ? val : 0
+                    const liqVal = typeof premioLiquido === 'number' ? premioLiquido : 0
+                    if (liqVal > 0) {
+                      setPremioBruto(Number((liqVal + iofVal).toFixed(2)))
+                    }
+                  }}
                   className="h-8 text-xs font-semibold bg-white"
                 />
               </div>
@@ -1109,7 +1137,13 @@ export function PainelControlePropostas({
                         const netPos = agr > 0 ? Number(val) * (1 + agr / 100) : Number(val)
                         const liq = netPos / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
-                        const iofVal = typeof iof === 'number' ? iof : 0
+                        const iofVal =
+                          typeof iof === 'number' && iof > 0
+                            ? iof
+                            : Number((liq * 0.0738).toFixed(2))
+                        if (typeof iof !== 'number' || iof === 0) {
+                          setIof(iofVal)
+                        }
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
                       }
                     }
@@ -1135,7 +1169,6 @@ export function PainelControlePropostas({
                     setAgravo(val)
                     const agr = typeof val === 'number' ? val : 0
                     const c = typeof comissaoTrabalhada === 'number' ? comissaoTrabalhada : 0
-                    const iofVal = typeof iof === 'number' ? iof : 0
 
                     if (basePremio === 'liquido') {
                       const pLiq = typeof premioLiquido === 'number' ? premioLiquido : 0
@@ -1151,6 +1184,13 @@ export function PainelControlePropostas({
                         if (c < 100) {
                           const liqNovo = netPos / (1 - c / 100)
                           setPremioLiquido(Number(liqNovo.toFixed(2)))
+                          const iofVal =
+                            typeof iof === 'number' && iof > 0
+                              ? iof
+                              : Number((liqNovo * 0.0738).toFixed(2))
+                          if (typeof iof !== 'number' || iof === 0) {
+                            setIof(iofVal)
+                          }
                           setPremioBruto(Number((liqNovo + iofVal).toFixed(2)))
                         }
                       }
@@ -1159,6 +1199,13 @@ export function PainelControlePropostas({
                         const netPos = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
                         const liq = netPos / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
+                        const iofVal =
+                          typeof iof === 'number' && iof > 0
+                            ? iof
+                            : Number((liq * 0.0738).toFixed(2))
+                        if (typeof iof !== 'number' || iof === 0) {
+                          setIof(iofVal)
+                        }
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
                       }
                     }
@@ -1188,7 +1235,6 @@ export function PainelControlePropostas({
                     setComissaoTrabalhada(val)
                     const c = typeof val === 'number' ? val : 0
                     const agr = typeof agravo === 'number' ? agravo : 0
-                    const iofVal = typeof iof === 'number' ? iof : 0
                     if (basePremio === 'liquido') {
                       if (typeof premioLiquido === 'number' && premioLiquido > 0 && c < 100) {
                         const net = premioLiquido * (1 - c / 100)
@@ -1197,8 +1243,22 @@ export function PainelControlePropostas({
                           const netPos = net * (1 + agr / 100)
                           const liqRecalc = netPos / (1 - c / 100)
                           setPremioLiquido(Number(liqRecalc.toFixed(2)))
+                          const iofVal =
+                            typeof iof === 'number' && iof > 0
+                              ? iof
+                              : Number((liqRecalc * 0.0738).toFixed(2))
+                          if (typeof iof !== 'number' || iof === 0) {
+                            setIof(iofVal)
+                          }
                           setPremioBruto(Number((liqRecalc + iofVal).toFixed(2)))
                         } else {
+                          const iofVal =
+                            typeof iof === 'number' && iof > 0
+                              ? iof
+                              : Number((premioLiquido * 0.0738).toFixed(2))
+                          if (typeof iof !== 'number' || iof === 0) {
+                            setIof(iofVal)
+                          }
                           setPremioBruto(Number((premioLiquido + iofVal).toFixed(2)))
                         }
                       }
@@ -1207,6 +1267,13 @@ export function PainelControlePropostas({
                         const netParaLiq = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
                         const liq = netParaLiq / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
+                        const iofVal =
+                          typeof iof === 'number' && iof > 0
+                            ? iof
+                            : Number((liq * 0.0738).toFixed(2))
+                        if (typeof iof !== 'number' || iof === 0) {
+                          setIof(iofVal)
+                        }
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
                       }
                     }

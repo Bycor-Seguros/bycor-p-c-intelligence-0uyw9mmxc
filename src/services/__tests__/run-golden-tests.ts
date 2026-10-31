@@ -16,6 +16,7 @@ import {
   ExtractedApoliceCobertura,
 } from '../apoliceReader'
 import { extractAxaDetails } from '../propostaReader'
+import { calcularFluxoPremios, ALIQUOTA_IOF_PADRAO } from '../rfqPropostasService'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
@@ -1025,6 +1026,68 @@ export async function runAllSuites() {
       })
     }
   }
+
+  // =========================================================================
+  // SUÍTE 4: REGRA DE IOF NO FLUXO DE PRÊMIOS (C2)
+  // =========================================================================
+  runTest(
+    'Regra de IOF C2',
+    'IOF explícito informado prevalece (Caso AXA International Square: 2.384,83 / 34.699,54)',
+    () => {
+      const res = calcularFluxoPremios({
+        base: 'liquido',
+        premioLiquido: 32314.71,
+        iof: 2384.83,
+      })
+      assertEqual(res.liquido, 32314.71, 'Prêmio Líquido')
+      assertEqual(res.iof, 2384.83, 'IOF explícito')
+      assertEqual(res.bruto, 34699.54, 'Prêmio Bruto = Líquido + IOF')
+      assertEqual(res.iofDerivado, false, 'IOF derivado')
+    },
+  )
+
+  runTest(
+    'Regra de IOF C2',
+    'IOF não informado deriva automaticamente Líquido * 7,38% e Bruto = Líquido + IOF',
+    () => {
+      const res = calcularFluxoPremios({
+        base: 'liquido',
+        premioLiquido: 32314.71,
+      })
+      // 32.314,71 * 0,0738 = 2.384,825598 -> 2.384,83
+      assertEqual(res.liquido, 32314.71, 'Prêmio Líquido')
+      assertEqual(res.iof, 2384.83, 'IOF derivado 7,38%')
+      assertEqual(res.bruto, 34699.54, 'Prêmio Bruto = Líquido + IOF')
+      assertEqual(res.iofDerivado, true, 'IOF derivado flag')
+    },
+  )
+
+  runTest(
+    'Regra de IOF C2',
+    'Cadeia Net/Agravo: IOF derivado sobre Líquido final recalculado (Net Pós Agravo / (1 - comissão))',
+    () => {
+      // Net = 10.000, Agravo = 10% -> Net Pós Agravo = 11.000
+      // Comissão = 20% -> Líquido derivado = 11.000 / 0.8 = 13.750,00
+      // IOF derivado = 13.750,00 * 7,38% = 1.014,75
+      // Bruto = 13.750,00 + 1.014,75 = 14.764,75
+      const res = calcularFluxoPremios({
+        base: 'net',
+        premioNet: 10000,
+        agravoPerc: 10,
+        comissaoPerc: 20,
+      })
+      assertEqual(res.net, 10000, 'Prêmio Net base')
+      assertEqual(res.netPosAgravo, 11000, 'Net Pós Agravo 10%')
+      assertEqual(res.liquido, 13750, 'Líquido derivado')
+      assertEqual(res.iof, 1014.75, 'IOF derivado 7,38% sobre líquido final')
+      assertEqual(res.bruto, 14764.75, 'Bruto = Líquido + IOF')
+      assertEqual(res.iofDerivado, true, 'IOF derivado flag')
+    },
+  )
+
+  runTest('Regra de IOF C2', 'Constante ALIQUOTA_IOF_PADRAO = 0.0738 (7,38%)', () => {
+    assertEqual(ALIQUOTA_IOF_PADRAO, 0.0738, 'Alíquota padrão IOF')
+  })
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO

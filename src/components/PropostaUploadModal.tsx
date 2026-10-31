@@ -324,9 +324,23 @@ export default function PropostaUploadModal({
     setValidadeCotacao(seg.validadeCotacao || '')
     setVigenciaInicio(seg.vigenciaInicio || '')
     setVigenciaFim(seg.vigenciaFim || '')
-    setPremioLiquido(seg.premioLiquido ? String(seg.premioLiquido) : '')
-    setPremioBruto(seg.premioTotal ? String(seg.premioTotal) : '')
-    setIof(seg.iof ? String(seg.iof) : '')
+    const pLiqVal = seg.premioLiquido ? Number(seg.premioLiquido) : null
+    let pIofVal = seg.iof ? Number(seg.iof) : null
+    let pTotalVal = seg.premioTotal ? Number(seg.premioTotal) : null
+
+    // Regra de IOF: se não informado (ou 0), deriva: IOF = Líquido * 7,38% e Bruto = Líquido + IOF
+    if (pLiqVal !== null && pLiqVal > 0) {
+      if (!pIofVal || pIofVal === 0) {
+        pIofVal = Number((pLiqVal * 0.0738).toFixed(2))
+      }
+      if (!pTotalVal || pTotalVal === 0) {
+        pTotalVal = Number((pLiqVal + pIofVal).toFixed(2))
+      }
+    }
+
+    setPremioLiquido(pLiqVal ? String(pLiqVal) : '')
+    setPremioBruto(pTotalVal ? String(pTotalVal) : '')
+    setIof(pIofVal ? String(pIofVal) : '')
     setCustoApolice(
       seg.custoApolice !== undefined && seg.custoApolice !== null ? String(seg.custoApolice) : '',
     )
@@ -943,7 +957,10 @@ export default function PropostaUploadModal({
                                   const netPos = net * (1 + agr / 100)
                                   const liqRecalc = netPos / (1 - c / 100)
                                   setPremioLiquido(liqRecalc.toFixed(2))
-                                  const iofVal = parseFloat(iof) || 0
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((liqRecalc * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((liqRecalc + iofVal).toFixed(2))
                                 }
                               }
@@ -967,7 +984,10 @@ export default function PropostaUploadModal({
                                 const netBaseParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                 const liq = netBaseParaLiq / (1 - c / 100)
                                 setPremioLiquido(liq.toFixed(2))
-                                const iofVal = parseFloat(iof) || 0
+                                const iofVal = iof
+                                  ? parseFloat(iof)
+                                  : Number((liq * 0.0738).toFixed(2))
+                                if (!iof) setIof(iofVal.toFixed(2))
                                 setPremioBruto((liq + iofVal).toFixed(2))
                               }
                             }}
@@ -1000,7 +1020,6 @@ export default function PropostaUploadModal({
                             setComissaoTrabalhada(val)
                             const c = parseFloat(val) || 0
                             const agr = parseFloat(agravo) || 0
-                            const iofVal = parseFloat(iof) || 0
 
                             if (basePremio === 'liquido') {
                               const pLiq = parseFloat(premioLiquido) || 0
@@ -1011,8 +1030,16 @@ export default function PropostaUploadModal({
                                   const netPos = net * (1 + agr / 100)
                                   const liqRecalc = netPos / (1 - c / 100)
                                   setPremioLiquido(liqRecalc.toFixed(2))
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((liqRecalc * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((liqRecalc + iofVal).toFixed(2))
                                 } else {
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((pLiq * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((pLiq + iofVal).toFixed(2))
                                 }
                               }
@@ -1023,6 +1050,10 @@ export default function PropostaUploadModal({
                                 const netParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                 const pLiq = netParaLiq / (1 - c / 100)
                                 setPremioLiquido(pLiq.toFixed(2))
+                                const iofVal = iof
+                                  ? parseFloat(iof)
+                                  : Number((pLiq * 0.0738).toFixed(2))
+                                if (!iof) setIof(iofVal.toFixed(2))
                                 setPremioBruto((pLiq + iofVal).toFixed(2))
                               }
                             }
@@ -1050,7 +1081,6 @@ export default function PropostaUploadModal({
                             setAgravo(val)
                             const agr = parseFloat(val) || 0
                             const c = parseFloat(comissaoTrabalhada) || 0
-                            const iofVal = parseFloat(iof) || 0
 
                             if (basePremio === 'liquido') {
                               // Agravo age sobre o Net.
@@ -1065,6 +1095,10 @@ export default function PropostaUploadModal({
                                 if (c < 100) {
                                   const liqNovo = netPos / (1 - c / 100)
                                   setPremioLiquido(liqNovo.toFixed(2))
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((liqNovo * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((liqNovo + iofVal).toFixed(2))
                                 }
                               }
@@ -1075,6 +1109,10 @@ export default function PropostaUploadModal({
                                 const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                 const pLiq = netPos / (1 - c / 100)
                                 setPremioLiquido(pLiq.toFixed(2))
+                                const iofVal = iof
+                                  ? parseFloat(iof)
+                                  : Number((pLiq * 0.0738).toFixed(2))
+                                if (!iof) setIof(iofVal.toFixed(2))
                                 setPremioBruto((pLiq + iofVal).toFixed(2))
                               }
                             }
@@ -1106,12 +1144,15 @@ export default function PropostaUploadModal({
                             const pNet = parseFloat(val) || 0
                             const c = parseFloat(comissaoTrabalhada) || 0
                             const agr = parseFloat(agravo) || 0
-                            const iofVal = parseFloat(iof) || 0
 
                             if (basePremio === 'net' && pNet > 0 && c < 100) {
                               const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
                               const pLiq = netPos / (1 - c / 100)
                               setPremioLiquido(pLiq.toFixed(2))
+                              const iofVal = iof
+                                ? parseFloat(iof)
+                                : Number((pLiq * 0.0738).toFixed(2))
+                              if (!iof) setIof(iofVal.toFixed(2))
                               setPremioBruto((pLiq + iofVal).toFixed(2))
                             }
                           }}
@@ -1144,7 +1185,6 @@ export default function PropostaUploadModal({
                             const pLiq = parseFloat(val) || 0
                             const c = parseFloat(comissaoTrabalhada) || 0
                             const agr = parseFloat(agravo) || 0
-                            const iofVal = parseFloat(iof) || 0
 
                             if (basePremio === 'liquido') {
                               if (pLiq > 0 && c < 100) {
@@ -1153,12 +1193,24 @@ export default function PropostaUploadModal({
                                 if (agr > 0) {
                                   const netPos = net * (1 + agr / 100)
                                   const liqRecalc = netPos / (1 - c / 100)
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((liqRecalc * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((liqRecalc + iofVal).toFixed(2))
                                 } else {
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((pLiq * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
                                   setPremioBruto((pLiq + iofVal).toFixed(2))
                                 }
                               }
                             } else {
+                              const iofVal = iof
+                                ? parseFloat(iof)
+                                : Number((pLiq * 0.0738).toFixed(2))
+                              if (!iof) setIof(iofVal.toFixed(2))
                               setPremioBruto((pLiq + iofVal).toFixed(2))
                             }
                           }}
