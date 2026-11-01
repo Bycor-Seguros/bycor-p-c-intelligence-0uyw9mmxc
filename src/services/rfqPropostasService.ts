@@ -642,36 +642,73 @@ export async function registrarPropostaManual(
     propPayload.forma_pagamento = formaPagamento
   }
 
-  const liqNum =
+  const baseUiResolved: BasePremioUi =
+    basePremio !== undefined && basePremio !== null
+      ? desnormalizarBasePremioParaUi(basePremio)
+      : premioNet !== undefined && premioNet !== null && Number(premioNet) > 0
+        ? 'net'
+        : 'liquido'
+
+  const pNetInput =
+    premioNet !== undefined && premioNet !== null && !isNaN(Number(premioNet))
+      ? Number(premioNet)
+      : null
+  const pLiqInput =
     premioLiquido !== undefined && premioLiquido !== null && !isNaN(Number(premioLiquido))
       ? Number(premioLiquido)
       : null
-  let iofNum =
-    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
-  if ((iofNum === null || iofNum === 0) && liqNum !== null && liqNum > 0) {
-    iofNum = Number((liqNum * ALIQUOTA_IOF_PADRAO).toFixed(2))
-  }
-  let brutoNum =
-    premioBruto !== undefined &&
-    premioBruto !== null &&
-    !isNaN(Number(premioBruto)) &&
-    Number(premioBruto) > 0
-      ? Number(premioBruto)
+  const comissaoInput =
+    comissaoTrabalhada !== undefined &&
+    comissaoTrabalhada !== null &&
+    !isNaN(Number(comissaoTrabalhada))
+      ? Number(comissaoTrabalhada)
       : null
-  if ((brutoNum === null || brutoNum === 0) && liqNum !== null && liqNum > 0) {
-    brutoNum = Number((liqNum + (iofNum ?? 0)).toFixed(2))
+  const agravoInput =
+    agravo !== undefined && agravo !== null && !isNaN(Number(agravo)) ? Number(agravo) : 0
+  const iofInput =
+    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
+
+  const fluxoManual = calcularFluxoPremios({
+    base: baseUiResolved,
+    premioNet: pNetInput,
+    premioLiquido: pLiqInput,
+    comissaoPerc: comissaoInput,
+    agravoPerc: agravoInput,
+    iof: iofInput,
+  })
+
+  // Se o fluxo derivou Líquido/IOF/Bruto, usa os derivados; se não, usa inputs diretos se fornecidos
+  const finalLiq = fluxoManual.liquido ?? pLiqInput
+  const finalIof = fluxoManual.iof ?? iofInput
+  const finalBruto =
+    fluxoManual.bruto ??
+    (premioBruto !== undefined && premioBruto !== null && !isNaN(Number(premioBruto))
+      ? Number(premioBruto)
+      : finalLiq !== null && finalLiq > 0
+        ? Number((finalLiq + (finalIof ?? 0)).toFixed(2))
+        : null)
+
+  propPayload.premio_liquido = finalLiq !== null ? finalLiq : null
+  propPayload.premio_bruto = finalBruto !== null ? finalBruto : null
+  propPayload.iof = finalIof !== null ? finalIof : null
+
+  if (pNetInput !== null) {
+    propPayload.premio_net = pNetInput
+  } else if (fluxoManual.net !== null) {
+    propPayload.premio_net = fluxoManual.net
   }
 
-  propPayload.premio_liquido = liqNum !== null ? liqNum : null
-  propPayload.premio_bruto = brutoNum !== null ? brutoNum : null
-  propPayload.iof = iofNum !== null ? iofNum : null
+  propPayload.agravo = agravoInput
 
-  if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
-  if (agravo !== undefined && agravo !== null) propPayload.agravo = Number(agravo)
-  if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null)
+  if (fluxoManual.netPosAgravo !== null) {
+    propPayload.premio_net_pos_agravo = fluxoManual.netPosAgravo
+  } else if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null) {
     propPayload.premio_net_pos_agravo = Number(premioNetPosAgravo)
-  if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
-    propPayload.comissao_trabalhada = Number(comissaoTrabalhada)
+  }
+
+  if (comissaoInput !== null) {
+    propPayload.comissao_trabalhada = comissaoInput
+  }
   if (basePremio !== undefined) {
     const baseNorm = normalizarBasePremioParaEscrita(basePremio)
     if (baseNorm) propPayload.base_premio = baseNorm
@@ -903,25 +940,58 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   formData.append('data_proposta', dataProposta || new Date().toISOString().slice(0, 10))
   formData.append('status', 'Pendente')
 
-  const uploadLiq =
+  const baseUiResolvedUpload: BasePremioUi =
+    basePremio !== undefined && basePremio !== null
+      ? desnormalizarBasePremioParaUi(basePremio)
+      : premioNet !== undefined && premioNet !== null && Number(premioNet) > 0
+        ? 'net'
+        : 'liquido'
+
+  const pNetInputUpload =
+    premioNet !== undefined && premioNet !== null && !isNaN(Number(premioNet))
+      ? Number(premioNet)
+      : null
+  const pLiqInputUpload =
     premioLiquido !== undefined && premioLiquido !== null && !isNaN(Number(premioLiquido))
       ? Number(premioLiquido)
       : null
-  let uploadIof =
-    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
-  if ((uploadIof === null || uploadIof === 0) && uploadLiq !== null && uploadLiq > 0) {
-    uploadIof = Number((uploadLiq * ALIQUOTA_IOF_PADRAO).toFixed(2))
-  }
-  let uploadBruto =
-    premioBruto !== undefined &&
-    premioBruto !== null &&
-    !isNaN(Number(premioBruto)) &&
-    Number(premioBruto) > 0
-      ? Number(premioBruto)
+  const comissaoInputUpload =
+    comissaoTrabalhada !== undefined &&
+    comissaoTrabalhada !== null &&
+    !isNaN(Number(comissaoTrabalhada))
+      ? Number(comissaoTrabalhada)
       : null
-  if ((uploadBruto === null || uploadBruto === 0) && uploadLiq !== null && uploadLiq > 0) {
-    uploadBruto = Number((uploadLiq + (uploadIof ?? 0)).toFixed(2))
-  }
+  const agravoInputUpload =
+    agravo !== undefined && agravo !== null && !isNaN(Number(agravo)) ? Number(agravo) : 0
+  const iofInputUpload =
+    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
+
+  const fluxoUpload = calcularFluxoPremios({
+    base: baseUiResolvedUpload,
+    premioNet: pNetInputUpload,
+    premioLiquido: pLiqInputUpload,
+    comissaoPerc: comissaoInputUpload,
+    agravoPerc: agravoInputUpload,
+    iof: iofInputUpload,
+  })
+
+  const uploadLiq = fluxoUpload.liquido ?? pLiqInputUpload
+  const uploadIof = fluxoUpload.iof ?? iofInputUpload
+  const uploadBruto =
+    fluxoUpload.bruto ??
+    (premioBruto !== undefined && premioBruto !== null && !isNaN(Number(premioBruto))
+      ? Number(premioBruto)
+      : uploadLiq !== null && uploadLiq > 0
+        ? Number((uploadLiq + (uploadIof ?? 0)).toFixed(2))
+        : null)
+
+  const finalNetUpload = pNetInputUpload !== null ? pNetInputUpload : fluxoUpload.net
+  const finalNetPosAgravoUpload =
+    fluxoUpload.netPosAgravo !== null
+      ? fluxoUpload.netPosAgravo
+      : premioNetPosAgravo !== undefined && premioNetPosAgravo !== null
+        ? Number(premioNetPosAgravo)
+        : null
 
   if (lmiLmg !== undefined && lmiLmg !== null) formData.append('lmi_lmg', String(lmiLmg))
   if (uploadLiq !== null && uploadLiq > 0) {
@@ -939,13 +1009,16 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   } else {
     formData.append('iof', '')
   }
-  if (premioNet !== undefined && premioNet !== null)
-    formData.append('premio_net', String(premioNet))
-  if (agravo !== undefined && agravo !== null) formData.append('agravo', String(agravo))
-  if (premioNetPosAgravo !== undefined && premioNetPosAgravo !== null)
-    formData.append('premio_net_pos_agravo', String(premioNetPosAgravo))
-  if (comissaoTrabalhada !== undefined && comissaoTrabalhada !== null)
-    formData.append('comissao_trabalhada', String(comissaoTrabalhada))
+  if (finalNetUpload !== null) {
+    formData.append('premio_net', String(finalNetUpload))
+  }
+  formData.append('agravo', String(agravoInputUpload))
+  if (finalNetPosAgravoUpload !== null) {
+    formData.append('premio_net_pos_agravo', String(finalNetPosAgravoUpload))
+  }
+  if (comissaoInputUpload !== null) {
+    formData.append('comissao_trabalhada', String(comissaoInputUpload))
+  }
   if (basePremio !== undefined && basePremio !== null) {
     const baseNorm = normalizarBasePremioParaEscrita(basePremio)
     if (baseNorm) formData.append('base_premio', baseNorm)
@@ -975,7 +1048,14 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
 
   // Metadados de extração
   if (arquivoExtracaoJson) {
-    formData.append('arquivo_extracao', JSON.stringify(arquivoExtracaoJson))
+    try {
+      const extracaoBlob = new Blob([JSON.stringify(arquivoExtracaoJson)], {
+        type: 'application/json',
+      })
+      formData.append('arquivo_extracao', extracaoBlob, 'diagnostico-extracao.json')
+    } catch {
+      // Se não for possível criar o Blob, omite o campo para não enviar string crua em campo de arquivo
+    }
   }
 
   if (arquivo) {

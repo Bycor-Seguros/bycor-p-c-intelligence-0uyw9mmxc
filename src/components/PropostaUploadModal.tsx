@@ -526,12 +526,28 @@ export default function PropostaUploadModal({
       return
     }
 
-    const agravoNum = agravo ? Number(agravo) : null
+    const agravoNum = agravo !== '' && !isNaN(Number(agravo)) ? Number(agravo) : 0
     const pNetNum = premioNet ? Number(premioNet) : null
     const premioNetPosAgravoNum =
-      agravoNum !== null && agravoNum > 0 && pNetNum !== null
+      agravoNum > 0 && pNetNum !== null
         ? Number((pNetNum * (1 + agravoNum / 100)).toFixed(2))
-        : null
+        : pNetNum !== null
+          ? pNetNum
+          : null
+
+    // Sanitizar coberturas editadas manualmente para evitar campos null/undefined ou tipos inválidos
+    const coberturasSanitizadas: ExtractedCoberturaItem[] = (coberturas || []).map((c) => ({
+      cobertura: String(c.cobertura || '').trim() || 'Cobertura',
+      categoriaNormalizada: String(
+        c.categoriaNormalizada || matchCanonicalCategory(c.cobertura || ''),
+      ).trim(),
+      lmi: c.lmi !== null && c.lmi !== undefined && !isNaN(Number(c.lmi)) ? Number(c.lmi) : null,
+      premioLiquido:
+        c.premioLiquido !== null && c.premioLiquido !== undefined && !isNaN(Number(c.premioLiquido))
+          ? Number(c.premioLiquido)
+          : null,
+      franquia: String(c.franquia || 'Conforme apólice').trim(),
+    }))
 
     try {
       setSaving(true)
@@ -567,10 +583,11 @@ export default function PropostaUploadModal({
         vrdLcBase: vrdLcBase || undefined,
         posFranquias: posFranquias.trim() || undefined,
         formaPagamento: formaPagamento.trim() || undefined,
-        numeroParcelas: numeroParcelas ? Number(numeroParcelas) : null,
+        numeroParcelas:
+          numeroParcelas !== '' && !isNaN(Number(numeroParcelas)) ? Number(numeroParcelas) : null,
         clausulas: clausulas.trim() || undefined,
         exclusoes: exclusoes.trim() || undefined,
-        coberturas,
+        coberturas: coberturasSanitizadas,
         arquivo: selectedFile,
         arquivoExtracaoJson: selectedSegment,
       })
