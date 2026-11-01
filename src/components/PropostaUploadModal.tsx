@@ -41,6 +41,7 @@ import {
   RfqSeguradoraRecord,
   desnormalizarBasePremioParaUi,
 } from '@/services/rfqPropostasService'
+import pb from '@/lib/pocketbase/client'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { canonicalizeInsurerName } from '@/services/guardiaImporter'
 import { normalizarSeguradora } from '@/services/seguradoraNormalizer'
@@ -90,6 +91,9 @@ export default function PropostaUploadModal({
   const [dataProposta, setDataProposta] = useState<string>('')
   const [numeroCotacao, setNumeroCotacao] = useState<string>('')
   const [versao, setVersao] = useState<string>('')
+  const [criarNovaVersao, setCriarNovaVersao] = useState<boolean>(true)
+  const [temPropostaPrevia, setTemPropostaPrevia] = useState<boolean>(false)
+  const [versaoExistenteMax, setVersaoExistenteMax] = useState<number>(1)
   const [validadeCotacao, setValidadeCotacao] = useState<string>('')
   const [vigenciaInicio, setVigenciaInicio] = useState<string>('')
   const [vigenciaFim, setVigenciaFim] = useState<string>('')
@@ -210,6 +214,9 @@ export default function PropostaUploadModal({
     setErrorMessage(null)
     setTargetSeguradoraId(initialSeguradoraId || '')
     setSeguradoraNome(initialSeguradoraNome || '')
+    setTemPropostaPrevia(false)
+    setCriarNovaVersao(true)
+    setVersaoExistenteMax(1)
     setDeletingIndex(null)
     setEditingIndex(null)
     setShowAddForm(false)
@@ -408,6 +415,35 @@ export default function PropostaUploadModal({
     setComissaoTrabalhada('')
     setAgravo('')
 
+    // Checa se já existe proposta para essa seguradora neste RFQ
+    try {
+      const resolvedSegId = segNorm.id || initialSeguradoraId
+      if (resolvedSegId && resolvedSegId !== 'auto') {
+        const existProps = await pb
+          .collection('propostas')
+          .getFullList<{ id: string; versao?: number }>({
+            filter: `rfq = "${rfqId}" && seguradora = "${resolvedSegId}"`,
+            sort: '-versao',
+          })
+        if (existProps.length > 0) {
+          const maxV = Math.max(...existProps.map((p) => Number(p.versao || 1)))
+          setTemPropostaPrevia(true)
+          setVersaoExistenteMax(maxV)
+          setCriarNovaVersao(true)
+          setVersao(String(maxV + 1))
+        } else {
+          setTemPropostaPrevia(false)
+          setCriarNovaVersao(true)
+        }
+      } else {
+        setTemPropostaPrevia(false)
+        setCriarNovaVersao(true)
+      }
+    } catch {
+      setTemPropostaPrevia(false)
+      setCriarNovaVersao(true)
+    }
+
     setStep('preview')
   }
 
@@ -471,6 +507,7 @@ export default function PropostaUploadModal({
         dataProposta,
         numeroCotacao: numeroCotacao.trim() || undefined,
         versao: versao.trim() || undefined,
+        criarNovaVersao: temPropostaPrevia ? criarNovaVersao : true,
         validadeCotacao: validadeCotacao || undefined,
         vigenciaInicio: vigenciaInicio || undefined,
         vigenciaFim: vigenciaFim || undefined,
@@ -868,7 +905,58 @@ export default function PropostaUploadModal({
             </div>
 
             {/* SEÇÃO 2: DADOS DA PROPOSTA / COTAÇÃO E VIGÊNCIA */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* DIÁLOGO / PERGUNTA DE NOVA VERSÃO QUANDO JÁ EXISTIR PROPOSTA DESTA CIA */}
+            {temPropostaPrevia && (
+              <div className="p-3.5 rounded-xl border-2 border-amber-300 bg-amber-50/70 space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-amber-950 text-xs">
+                      Esta seguradora já possui proposta(s) registrada(s) neste RFQ (até v
+                      {versaoExistenteMax})
+                    </div>
+                    <div className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                      Deseja criar uma{' '}
+                      <strong>nova versão (v{versao || versaoExistenteMax + 1})</strong> preservando
+                      integralmente os dados e coberturas da versão anterior, ou atualizar o
+                      registro existente?
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-800 text-xs bg-white px-3 py-1.5 rounded-lg border border-amber-300 shadow-sm hover:bg-amber-50/50">
+                    <input
+                      type="radio"
+                      name="opcaoVersao"
+                      checked={criarNovaVersao}
+                      onChange={() => {
+                        setCriarNovaVersao(true)
+                        setVersao(String(versaoExistenteMax + 1))
+                      }}
+                      className="text-[#16578B] focus:ring-[#16578B]"
+                    />
+                    <span>✨ Criar Nova Versão (v{versaoExistenteMax + 1}) — Recomendado</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-600 text-xs bg-white px-3 py-1.5 rounded-lg border border-gray-300 shadow-sm hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      name="opcaoVersao"
+                      checked={!criarNovaVersao}
+                      onChange={() => {
+                        setCriarNovaVersao(false)
+                        setVersao(String(versaoExistenteMax))
+                      }}
+                      className="text-[#16578B] focus:ring-[#16578B]"
+                    />
+                    <span>Sobrescrever versão atual (v{versaoExistenteMax})</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold text-gray-700">
                   Nº da Cotação / Proposta
@@ -877,8 +965,27 @@ export default function PropostaUploadModal({
                   type="text"
                   value={numeroCotacao}
                   onChange={(e) => setNumeroCotacao(e.target.value)}
-                  placeholder="Ex: 3840019 - V2"
+                  placeholder="Ex: 3840019"
                   className="h-8 text-xs font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-gray-700 flex items-center justify-between">
+                  <span>Versão</span>
+                  {criarNovaVersao && temPropostaPrevia && (
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 rounded">
+                      Nova
+                    </span>
+                  )}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={versao}
+                  onChange={(e) => setVersao(e.target.value)}
+                  placeholder="1"
+                  className="h-8 text-xs font-mono font-bold"
                 />
               </div>
 

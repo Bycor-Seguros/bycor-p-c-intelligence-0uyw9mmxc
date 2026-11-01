@@ -44,11 +44,13 @@ import {
   RfqSeguradoraRecord,
   RfqSeguradoraStatus,
   RfqPropostaSummary,
+  PropostaModelo,
   syncAndLoadRfqSeguradoras,
   computeRfqSummary,
   toggleKitEntregue,
   marcarDeclinio,
   registrarPropostaManual,
+  definirVersaoAtiva,
   desnormalizarBasePremioParaUi,
 } from '@/services/rfqPropostasService'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
@@ -170,6 +172,25 @@ export function PainelControlePropostas({
   const summary: RfqPropostaSummary = useMemo(() => {
     return computeRfqSummary(records)
   }, [records])
+
+  // Alternar Versão Ativa da Proposta
+  const handleTrocarVersaoAtiva = async (rec: RfqSeguradoraRecord, novaPropostaId: string) => {
+    try {
+      setUpdatingId(rec.id)
+      await definirVersaoAtiva(rfqId, rec.seguradora, novaPropostaId)
+      await loadData()
+      setFeedback(
+        `Versão ativa de ${rec.expand?.seguradora?.nome || 'Seguradora'} alterada com sucesso.`,
+      )
+      setTimeout(() => setFeedback(null), 3000)
+      onDataChange?.()
+    } catch (err) {
+      console.error(err)
+      alert('Falha ao trocar versão ativa: ' + (err as Error).message)
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   // Ações de Toggle Kit Entregue
   const handleToggleKit = async (rec: RfqSeguradoraRecord) => {
@@ -696,11 +717,41 @@ export function PainelControlePropostas({
                             : ''
                       }`}
                     >
-                      {/* Nome da Seguradora */}
+                      {/* Nome da Seguradora com Versão e Seletor de Versão Ativa */}
                       <td className="py-3 px-4">
                         <div className="font-bold text-gray-900 text-xs flex items-center gap-2">
                           <span>{segNome}</span>
+                          {propostaData && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-300">
+                              v{propostaData.versao || 1}
+                              <span className="ml-1 text-[9px] text-emerald-700 font-sans uppercase">
+                                ● ativa
+                              </span>
+                            </span>
+                          )}
                         </div>
+
+                        {/* Seletor quando houver múltiplas versões da mesma seguradora */}
+                        {rec.propostas_todas && rec.propostas_todas.length > 1 && (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500">Versão ativa:</span>
+                            <select
+                              value={propostaData?.id || ''}
+                              onChange={(e) => handleTrocarVersaoAtiva(rec, e.target.value)}
+                              disabled={isUpdating}
+                              className="text-[11px] h-6 px-1.5 py-0 rounded border border-blue-300 bg-blue-50/50 text-[#16578B] font-semibold focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+                            >
+                              {rec.propostas_todas.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  v{p.versao || 1} (
+                                  {p.premio_bruto ? formatCurrency(p.premio_bruto) : 's/ prêmio'})
+                                  {p.id === propostaData?.id ? ' ★ Ativa' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
                         {segPos && (
                           <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
                             {segPos}

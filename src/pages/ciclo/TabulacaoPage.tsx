@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
-import { desnormalizarBasePremioParaUi } from '@/services/rfqPropostasService'
+import { desnormalizarBasePremioParaUi, definirVersaoAtiva } from '@/services/rfqPropostasService'
 import { matchCanonicalCategory } from '@/services/riskCardReader'
 
 interface PropostaCoverageItem {
@@ -45,6 +45,8 @@ interface PropostaRecord {
   id: string
   rfq: string
   seguradora: string
+  versao?: number
+  ativa?: boolean
   data_proposta: string
   coberturas: PropostaCoverageItem[]
   pos_franquias: string
@@ -66,7 +68,7 @@ interface PropostaRecord {
   iof: number
   status: 'Pendente' | 'Tabulada' | 'Selecionada' | 'Não selecionada'
   expand?: {
-    seguradora?: { nome: string }
+    seguradora?: { id?: string; nome: string }
     rfq?: {
       conta_empreendimento?: string
       expand?: {
@@ -132,13 +134,53 @@ export default function TabulacaoPage() {
     fetchPropostas()
   }, [])
 
-  // Filtered by selected RFQ for side-by-side comparison
-  const comparedProposals = useMemo(() => {
+  // Propostas do RFQ selecionado
+  const rfqProposals = useMemo(() => {
     if (selectedRfqId === 'todos') {
       return propostas
     }
     return propostas.filter((p) => p.rfq === selectedRfqId)
   }, [propostas, selectedRfqId])
+
+  // Agrupa todas as propostas por seguradora para permitir seleção de versão
+  const todasPorSeguradora = useMemo(() => {
+    const mapa = new Map<string, PropostaRecord[]>()
+    rfqProposals.forEach((p) => {
+      const list = mapa.get(p.seguradora) || []
+      list.push(p)
+      mapa.set(p.seguradora, list)
+    })
+    return mapa
+  }, [rfqProposals])
+
+  // A matriz comparativa side-by-side trabalha SEMPRE com a versão ativa de cada seguradora
+  const comparedProposals = useMemo(() => {
+    const ativas: PropostaRecord[] = []
+    todasPorSeguradora.forEach((pList) => {
+      const ativa = pList.find((p) => p.ativa)
+      if (ativa) {
+        ativas.push(ativa)
+      } else if (pList.length > 0) {
+        // Fallback: se nenhuma marcada como ativa, usa a de maior versão
+        const sorted = [...pList].sort((a, b) => Number(b.versao || 1) - Number(a.versao || 1))
+        ativas.push(sorted[0])
+      }
+    })
+    return ativas
+  }, [todasPorSeguradora])
+
+  // Alternar versão ativa diretamente pela tela de Tabulação (C3)
+  const handleTrocarVersaoC3 = async (segId: string, novaPropId: string) => {
+    if (!selectedRfqId || selectedRfqId === 'todos') return
+    try {
+      setLoading(true)
+      await definirVersaoAtiva(selectedRfqId, segId, novaPropId)
+      await fetchPropostas()
+    } catch (err: unknown) {
+      alert('Erro ao trocar versão ativa: ' + (err as Error).message)
+      setLoading(false)
+    }
+  }
 
   // Mark Proposal as Selected
   const handleSelectProposal = async (propId: string) => {
@@ -385,24 +427,53 @@ export default function TabulacaoPage() {
                   </th>
                   {comparedProposals.map((p) => {
                     const isSelected = p.status === 'Selecionada'
+                    const versoesDestaCia = todasPorSeguradora.get(p.seguradora) || []
+
                     return (
                       <th
                         key={p.id}
-                        className={`py-3.5 px-4 min-w-[240px] border-r border-[#1B3C5D] ${
+                        className={`py-3.5 px-4 min-w-[260px] border-r border-[#1B3C5D] ${
                           isSelected ? 'bg-[#16578B]' : ''
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-sm">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-extrabold text-sm truncate">
                             {p.expand?.seguradora?.nome || 'Seguradora'}
                           </span>
+                          <span className="shrink-0 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-900 text-blue-100 border border-blue-400">
+                            v{p.versao || 1}
+                            <span className="ml-1 text-[9px] text-emerald-300 font-sans uppercase">
+                              ● ativa
+                            </span>
+                          </span>
                           {isSelected && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-400 text-gray-900">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-400 text-gray-900 shrink-0">
                               SELECIONADA
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-blue-200 mt-0.5 font-normal">
+
+                        {/* Seletor de Versão quando a seguradora tiver mais de 1 versão no RFQ */}
+                        {versoesDestaCia.length > 1 && (
+                          <div className="mt-2 flex items-center gap-1.5 bg-black/20 p-1.5 rounded-lg border border-white/10">
+                            <span className="text-[10px] text-blue-200">Trocar versão ativa:</span>
+                            <select
+                              value={p.id}
+                              onChange={(e) => handleTrocarVersaoC3(p.seguradora, e.target.value)}
+                              className="text-[11px] h-6 px-1.5 rounded bg-white text-gray-900 font-semibold focus:outline-none"
+                            >
+                              {versoesDestaCia.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  v{v.versao || 1} (
+                                  {v.premio_bruto ? formatCurrency(v.premio_bruto) : 's/ prêmio'})
+                                  {v.id === p.id ? ' ★' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        <div className="text-[11px] text-blue-200 mt-1 font-normal">
                           Proposta: {formatDate(p.data_proposta)}
                         </div>
                         <div className="mt-2 flex items-center gap-2">

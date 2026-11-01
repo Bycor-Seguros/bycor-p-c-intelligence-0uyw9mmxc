@@ -30,12 +30,21 @@ interface EmpreendimentoOpt {
 interface PropostaOption {
   id: string
   seguradora: string
+  versao?: number
+  ativa?: boolean
   premio_bruto: number
   lmi_lmg: number
   coberturas: any[]
   status?: string
+  data_proposta?: string
   expand?: {
-    seguradora?: { nome: string }
+    seguradora?: { id?: string; nome: string }
+    rfq?: {
+      conta_empreendimento?: string
+      expand?: {
+        conta_empreendimento?: { id: string; nome_empreendimento: string }
+      }
+    }
   }
 }
 
@@ -111,7 +120,18 @@ export default function ApresentacaoPage() {
   }, [])
 
   const selectedEmp = empreendimentos.find((e) => e.id === selectedEmpId)
+
+  // Todas as propostas da seguradora da proposta selecionada (para seletor de versões)
   const selectedProp = propostas.find((p) => p.id === selectedPropId)
+
+  // Filtra as opções de propostas: exibe por padrão as propostas ativas de cada seguradora
+  const propostasAtivas = propostas.filter((p) => p.ativa)
+  const propostasExibicao = propostasAtivas.length > 0 ? propostasAtivas : propostas
+
+  // Seletor de versão para a seguradora atualmente selecionada
+  const versoesDaMesmaSeguradora = propostas.filter(
+    (p) => selectedProp && p.seguradora === selectedProp.seguradora,
+  )
 
   const handlePrint = () => {
     window.print()
@@ -125,13 +145,17 @@ export default function ApresentacaoPage() {
       franquia: getCoverageFranquia(c),
     }))
 
+    const segNomeComVersao = selectedProp?.expand?.seguradora?.nome
+      ? `${selectedProp.expand.seguradora.nome} (v${selectedProp.versao || 1})`
+      : 'Seguradora Selecionada'
+
     const pptxBytes = generatePresentationPptx({
       clienteNome: selectedEmp?.nome_empreendimento || 'Cliente Corporativo',
       razaoSocial: selectedEmp?.razao_social,
       cidade: selectedEmp?.cidade,
       uf: selectedEmp?.uf,
       areaConstruida: selectedEmp?.area_construida_m2,
-      seguradoraNome: selectedProp?.expand?.seguradora?.nome || 'Seguradora Selecionada',
+      seguradoraNome: segNomeComVersao,
       premioBruto: selectedProp?.premio_bruto || 0,
       lmiLmg: selectedProp?.lmi_lmg || 0,
       recomendacao,
@@ -206,22 +230,47 @@ export default function ApresentacaoPage() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-gray-700 block mb-1">
-            Proposta Vencedora Selecionada:
-          </label>
-          <select
-            value={selectedPropId}
-            onChange={(e) => setSelectedPropId(e.target.value)}
-            className="w-full h-9 text-xs border border-gray-300 rounded px-2 bg-white"
-          >
-            {propostas.map((prop) => (
-              <option key={prop.id} value={prop.id}>
-                {prop.expand?.seguradora?.nome || 'Seguradora'} —{' '}
-                {formatCurrency(prop.premio_bruto)}
-                {prop.status === 'Selecionada' ? ' (Selecionada em C3)' : ''}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-700">
+              Proposta Vencedora Selecionada:
+            </label>
+            {selectedProp && (
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-[#16578B] border border-blue-200">
+                v{selectedProp.versao || 1} {selectedProp.ativa ? '● ativa' : ''}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={selectedPropId}
+              onChange={(e) => setSelectedPropId(e.target.value)}
+              className="flex-1 h-9 text-xs border border-gray-300 rounded px-2 bg-white"
+            >
+              {propostasExibicao.map((prop) => (
+                <option key={prop.id} value={prop.id}>
+                  {prop.expand?.seguradora?.nome || 'Seguradora'} (v{prop.versao || 1}) —{' '}
+                  {formatCurrency(prop.premio_bruto)}
+                  {prop.status === 'Selecionada' ? ' [Selecionada em C3]' : ''}
+                </option>
+              ))}
+            </select>
+
+            {/* Seletor específico de versão da mesma seguradora */}
+            {versoesDaMesmaSeguradora.length > 1 && (
+              <select
+                value={selectedPropId}
+                onChange={(e) => setSelectedPropId(e.target.value)}
+                className="w-36 h-9 text-xs border border-blue-300 bg-blue-50/60 rounded px-2 text-[#16578B] font-bold"
+                title="Trocar a versão da proposta desta mesma seguradora para a apresentação"
+              >
+                {versoesDaMesmaSeguradora.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    v{v.versao || 1} {v.ativa ? '★ Ativa' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
@@ -286,7 +335,14 @@ export default function ApresentacaoPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div className="p-4 rounded-lg bg-blue-50/60 border border-blue-200">
-              <span className="text-blue-600 block font-medium">Seguradora Líder</span>
+              <div className="flex items-center justify-between">
+                <span className="text-blue-600 font-medium">Seguradora Líder</span>
+                {selectedProp && (
+                  <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-[#16578B] border border-blue-200">
+                    Versão {selectedProp.versao || 1}
+                  </span>
+                )}
+              </div>
               <strong className="text-base text-[#0F2B46] block mt-1">
                 {selectedProp?.expand?.seguradora?.nome || 'Seguradora Selecionada'}
               </strong>

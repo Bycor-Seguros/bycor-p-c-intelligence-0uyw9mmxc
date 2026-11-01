@@ -50,6 +50,61 @@ export function desnormalizarBasePremioParaUi(valor?: string | null): BasePremio
 
 export type RfqSeguradoraStatus = 'Convidada' | 'Kit entregue' | 'Proposta recebida' | 'Declinou'
 
+export interface PropostaModelo {
+  id: string
+  rfq: string
+  seguradora: string
+  versao: number
+  ativa: boolean
+  premio_bruto: number
+  premio_liquido: number
+  lmi_lmg: number
+  premio_net?: number
+  agravo?: number
+  premio_net_pos_agravo?: number
+  iof?: number
+  comissao_trabalhada?: number
+  base_premio?: string
+  vrd_dm?: number
+  vrd_mmu?: number
+  vrd_mmp?: number
+  vrd_lc?: number
+  vrd_lc_base?: string
+  data_proposta?: string
+  pos_franquias?: string
+  status?: string
+  coberturas?: any[]
+  clausulas?: string
+  exclusoes?: string
+  arquivo?: string
+  arquivo_nome?: string
+  arquivo_tipo?: string
+  arquivo_extracao?: any
+  numero_cotacao?: string
+  vigencia_inicio?: string
+  vigencia_fim?: string
+  validade_cotacao?: string
+  forma_pagamento?: string
+  created?: string
+  updated?: string
+  expand?: {
+    seguradora?: {
+      id?: string
+      nome: string
+      faixa_lmi?: string
+      posicionamento?: string
+      contatos?: { email?: string; telefone?: string; responsavel?: string }
+    }
+    rfq?: {
+      id?: string
+      conta_empreendimento?: string
+      expand?: {
+        conta_empreendimento?: { nome_empreendimento: string }
+      }
+    }
+  }
+}
+
 export interface RfqSeguradoraRecord {
   id: string
   rfq: string
@@ -72,32 +127,9 @@ export interface RfqSeguradoraRecord {
       faixa_lmi?: string
       apetite_segmentos?: Record<string, string>
     }
-    proposta?: {
-      id: string
-      lmi_lmg?: number
-      premio_liquido?: number
-      premio_bruto?: number
-      premio_net?: number
-      agravo?: number
-      premio_net_pos_agravo?: number
-      iof?: number
-      comissao_trabalhada?: number
-      base_premio?: string
-      vrd_dm?: number
-      vrd_mmu?: number
-      vrd_mmp?: number
-      vrd_lc?: number
-      vrd_lc_base?: string
-      data_proposta?: string
-      pos_franquias?: string
-      status?: string
-      coberturas?: any[]
-      clausulas?: string
-      exclusoes?: string
-      arquivo?: string
-      arquivo_nome?: string
-    }
+    proposta?: PropostaModelo
   }
+  propostas_todas?: PropostaModelo[]
 }
 
 export interface RfqPropostaSummary {
@@ -114,6 +146,8 @@ export interface RegistrarPropostaParams {
   rfqId: string
   seguradoraId: string
   dataProposta: string
+  versao?: number
+  criarNovaVersao?: boolean
   lmiLmg?: number
   premioLiquido?: number
   premioBruto?: number
@@ -142,7 +176,9 @@ export interface RegistrarPropostaUploadParams {
   seguradoraSusep?: string
   dataProposta: string
   numeroCotacao?: string
-  versao?: string
+  versao?: string | number
+  criarNovaVersao?: boolean
+  propostaSubstituirId?: string
   validadeCotacao?: string
   vigenciaInicio?: string
   vigenciaFim?: string
@@ -305,29 +341,38 @@ export async function syncAndLoadRfqSeguradoras(
       existingBySeg.set(rec.seguradora, rec)
     })
 
-    // 2. Busca propostas existentes para este RFQ para linkar se ainda não estiverem linkadas
-    const existingPropostas = await pb.collection('propostas').getFullList<{
-      id: string
-      rfq: string
-      seguradora: string
-      data_proposta: string
-      lmi_lmg: number
-      premio_liquido: number
-      premio_bruto: number
-    }>({
+    // 2. Busca todas as propostas existentes para este RFQ
+    const allPropostas = await pb.collection('propostas').getFullList<PropostaModelo>({
       filter: `rfq = "${rfqId}"`,
+      sort: '-versao',
     })
 
-    const propostasBySeg = new Map<string, (typeof existingPropostas)[0]>()
-    existingPropostas.forEach((p) => {
-      propostasBySeg.set(p.seguradora, p)
+    // Agrupa todas por seguradora e identifica a proposta ativa
+    const allPropostasBySeg = new Map<string, PropostaModelo[]>()
+    const activePropostaBySeg = new Map<string, PropostaModelo>()
+
+    allPropostas.forEach((p) => {
+      const list = allPropostasBySeg.get(p.seguradora) || []
+      list.push(p)
+      allPropostasBySeg.set(p.seguradora, list)
+
+      if (p.ativa && !activePropostaBySeg.has(p.seguradora)) {
+        activePropostaBySeg.set(p.seguradora, p)
+      }
     })
+
+    // Fallback: se nenhuma marcada como ativa, a de maior versão vira ativa
+    for (const [segId, pList] of allPropostasBySeg.entries()) {
+      if (!activePropostaBySeg.has(segId) && pList.length > 0) {
+        activePropostaBySeg.set(segId, pList[0])
+      }
+    }
 
     // 3. Para cada seguradora solicitada, se não existir registro, cria
     const toCreate = seguradorasSolicitadas.filter((segId) => !existingBySeg.has(segId))
 
     for (const segId of toCreate) {
-      const prop = propostasBySeg.get(segId)
+      const prop = activePropostaBySeg.get(segId)
       const hasProp = Boolean(prop)
       const newRec = await pb.collection('rfq_seguradoras').create<RfqSeguradoraRecord>({
         rfq: rfqId,
@@ -340,25 +385,34 @@ export async function syncAndLoadRfqSeguradoras(
       existingBySeg.set(segId, newRec)
     }
 
-    // 4. Se havia registro existente com status 'Convidada'/'Kit entregue' mas agora tem proposta, sincroniza
+    // 4. Sincroniza ponteiro da proposta ativa se desatualizado
     for (const [segId, rec] of existingBySeg.entries()) {
-      const prop = propostasBySeg.get(segId)
-      if (prop && rec.status !== 'Proposta recebida') {
-        const updated = await pb.collection('rfq_seguradoras').update<RfqSeguradoraRecord>(rec.id, {
-          status: 'Proposta recebida',
-          proposta: prop.id,
-          data_resposta: prop.data_proposta || new Date().toISOString().slice(0, 10),
-        })
-        existingBySeg.set(segId, updated)
+      const activeProp = activePropostaBySeg.get(segId)
+      if (activeProp) {
+        if (rec.proposta !== activeProp.id || rec.status !== 'Proposta recebida') {
+          const updated = await pb
+            .collection('rfq_seguradoras')
+            .update<RfqSeguradoraRecord>(rec.id, {
+              status: 'Proposta recebida',
+              proposta: activeProp.id,
+              data_resposta: activeProp.data_proposta || new Date().toISOString().slice(0, 10),
+            })
+          existingBySeg.set(segId, updated)
+        }
       }
     }
 
-    // 5. Retorna a lista atualizada completa com expand
-    return await pb.collection('rfq_seguradoras').getFullList<RfqSeguradoraRecord>({
+    // 5. Retorna a lista atualizada completa com expand e inclui propostas_todas
+    const finalRecords = await pb.collection('rfq_seguradoras').getFullList<RfqSeguradoraRecord>({
       filter: `rfq = "${rfqId}"`,
       expand: 'seguradora,proposta',
       sort: 'created',
     })
+
+    return finalRecords.map((r) => ({
+      ...r,
+      propostas_todas: allPropostasBySeg.get(r.seguradora) || [],
+    }))
   } catch (err) {
     console.error('Erro em syncAndLoadRfqSeguradoras:', err)
     return []
@@ -516,13 +570,11 @@ export async function registrarPropostaManual(
 
   const { iof, coberturas } = params
 
-  // 1. Cria ou atualiza o registro na coleção propostas
-  // Verifica se já existe proposta para esse RFQ + seguradora
-  const existingProps = await pb
-    .collection('propostas')
-    .getFullList<{ id: string; coberturas?: any[] }>({
-      filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
-    })
+  // 1. Cria ou atualiza o registro na coleção propostas com controle de versão
+  const existingProps = await pb.collection('propostas').getFullList<PropostaModelo>({
+    filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
+    sort: '-versao',
+  })
 
   let propostaId: string
   const propPayload: Record<string, any> = {
@@ -570,7 +622,8 @@ export async function registrarPropostaManual(
     propPayload.coberturas = coberturas
   }
 
-  if (existingProps.length > 0) {
+  const isNovaVersao = Boolean(params.criarNovaVersao)
+  if (existingProps.length > 0 && !isNovaVersao) {
     propostaId = existingProps[0].id
     // Se coberturas não foi passado na edição, mantém as que já existiam
     if (coberturas === undefined && existingProps[0].coberturas) {
@@ -578,9 +631,28 @@ export async function registrarPropostaManual(
     }
     await pb.collection('propostas').update(propostaId, propPayload)
   } else {
+    // Nova versão ou primeira versão
+    const maiorVersao =
+      existingProps.length > 0 ? Math.max(...existingProps.map((p) => Number(p.versao || 1))) : 0
+    const proxVersao = params.versao ? Number(params.versao) : maiorVersao + 1
+
+    // Desativa as outras versões desta seguradora neste RFQ
+    for (const exp of existingProps) {
+      if (exp.ativa) {
+        try {
+          await pb.collection('propostas').update(exp.id, { ativa: false })
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+    }
+
     if (propPayload.coberturas === undefined) {
       propPayload.coberturas = []
     }
+    propPayload.versao = proxVersao
+    propPayload.ativa = true
+
     const createdProp = await pb.collection('propostas').create(propPayload)
     propostaId = createdProp.id
   }
@@ -747,9 +819,10 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     }
   }
 
-  // 2. Cria ou atualiza proposta usando FormData para upload do PDF
-  const existingProps = await pb.collection('propostas').getFullList<{ id: string }>({
+  // 2. Cria ou atualiza proposta usando FormData para upload do PDF com controle de versão
+  const existingProps = await pb.collection('propostas').getFullList<PropostaModelo>({
     filter: `rfq = "${rfqId}" && seguradora = "${targetSegId}"`,
+    sort: '-versao',
   })
 
   const formData = new FormData()
@@ -815,11 +888,48 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     formData.append('arquivo_tipo', arquivo.type || 'application/pdf')
   }
 
+  const isNovaVersao =
+    params.criarNovaVersao !== undefined
+      ? Boolean(params.criarNovaVersao)
+      : existingProps.length === 0
   let propostaId: string
-  if (existingProps.length > 0) {
+
+  if (existingProps.length > 0 && !isNovaVersao && params.propostaSubstituirId) {
+    // Usuário optou explicitamente por substituir/atualizar registro existente específico
+    propostaId = params.propostaSubstituirId
+    formData.append('ativa', 'true')
+    await pb.collection('propostas').update(propostaId, formData)
+  } else if (existingProps.length > 0 && !isNovaVersao) {
+    // Substitui a mais recente
     propostaId = existingProps[0].id
+    formData.append('ativa', 'true')
     await pb.collection('propostas').update(propostaId, formData)
   } else {
+    // Nova versão ou primeira versão
+    const maiorVersao =
+      existingProps.length > 0 ? Math.max(...existingProps.map((p) => Number(p.versao || 1))) : 0
+    let proxVersao = maiorVersao + 1
+    if (params.versao) {
+      const parsed = parseInt(String(params.versao).replace(/\D/g, ''), 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        proxVersao = parsed
+      }
+    }
+
+    // Desativa as outras versões desta seguradora neste RFQ
+    for (const exp of existingProps) {
+      if (exp.ativa) {
+        try {
+          await pb.collection('propostas').update(exp.id, { ativa: false })
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+    }
+
+    formData.append('versao', String(proxVersao))
+    formData.append('ativa', 'true')
+
     const createdProp = await pb.collection('propostas').create(formData)
     propostaId = createdProp.id
   }
@@ -863,7 +973,7 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
       docForm.append('tipo', 'Proposta')
       docForm.append('arquivo', arquivo)
       docForm.append('rfq', rfqId)
-      docForm.append('versao', versao || numeroCotacao || '1')
+      docForm.append('versao', String(versao || numeroCotacao || '1'))
       docForm.append('data', dataProposta || new Date().toISOString().slice(0, 10))
       docForm.append('extraido_por_ia', 'true')
 
@@ -937,5 +1047,58 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     seguradoraId: targetSegId,
     seguradoraNome: targetSegNome,
     autoCadastrada,
+  }
+}
+
+/**
+ * Define qual versão da proposta está ativa para a seguradora no RFQ
+ */
+export async function definirVersaoAtiva(
+  rfqId: string,
+  seguradoraId: string,
+  propostaId: string,
+): Promise<void> {
+  // 1. Busca todas as propostas da seguradora neste RFQ
+  const props = await pb.collection('propostas').getFullList<PropostaModelo>({
+    filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
+  })
+
+  // 2. Atualiza ativa = true na escolhida, ativa = false nas outras
+  for (const p of props) {
+    const deveSerAtiva = p.id === propostaId
+    if (Boolean(p.ativa) !== deveSerAtiva) {
+      await pb.collection('propostas').update(p.id, { ativa: deveSerAtiva })
+    }
+  }
+
+  // 3. Atualiza o ponteiro em rfq_seguradoras para refletir a proposta ativa
+  const rfqSegs = await pb.collection('rfq_seguradoras').getFullList<RfqSeguradoraRecord>({
+    filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
+  })
+
+  const targetProp = props.find((p) => p.id === propostaId)
+
+  if (rfqSegs.length > 0) {
+    await pb.collection('rfq_seguradoras').update(rfqSegs[0].id, {
+      proposta: propostaId,
+      data_resposta: targetProp?.data_proposta || new Date().toISOString().slice(0, 10),
+      status: 'Proposta recebida',
+    })
+  }
+}
+
+/**
+ * Busca todas as propostas de um RFQ com informações expandidas da seguradora
+ */
+export async function carregarTodasPropostasRfq(rfqId: string): Promise<PropostaModelo[]> {
+  try {
+    return await pb.collection('propostas').getFullList<PropostaModelo>({
+      filter: `rfq = "${rfqId}"`,
+      expand: 'seguradora,rfq.conta_empreendimento',
+      sort: '-versao',
+    })
+  } catch (err) {
+    console.error('Erro ao carregar todas as propostas do RFQ:', err)
+    return []
   }
 }
