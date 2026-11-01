@@ -53,7 +53,55 @@ function escapeXml(unsafe: string | number | null | undefined): string {
 export function generatePresentationPptx(data: PptxPresentationData): Uint8Array {
   const files: SimpleZipFile[] = []
 
+  // Paginação das coberturas: blocos de no máx. 7 linhas por slide
+  // Cap máximo de 20 slides por segurança no arquivo total (capa + perfil + N coberturas + parecer <= 20)
+  const LINES_PER_SLIDE = 7
+  const MAX_TOTAL_SLIDES = 20
+  const FIXED_NON_COVERAGE_SLIDES = 3 // Slide 1 (capa), Slide 2 (perfil), Slide Final (parecer)
+  const MAX_COVERAGE_SLIDES = Math.max(1, MAX_TOTAL_SLIDES - FIXED_NON_COVERAGE_SLIDES) // 17 slides máx de coberturas
+
+  const coverageChunks: PptxCoverageItem[][] = []
+  if (data.coberturas && data.coberturas.length > 0) {
+    for (let i = 0; i < data.coberturas.length; i += LINES_PER_SLIDE) {
+      if (coverageChunks.length >= MAX_COVERAGE_SLIDES) break
+      coverageChunks.push(data.coberturas.slice(i, i + LINES_PER_SLIDE))
+    }
+  } else {
+    // Bloco vazio com item padrão
+    coverageChunks.push([])
+  }
+
+  const numCoverageSlides = coverageChunks.length
+  // Total de slides: Slide 1 (capa) + Slide 2 (perfil) + N slides de cobertura + Slide final (parecer)
+  const totalSlides = Math.min(MAX_TOTAL_SLIDES, 2 + numCoverageSlides + 1)
+  const parecerSlideNum = totalSlides
+
   // 1. [Content_Types].xml
+  const contentTypesOverrides: string[] = []
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>',
+  )
+  for (let s = 1; s <= totalSlides; s++) {
+    contentTypesOverrides.push(
+      `  <Override PartName="/ppt/slides/slide${s}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+    )
+  }
+  contentTypesOverrides.push(
+    '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
+  )
+
   files.push({
     name: '[Content_Types].xml',
     content:
@@ -61,16 +109,8 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\r\n' +
       '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\r\n' +
       '  <Default Extension="xml" ContentType="application/xml"/>\r\n' +
-      '  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>\r\n' +
-      '  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slides/slide3.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
-      '  <Override PartName="/ppt/slides/slide4.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
-      '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\r\n' +
-      '  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\r\n' +
+      contentTypesOverrides.join('\r\n') +
+      '\r\n' +
       '</Types>',
   })
 
@@ -109,7 +149,7 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   <Application>Bycor P&amp;C Intelligence</Application>
   <PresentationFormat>On-screen Show (16:9)</PresentationFormat>
   <Paragraphs>0</Paragraphs>
-  <Slides>4</Slides>
+  <Slides>${totalSlides}</Slides>
   <Notes>0</Notes>
   <HiddenSlides>0</HiddenSlides>
   <MMClips>0</MMClips>
@@ -134,20 +174,31 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   })
 
   // 5. ppt/_rels/presentation.xml.rels
+  const presRelsList: string[] = [
+    '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>',
+    '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>',
+  ]
+  for (let s = 1; s <= totalSlides; s++) {
+    presRelsList.push(
+      `  <Relationship Id="rId${s + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${s}.xml"/>`,
+    )
+  }
+
   files.push({
     name: 'ppt/_rels/presentation.xml.rels',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
-  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
-  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide3.xml"/>
-  <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide4.xml"/>
+${presRelsList.join('\r\n')}
 </Relationships>`,
   })
 
   // 6. ppt/presentation.xml (16:9 widescreen: 12192000 x 6858000)
+  const sldIdListXml: string[] = []
+  for (let s = 1; s <= totalSlides; s++) {
+    // id começa em 256, r:id começa em rId3
+    sldIdListXml.push(`    <p:sldId id="${255 + s}" r:id="rId${s + 2}"/>`)
+  }
+
   files.push({
     name: 'ppt/presentation.xml',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -156,10 +207,7 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
     <p:sldMasterId id="2147483648" r:id="rId1"/>
   </p:sldMasterIdLst>
   <p:sldIdLst>
-    <p:sldId id="256" r:id="rId3"/>
-    <p:sldId id="257" r:id="rId4"/>
-    <p:sldId id="258" r:id="rId5"/>
-    <p:sldId id="259" r:id="rId6"/>
+${sldIdListXml.join('\r\n')}
   </p:sldIdLst>
   <p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>
   <p:notesSz cx="6858000" cy="9144000"/>
@@ -263,10 +311,9 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>`
 
-  files.push({ name: 'ppt/slides/_rels/slide1.xml.rels', content: makeSlideRel() })
-  files.push({ name: 'ppt/slides/_rels/slide2.xml.rels', content: makeSlideRel() })
-  files.push({ name: 'ppt/slides/_rels/slide3.xml.rels', content: makeSlideRel() })
-  files.push({ name: 'ppt/slides/_rels/slide4.xml.rels', content: makeSlideRel() })
+  for (let s = 1; s <= totalSlides; s++) {
+    files.push({ name: `ppt/slides/_rels/slide${s}.xml.rels`, content: makeSlideRel() })
+  }
 
   // SLIDE 1: Capa Executiva
   files.push({
@@ -530,76 +577,135 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
 </p:sld>`,
   })
 
-  // SLIDE 3: Tabela de Coberturas Tabuladas
-  // Gera linhas XML da tabela com estrutura estrita conforme ECMA-376 (a:tc -> a:txBody -> a:tcPr)
-  const cobsList = data.coberturas.length > 0 ? data.coberturas.slice(0, 8) : []
-  const tableRowsXml: string[] = []
-
-  // Header row (3 colunas exatas)
-  tableRowsXml.push(
-    '<a:tr h="365760">' +
-      '<a:tc>' +
-      '<a:txBody>' +
-      '<a:bodyPr/>' +
-      '<a:lstStyle/>' +
-      '<a:p>' +
-      '<a:r>' +
-      '<a:rPr sz="1200" b="1">' +
-      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
-      '</a:rPr>' +
-      '<a:t>Garantia / Cobertura Contratada</a:t>' +
-      '</a:r>' +
-      '</a:p>' +
-      '</a:txBody>' +
-      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
-      '</a:tc>' +
-      '<a:tc>' +
-      '<a:txBody>' +
-      '<a:bodyPr/>' +
-      '<a:lstStyle/>' +
-      '<a:p>' +
-      '<a:pPr algn="r"/>' +
-      '<a:r>' +
-      '<a:rPr sz="1200" b="1">' +
-      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
-      '</a:rPr>' +
-      '<a:t>Limite (LMI)</a:t>' +
-      '</a:r>' +
-      '</a:p>' +
-      '</a:txBody>' +
-      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
-      '</a:tc>' +
-      '<a:tc>' +
-      '<a:txBody>' +
-      '<a:bodyPr/>' +
-      '<a:lstStyle/>' +
-      '<a:p>' +
-      '<a:r>' +
-      '<a:rPr sz="1200" b="1">' +
-      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
-      '</a:rPr>' +
-      '<a:t>Franquia / POS</a:t>' +
-      '</a:r>' +
-      '</a:p>' +
-      '</a:txBody>' +
-      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
-      '</a:tc>' +
-      '</a:tr>',
-  )
-
+  // SLIDES DE COBERTURAS: Gerados dinamicamente por bloco paginado (no máx. 7 linhas por slide)
   const buildCellText = (val: string | number | null | undefined, fallback: string): string => {
     if (val === null || val === undefined) return fallback
     const s = String(val).trim()
     return s.length > 0 ? escapeXml(s) : fallback
   }
 
-  if (cobsList.length > 0) {
-    cobsList.forEach((c, idx) => {
-      const bgClr = idx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
-      const nomeText = buildCellText(c.nome, 'Cobertura Contratada')
-      const lmiText = buildCellText(formatCurrency(c.lmi), 'Consulte Apólice')
-      const franqText = buildCellText(c.franquia, 'Padrão da Seguradora')
+  // Header row padrão (3 colunas exatas) compartilhado por todos os slides de coberturas
+  const headerRowXml =
+    '<a:tr h="365760">' +
+    '<a:tc>' +
+    '<a:txBody>' +
+    '<a:bodyPr/>' +
+    '<a:lstStyle/>' +
+    '<a:p>' +
+    '<a:r>' +
+    '<a:rPr sz="1200" b="1">' +
+    '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+    '</a:rPr>' +
+    '<a:t>Garantia / Cobertura Contratada</a:t>' +
+    '</a:r>' +
+    '</a:p>' +
+    '</a:txBody>' +
+    '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+    '</a:tc>' +
+    '<a:tc>' +
+    '<a:txBody>' +
+    '<a:bodyPr/>' +
+    '<a:lstStyle/>' +
+    '<a:p>' +
+    '<a:pPr algn="r"/>' +
+    '<a:r>' +
+    '<a:rPr sz="1200" b="1">' +
+    '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+    '</a:rPr>' +
+    '<a:t>Limite (LMI)</a:t>' +
+    '</a:r>' +
+    '</a:p>' +
+    '</a:txBody>' +
+    '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+    '</a:tc>' +
+    '<a:tc>' +
+    '<a:txBody>' +
+    '<a:bodyPr/>' +
+    '<a:lstStyle/>' +
+    '<a:p>' +
+    '<a:r>' +
+    '<a:rPr sz="1200" b="1">' +
+    '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+    '</a:rPr>' +
+    '<a:t>Franquia / POS</a:t>' +
+    '</a:r>' +
+    '</a:p>' +
+    '</a:txBody>' +
+    '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+    '</a:tc>' +
+    '</a:tr>'
 
+  coverageChunks.forEach((chunk, chunkIdx) => {
+    const slideNumber = 3 + chunkIdx
+    const k = chunkIdx + 1
+    const n = numCoverageSlides
+    const slideTitle =
+      k === 1
+        ? `2. Resumo de Coberturas Incluídas (Parte 1/${n})`
+        : `Continuação — Coberturas (${k}/${n})`
+
+    const tableRowsXml: string[] = [headerRowXml]
+
+    if (chunk.length > 0) {
+      chunk.forEach((c, idx) => {
+        const bgClr = idx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
+        const nomeText = buildCellText(c.nome, 'Cobertura Contratada')
+        const lmiText = buildCellText(formatCurrency(c.lmi), 'Consulte Apólice')
+        const franqText = buildCellText(c.franquia, 'Padrão da Seguradora')
+
+        tableRowsXml.push(
+          '<a:tr h="320040">' +
+            '<a:tc>' +
+            '<a:txBody>' +
+            '<a:bodyPr/>' +
+            '<a:lstStyle/>' +
+            '<a:p>' +
+            '<a:r>' +
+            '<a:rPr sz="1100" b="1">' +
+            '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+            '</a:rPr>' +
+            `<a:t>${nomeText}</a:t>` +
+            '</a:r>' +
+            '</a:p>' +
+            '</a:txBody>' +
+            `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+            '</a:tc>' +
+            '<a:tc>' +
+            '<a:txBody>' +
+            '<a:bodyPr/>' +
+            '<a:lstStyle/>' +
+            '<a:p>' +
+            '<a:pPr algn="r"/>' +
+            '<a:r>' +
+            '<a:rPr sz="1100" b="1">' +
+            '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+            '</a:rPr>' +
+            `<a:t>${lmiText}</a:t>` +
+            '</a:r>' +
+            '</a:p>' +
+            '</a:txBody>' +
+            `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+            '</a:tc>' +
+            '<a:tc>' +
+            '<a:txBody>' +
+            '<a:bodyPr/>' +
+            '<a:lstStyle/>' +
+            '<a:p>' +
+            '<a:r>' +
+            '<a:rPr sz="1100">' +
+            '<a:solidFill><a:srgbClr val="475569"/></a:solidFill>' +
+            '</a:rPr>' +
+            `<a:t>${franqText}</a:t>` +
+            '</a:r>' +
+            '</a:p>' +
+            '</a:txBody>' +
+            `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+            '</a:tc>' +
+            '</a:tr>',
+        )
+      })
+    } else {
+      const lmiVal = buildCellText(formatCurrency(data.lmiLmg), 'Consulte Apólice')
       tableRowsXml.push(
         '<a:tr h="320040">' +
           '<a:tc>' +
@@ -608,14 +714,14 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
           '<a:lstStyle/>' +
           '<a:p>' +
           '<a:r>' +
-          '<a:rPr sz="1100" b="1">' +
-          '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+          '<a:rPr sz="1100">' +
+          '<a:solidFill><a:srgbClr val="64748B"/></a:solidFill>' +
           '</a:rPr>' +
-          `<a:t>${nomeText}</a:t>` +
+          '<a:t>Incêndio Básica (Danos Materiais)</a:t>' +
           '</a:r>' +
           '</a:p>' +
           '</a:txBody>' +
-          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
           '</a:tc>' +
           '<a:tc>' +
           '<a:txBody>' +
@@ -627,11 +733,11 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
           '<a:rPr sz="1100" b="1">' +
           '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
           '</a:rPr>' +
-          `<a:t>${lmiText}</a:t>` +
+          `<a:t>${lmiVal}</a:t>` +
           '</a:r>' +
           '</a:p>' +
           '</a:txBody>' +
-          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
           '</a:tc>' +
           '<a:tc>' +
           '<a:txBody>' +
@@ -642,72 +748,19 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
           '<a:rPr sz="1100">' +
           '<a:solidFill><a:srgbClr val="475569"/></a:solidFill>' +
           '</a:rPr>' +
-          `<a:t>${franqText}</a:t>` +
+          '<a:t>Padrão de mercado</a:t>' +
           '</a:r>' +
           '</a:p>' +
           '</a:txBody>' +
-          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
           '</a:tc>' +
           '</a:tr>',
       )
-    })
-  } else {
-    const lmiVal = buildCellText(formatCurrency(data.lmiLmg), 'Consulte Apólice')
-    tableRowsXml.push(
-      '<a:tr h="320040">' +
-        '<a:tc>' +
-        '<a:txBody>' +
-        '<a:bodyPr/>' +
-        '<a:lstStyle/>' +
-        '<a:p>' +
-        '<a:r>' +
-        '<a:rPr sz="1100">' +
-        '<a:solidFill><a:srgbClr val="64748B"/></a:solidFill>' +
-        '</a:rPr>' +
-        '<a:t>Incêndio Básica (Danos Materiais)</a:t>' +
-        '</a:r>' +
-        '</a:p>' +
-        '</a:txBody>' +
-        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
-        '</a:tc>' +
-        '<a:tc>' +
-        '<a:txBody>' +
-        '<a:bodyPr/>' +
-        '<a:lstStyle/>' +
-        '<a:p>' +
-        '<a:pPr algn="r"/>' +
-        '<a:r>' +
-        '<a:rPr sz="1100" b="1">' +
-        '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
-        '</a:rPr>' +
-        `<a:t>${lmiVal}</a:t>` +
-        '</a:r>' +
-        '</a:p>' +
-        '</a:txBody>' +
-        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
-        '</a:tc>' +
-        '<a:tc>' +
-        '<a:txBody>' +
-        '<a:bodyPr/>' +
-        '<a:lstStyle/>' +
-        '<a:p>' +
-        '<a:r>' +
-        '<a:rPr sz="1100">' +
-        '<a:solidFill><a:srgbClr val="475569"/></a:solidFill>' +
-        '</a:rPr>' +
-        '<a:t>Padrão de mercado</a:t>' +
-        '</a:r>' +
-        '</a:p>' +
-        '</a:txBody>' +
-        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
-        '</a:tc>' +
-        '</a:tr>',
-    )
-  }
+    }
 
-  files.push({
-    name: 'ppt/slides/slide3.xml',
-    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    files.push({
+      name: `ppt/slides/slide${slideNumber}.xml`,
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld>
     <p:spTree>
@@ -722,7 +775,7 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
           <a:p>
             <a:r>
               <a:rPr sz="2400" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr>
-              <a:t>2. Resumo de Coberturas Incluídas</a:t>
+              <a:t>${escapeXml(slideTitle)}</a:t>
             </a:r>
           </a:p>
         </p:txBody>
@@ -730,9 +783,7 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
       <!-- Table Frame: nvGraphicFramePr -> xfrm -> graphic (p:xfrm contem a:off e a:ext) -->
       <p:graphicFrame>
         <p:nvGraphicFramePr>
-          <p:cNvPr id="3" name="CoberturasTable"/>
-          <p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>
-          <p:nvPr/>
+          <p:cNvPr id="3" name="CoberturasTable"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/>
         </p:nvGraphicFramePr>
         <p:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="4572000"/></p:xfrm>
         <a:graphic>
@@ -752,11 +803,12 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
     </p:spTree>
   </p:cSld>
 </p:sld>`,
+    })
   })
 
-  // SLIDE 4: Parecer Técnico & Recomendação da Corretora
+  // SLIDE FINAL: Parecer Técnico & Recomendação da Corretora (passa a ser o último do arquivo: slide[parecerSlideNum].xml)
   files.push({
-    name: 'ppt/slides/slide4.xml',
+    name: `ppt/slides/slide${parecerSlideNum}.xml`,
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld>
