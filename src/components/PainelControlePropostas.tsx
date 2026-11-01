@@ -113,6 +113,8 @@ export function PainelControlePropostas({
   const [vrdLc, setVrdLc] = useState<number | ''>('')
   const [vrdLcBase, setVrdLcBase] = useState('Lucro Bruto')
   const [posFranquias, setPosFranquias] = useState('')
+  const [formaPagamento, setFormaPagamento] = useState('')
+  const [numeroParcelas, setNumeroParcelas] = useState<number | ''>('')
   const [clausulas, setClausulas] = useState('')
   const [exclusoes, setExclusoes] = useState('')
   const [arquivoVinculado, setArquivoVinculado] = useState<{
@@ -276,6 +278,10 @@ export function PainelControlePropostas({
     setVrdLc(p?.vrd_lc !== undefined && p?.vrd_lc !== null ? p.vrd_lc : '')
     setVrdLcBase(p?.vrd_lc_base || 'Lucro Bruto')
     setPosFranquias(p?.pos_franquias || '')
+    setFormaPagamento(p?.forma_pagamento || '')
+    setNumeroParcelas(
+      p?.numero_parcelas !== undefined && p?.numero_parcelas !== null ? p.numero_parcelas : '',
+    )
     setClausulas(p?.clausulas || '')
     setExclusoes(p?.exclusoes || '')
 
@@ -410,6 +416,8 @@ export function PainelControlePropostas({
         vrdLc: vrdLc === '' ? undefined : Number(vrdLc),
         vrdLcBase,
         posFranquias: posFranquias || undefined,
+        formaPagamento: formaPagamento || undefined,
+        numeroParcelas: numeroParcelas === '' ? null : Number(numeroParcelas),
         clausulas,
         exclusoes,
         coberturas: coberturasModal,
@@ -864,7 +872,14 @@ export function PainelControlePropostas({
                                 <span className="text-emerald-800">
                                   Bruto:{' '}
                                   {propostaData?.premio_bruto &&
-                                  Number(propostaData.premio_bruto) > 0 ? (
+                                  Number(propostaData.premio_bruto) > 0 &&
+                                  !(
+                                    desnormalizarBasePremioParaUi(propostaData.base_premio) ===
+                                      'net' &&
+                                    (propostaData.comissao_trabalhada === undefined ||
+                                      propostaData.comissao_trabalhada === null ||
+                                      propostaData.comissao_trabalhada === ('' as any))
+                                  ) ? (
                                     formatCurrency(propostaData.premio_bruto)
                                   ) : (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
@@ -889,11 +904,18 @@ export function PainelControlePropostas({
                                 <span>
                                   Líq:{' '}
                                   {propostaData?.premio_liquido &&
-                                  Number(propostaData.premio_liquido) > 0 ? (
+                                  Number(propostaData.premio_liquido) > 0 &&
+                                  !(
+                                    desnormalizarBasePremioParaUi(propostaData.base_premio) ===
+                                      'net' &&
+                                    (propostaData.comissao_trabalhada === undefined ||
+                                      propostaData.comissao_trabalhada === null ||
+                                      propostaData.comissao_trabalhada === ('' as any))
+                                  ) ? (
                                     formatCurrency(propostaData.premio_liquido)
                                   ) : (
-                                    <span className="text-amber-800 font-sans font-medium">
-                                      Pendente
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300 font-sans">
+                                      Pendente (informe comissão)
                                     </span>
                                   )}
                                 </span>
@@ -901,7 +923,14 @@ export function PainelControlePropostas({
                                 <span>
                                   IOF:{' '}
                                   {propostaData?.premio_liquido &&
-                                  Number(propostaData.premio_liquido) > 0 ? (
+                                  Number(propostaData.premio_liquido) > 0 &&
+                                  !(
+                                    desnormalizarBasePremioParaUi(propostaData.base_premio) ===
+                                      'net' &&
+                                    (propostaData.comissao_trabalhada === undefined ||
+                                      propostaData.comissao_trabalhada === null ||
+                                      propostaData.comissao_trabalhada === ('' as any))
+                                  ) ? (
                                     formatCurrency(
                                       propostaData?.iof && Number(propostaData.iof) > 0
                                         ? Number(propostaData.iof)
@@ -968,6 +997,21 @@ export function PainelControlePropostas({
                                   LMI Total: {formatCurrency(propostaData.lmi_lmg)}
                                 </div>
                               ) : null}
+                              {(propostaData?.numero_parcelas || propostaData?.forma_pagamento) && (
+                                <div className="text-[10px] text-gray-600 flex items-center gap-1">
+                                  <span>💳</span>
+                                  {propostaData.numero_parcelas ? (
+                                    <span className="font-semibold text-gray-800">
+                                      {propostaData.numero_parcelas}x s/ juros
+                                    </span>
+                                  ) : null}
+                                  {propostaData.forma_pagamento ? (
+                                    <span className="text-gray-500">
+                                      ({propostaData.forma_pagamento})
+                                    </span>
+                                  ) : null}
+                                </div>
+                              )}
                             </div>
                           ) : rec.status === 'Declinou' ? (
                             <div className="text-xs">
@@ -1296,28 +1340,12 @@ export function PainelControlePropostas({
                     const c = temComissao ? comissaoTrabalhada : 0
 
                     if (basePremio === 'liquido') {
+                      // REGRA NOVA: Líquido é a âncora e NUNCA é alterado pela comissão ou agravo
+                      // Agravo incide sobre o Prêmio Net (se houver)
                       const pLiq = typeof premioLiquido === 'number' ? premioLiquido : 0
-                      const netOriginal =
-                        typeof premioNet === 'number' && premioNet > 0
-                          ? premioNet
-                          : pLiq > 0 && c < 100
-                            ? pLiq * (1 - c / 100)
-                            : 0
-                      if (netOriginal > 0) {
+                      if (pLiq > 0 && temComissao && c < 100) {
+                        const netOriginal = pLiq * (1 - c / 100)
                         setPremioNet(Number(netOriginal.toFixed(2)))
-                        const netPos = agr > 0 ? netOriginal * (1 + agr / 100) : netOriginal
-                        if (c < 100) {
-                          const liqNovo = netPos / (1 - c / 100)
-                          setPremioLiquido(Number(liqNovo.toFixed(2)))
-                          const iofVal =
-                            typeof iof === 'number' && iof > 0
-                              ? iof
-                              : Number((liqNovo * 0.0738).toFixed(2))
-                          if (typeof iof !== 'number' || iof === 0) {
-                            setIof(iofVal)
-                          }
-                          setPremioBruto(Number((liqNovo + iofVal).toFixed(2)))
-                        }
                       }
                     } else {
                       if (
@@ -1371,31 +1399,24 @@ export function PainelControlePropostas({
                     const c = temComissao ? val : 0
                     const agr = typeof agravo === 'number' ? agravo : 0
                     if (basePremio === 'liquido') {
-                      if (typeof premioLiquido === 'number' && premioLiquido > 0 && c < 100) {
-                        const net = premioLiquido * (1 - c / 100)
-                        setPremioNet(Number(net.toFixed(2)))
-                        if (agr > 0) {
-                          const netPos = net * (1 + agr / 100)
-                          const liqRecalc = netPos / (1 - c / 100)
-                          setPremioLiquido(Number(liqRecalc.toFixed(2)))
-                          const iofVal =
-                            typeof iof === 'number' && iof > 0
-                              ? iof
-                              : Number((liqRecalc * 0.0738).toFixed(2))
-                          if (typeof iof !== 'number' || iof === 0) {
-                            setIof(iofVal)
-                          }
-                          setPremioBruto(Number((liqRecalc + iofVal).toFixed(2)))
+                      // REGRA NOVA: Líquido é âncora, NUNCA alterado.
+                      // Net = Líquido * (1 - comissão%)
+                      // IOF e Bruto independem da comissão.
+                      if (typeof premioLiquido === 'number' && premioLiquido > 0) {
+                        if (temComissao && c >= 0 && c <= 100) {
+                          const net = premioLiquido * (1 - c / 100)
+                          setPremioNet(Number(net.toFixed(2)))
                         } else {
-                          const iofVal =
-                            typeof iof === 'number' && iof > 0
-                              ? iof
-                              : Number((premioLiquido * 0.0738).toFixed(2))
-                          if (typeof iof !== 'number' || iof === 0) {
-                            setIof(iofVal)
-                          }
-                          setPremioBruto(Number((premioLiquido + iofVal).toFixed(2)))
+                          setPremioNet('')
                         }
+                        const iofVal =
+                          typeof iof === 'number' && iof > 0
+                            ? iof
+                            : Number((premioLiquido * 0.0738).toFixed(2))
+                        if (typeof iof !== 'number' || iof === 0) {
+                          setIof(iofVal)
+                        }
+                        setPremioBruto(Number((premioLiquido + iofVal).toFixed(2)))
                       }
                     } else {
                       // Base Net: reatividade imediata em cadeia
@@ -1568,6 +1589,36 @@ export function PainelControlePropostas({
                     <option value="Lucro Líquido (LL)">Lucro Líquido (LL)</option>
                   </select>
                 </div>
+              </div>
+            </div>
+
+            {/* Bloco 1.2: Pagamento e Parcelas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-gray-50/60 rounded-xl border border-gray-200">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">Forma de Pagamento</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Boleto Bancário / Carnê"
+                  value={formaPagamento}
+                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  className="h-8 text-xs bg-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Número de Parcelas (sem juros)
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Ex: 4"
+                  value={numeroParcelas}
+                  onChange={(e) =>
+                    setNumeroParcelas(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                  className="h-8 text-xs font-semibold bg-white"
+                />
               </div>
             </div>
 

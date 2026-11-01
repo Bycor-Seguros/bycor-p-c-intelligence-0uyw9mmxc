@@ -67,6 +67,8 @@ interface PropostaRecord {
   vrd_lc?: number
   vrd_lc_base?: string
   iof: number
+  forma_pagamento?: string
+  numero_parcelas?: number
   status: 'Pendente' | 'Tabulada' | 'Selecionada' | 'Não selecionada'
   expand?: {
     seguradora?: { id?: string; nome: string }
@@ -528,39 +530,53 @@ export default function TabulacaoPage() {
                   <td className="py-2.5 px-4 sticky left-0 bg-gray-50 border-r">
                     Prêmio Total / Bruto
                   </td>
-                  {comparedProposals.map((p) => (
-                    <td
-                      key={p.id}
-                      className="py-2.5 px-4 border-r text-base text-emerald-800 font-bold tabular-nums"
-                    >
-                      {p.premio_bruto && Number(p.premio_bruto) > 0 ? (
-                        formatCurrency(p.premio_bruto)
-                      ) : (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
-                          Pendente
-                        </span>
-                      )}
-                    </td>
-                  ))}
+                  {comparedProposals.map((p) => {
+                    const isNetSemComissao =
+                      desnormalizarBasePremioParaUi(p.base_premio) === 'net' &&
+                      (p.comissao_trabalhada === undefined ||
+                        p.comissao_trabalhada === null ||
+                        p.comissao_trabalhada === ('' as any))
+                    return (
+                      <td
+                        key={p.id}
+                        className="py-2 px-4 border-r tabular-nums font-bold text-emerald-900"
+                      >
+                        {p.premio_bruto && Number(p.premio_bruto) > 0 && !isNetSemComissao ? (
+                          formatCurrency(p.premio_bruto)
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                            Pendente
+                          </span>
+                        )}
+                      </td>
+                    )
+                  })}{' '}
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
                     Prêmio Líquido (com comissão)
                   </td>
-                  {comparedProposals.map((p) => (
-                    <td
-                      key={p.id}
-                      className="py-2 px-4 border-r tabular-nums font-semibold text-blue-950"
-                    >
-                      {p.premio_liquido && Number(p.premio_liquido) > 0 ? (
-                        formatCurrency(p.premio_liquido)
-                      ) : (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
-                          Pendente (informe comissão)
-                        </span>
-                      )}
-                    </td>
-                  ))}
+                  {comparedProposals.map((p) => {
+                    const isNetSemComissao =
+                      desnormalizarBasePremioParaUi(p.base_premio) === 'net' &&
+                      (p.comissao_trabalhada === undefined ||
+                        p.comissao_trabalhada === null ||
+                        p.comissao_trabalhada === ('' as any))
+                    return (
+                      <td
+                        key={p.id}
+                        className="py-2 px-4 border-r tabular-nums font-semibold text-blue-950"
+                      >
+                        {p.premio_liquido && Number(p.premio_liquido) > 0 && !isNetSemComissao ? (
+                          formatCurrency(p.premio_liquido)
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                            Pendente (informe comissão)
+                          </span>
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
@@ -648,9 +664,18 @@ export default function TabulacaoPage() {
                     IOF
                   </td>
                   {comparedProposals.map((p) => {
-                    const liqVal = p.premio_liquido || 0
+                    const isNetSemComissao =
+                      desnormalizarBasePremioParaUi(p.base_premio) === 'net' &&
+                      (p.comissao_trabalhada === undefined ||
+                        p.comissao_trabalhada === null ||
+                        p.comissao_trabalhada === ('' as any))
+                    const liqVal =
+                      !isNetSemComissao && p.premio_liquido ? Number(p.premio_liquido) : 0
                     const iofVal =
-                      p.iof !== undefined && p.iof !== null && Number(p.iof) > 0
+                      !isNetSemComissao &&
+                      p.iof !== undefined &&
+                      p.iof !== null &&
+                      Number(p.iof) > 0
                         ? Number(p.iof)
                         : liqVal > 0
                           ? Number((liqVal * 0.0738).toFixed(2))
@@ -673,6 +698,29 @@ export default function TabulacaoPage() {
                   {comparedProposals.map((p) => (
                     <td key={p.id} className="py-2 px-4 border-r tabular-nums font-semibold">
                       {formatCurrency(p.lmi_lmg)}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
+                    Condições de Pagamento / Parcelas
+                  </td>
+                  {comparedProposals.map((p) => (
+                    <td key={p.id} className="py-2 px-4 border-r text-xs">
+                      {p.numero_parcelas || p.forma_pagamento ? (
+                        <span>
+                          {p.numero_parcelas ? (
+                            <strong className="text-gray-900 font-semibold">
+                              {p.numero_parcelas}x s/ juros
+                            </strong>
+                          ) : null}
+                          {p.forma_pagamento ? (
+                            <span className="text-gray-500 ml-1">({p.forma_pagamento})</span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                   ))}
                 </tr>

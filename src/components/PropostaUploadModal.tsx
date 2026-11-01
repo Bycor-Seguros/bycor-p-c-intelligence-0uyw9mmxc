@@ -567,6 +567,7 @@ export default function PropostaUploadModal({
         vrdLcBase: vrdLcBase || undefined,
         posFranquias: posFranquias.trim() || undefined,
         formaPagamento: formaPagamento.trim() || undefined,
+        numeroParcelas: numeroParcelas ? Number(numeroParcelas) : null,
         clausulas: clausulas.trim() || undefined,
         exclusoes: exclusoes.trim() || undefined,
         coberturas,

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T19:41:10.827Z",
+  "generatedAt": "2026-11-01T20:47:23.055Z",
   "collections": [
     {
       "name": "users",
@@ -1560,6 +1560,12 @@
         },
         {
           "name": "opcao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_parcelas",
           "type": "number",
           "required": false,
           "system": false

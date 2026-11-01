@@ -1103,17 +1103,18 @@ export async function runAllSuites() {
       assertEqual(res.net, 50000, 'Prêmio Net base gravado')
       assertEqual(res.netPosAgravo, 50000, 'Net Pós Agravo sem agravo')
       assertEqual(res.liquido, null, 'Líquido deve ser nulo/pendente')
-      assertEqual(res.iof, 0, 'IOF deve ser 0/pendente')
+      assertEqual(res.iof, null, 'IOF deve ser nulo/pendente (nunca zero)')
       assertEqual(res.bruto, null, 'Bruto deve ser nulo/pendente')
+      assertEqual(res.comissaoValor, null, 'Comissão valor deve ser nula')
     },
   )
 
   runTest(
     'Regra de Prêmio Net C2',
-    'Base Net com agravo mas sem comissão: Net Pós Agravo calculado, Líquido e Bruto pendentes',
+    'Base Net com agravo mas sem comissão: Net Pós Agravo calculado, Líquido, IOF e Bruto pendentes',
     () => {
       // Net = 50.000, Agravo = 10% -> Net Pós Agravo = 55.000
-      // Sem comissão informada: Líquido, IOF e Bruto continuam nulos/pendentes
+      // Sem comissão informada: Líquido, IOF e Bruto continuam nulos/pendentes (todos null, nunca zero)
       const res = calcularFluxoPremios({
         base: 'net',
         premioNet: 50000,
@@ -1122,7 +1123,9 @@ export async function runAllSuites() {
       assertEqual(res.net, 50000, 'Prêmio Net base')
       assertEqual(res.netPosAgravo, 55000, 'Net Pós Agravo 10% calculado')
       assertEqual(res.liquido, null, 'Líquido deve permanecer nulo')
+      assertEqual(res.iof, null, 'IOF deve permanecer nulo')
       assertEqual(res.bruto, null, 'Bruto deve permanecer nulo')
+      assertEqual(res.comissaoValor, null, 'Comissão valor deve ser nula')
     },
   )
 
@@ -1159,6 +1162,78 @@ export async function runAllSuites() {
       assertEqual(res.liquido, 69215.24, 'Líquido explícito mantido')
       assertEqual(res.iof, 5108.08, 'IOF 7,38% calculado sobre Líquido')
       assertEqual(res.bruto, 74323.32, 'Bruto = Líquido + IOF')
+      assertEqual(res.net, null, 'Net sem comissão permanece null')
+      assertEqual(res.comissaoValor, null, 'Valor comissão sem comissão permanece null')
+    },
+  )
+
+  runTest(
+    'Regra de Prêmio Net C2',
+    'Base Líquido com comissão (regra nova): Líquido é âncora intocada, Net = Líquido × (1 - comissão), comissãoValor = Líquido × comissão',
+    () => {
+      // Líquido = 46.351,40 (exemplo condomínio São International Square: Total 49.772,14 com IOF 7,38%)
+      // 46.351,40 * 0.0738 = 3.420,7333 -> IOF = 3.420,73 -> Total = 49.772,13
+      // Testando Líquido = 100.000,00 com comissão 15%:
+      // Net = 100.000 * 0.85 = 85.000,00
+      // Valor da comissão = 100.000 * 0.15 = 15.000,00
+      // Líquido permanece 100.000,00 (NUNCA alterado)
+      // IOF = 100.000 * 7,38% = 7.380,00
+      // Bruto = 100.000 + 7.380 = 107.380,00
+      const res = calcularFluxoPremios({
+        base: 'liquido',
+        premioLiquido: 100000,
+        comissaoPerc: 15,
+      })
+      assertEqual(res.liquido, 100000, 'Líquido é âncora intocada')
+      assertEqual(res.net, 85000, 'Net = Líquido * (1 - comissão)')
+      assertEqual(res.comissaoValor, 15000, 'Valor comissão = Líquido * comissão')
+      assertEqual(res.iof, 7380, 'IOF = Líquido * 7,38% independente da comissão')
+      assertEqual(res.bruto, 107380, 'Bruto = Líquido + IOF')
+    },
+  )
+
+  runTest(
+    'Regra de Prêmio Net C2',
+    'Base Líquido com agravo e comissão: Líquido permanece intocado, Net Pós Agravo = Net × (1 + agravo)',
+    () => {
+      // Líquido = 50.000, Comissão = 10% -> Net = 45.000
+      // Agravo = 10% -> Net Pós Agravo = 45.000 * 1.1 = 49.500
+      // Líquido âncora = 50.000 (não muda)
+      // IOF = 50.000 * 7,38% = 3.690,00
+      // Bruto = 53.690,00
+      const res = calcularFluxoPremios({
+        base: 'liquido',
+        premioLiquido: 50000,
+        comissaoPerc: 10,
+        agravoPerc: 10,
+      })
+      assertEqual(res.liquido, 50000, 'Líquido permanece âncora')
+      assertEqual(res.net, 45000, 'Net derivado da comissão')
+      assertEqual(res.comissaoValor, 5000, 'Valor comissão 10% sobre líquido')
+      assertEqual(res.netPosAgravo, 49500, 'Net Pós Agravo 10%')
+      assertEqual(res.iof, 3690, 'IOF 7,38% sobre Líquido')
+      assertEqual(res.bruto, 53690, 'Bruto = Líquido + IOF')
+    },
+  )
+
+  runTest(
+    'Regra de Prêmio Net C2',
+    'Verificação numérica AXA Condomínio São International Square (Prêmio Bruto R$ 49.772,14 com IOF 7,38% incluso)',
+    () => {
+      // Bruto = 49.772,14 com IOF 7,38%
+      // Líquido = 49.772,14 / 1.0738 = 46.351,405... -> 46.351,41
+      // IOF = 46.351,41 * 0.0738 = 3.420,73
+      // Bruto = 46.351,41 + 3.420,73 = 49.772,14
+      const res = calcularFluxoPremios({
+        base: 'liquido',
+        premioLiquido: 46351.41,
+        comissaoPerc: 15,
+      })
+      assertEqual(res.liquido, 46351.41, 'Líquido âncora')
+      assertEqual(res.iof, 3420.73, 'IOF 7,38% sobre Líquido')
+      assertEqual(res.bruto, 49772.14, 'Bruto bate exatamente com R$ 49.772,14')
+      assertEqual(res.net, 39398.7, 'Net = 46.351,41 * 0.85 = 39.398,70')
+      assertEqual(res.comissaoValor, 6952.71, 'Comissão = 46.351,41 * 0.15 = 6.952,71')
     },
   )
 

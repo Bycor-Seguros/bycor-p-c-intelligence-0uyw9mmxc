@@ -86,6 +86,7 @@ export interface PropostaModelo {
   vigencia_fim?: string
   validade_cotacao?: string
   forma_pagamento?: string
+  numero_parcelas?: number
   created?: string
   updated?: string
   expand?: {
@@ -165,6 +166,8 @@ export interface RegistrarPropostaParams {
   vrdLc?: number
   vrdLcBase?: string
   posFranquias?: string
+  formaPagamento?: string
+  numeroParcelas?: number | null
   clausulas?: string
   exclusoes?: string
   coberturas?: any[]
@@ -202,6 +205,7 @@ export interface RegistrarPropostaUploadParams {
   vrdLcBase?: string
   posFranquias?: string
   formaPagamento?: string
+  numeroParcelas?: number | null
   clausulas?: string
   exclusoes?: string
   coberturas?: any[]
@@ -231,7 +235,8 @@ export function calcularFluxoPremios(params: {
   netPosAgravo: number | null
   temAgravo: boolean
   liquido: number | null
-  iof: number
+  comissaoValor: number | null
+  iof: number | null
   bruto: number | null
   iofDerivado: boolean
 } {
@@ -247,26 +252,33 @@ export function calcularFluxoPremios(params: {
   let netBase: number | null = null
   let liqCalculado: number | null = null
   let netPosAgravo: number | null = null
+  let comissaoValor: number | null = null
 
   if (base === 'liquido') {
+    // REGRA NOVA (comissão SEMPRE sobre o Prêmio Líquido):
+    // Quando base === 'liquido':
+    // Líquido é a âncora, NUNCA alterado.
+    // Quando comissão informada:
+    // Net = Líquido * (1 - comissão/100)
+    // valor da comissão = Líquido * (comissão/100)
+    // Se houver agravo: Net Pós Agravo = Net * (1 + agravo%)
+    // IOF e Bruto independem da comissão (IOF = Líquido * 7,38%, Bruto = Líquido + IOF).
     const liqInput = params.premioLiquido ?? 0
     if (liqInput > 0) {
-      if (temComissao && comissao >= 0 && comissao < 100) {
+      liqCalculado = liqInput
+
+      if (temComissao && comissao >= 0 && comissao <= 100) {
         netBase = liqInput * (1 - comissao / 100)
+        comissaoValor = Number((liqInput * (comissao / 100)).toFixed(2))
       } else {
-        netBase = liqInput
+        netBase = null
+        comissaoValor = null
       }
 
       if (temAgravo && netBase !== null) {
         netPosAgravo = netBase * (1 + agravo / 100)
-        if (temComissao && comissao >= 0 && comissao < 100) {
-          liqCalculado = netPosAgravo / (1 - comissao / 100)
-        } else {
-          liqCalculado = netPosAgravo
-        }
       } else {
         netPosAgravo = netBase
-        liqCalculado = liqInput
       }
     }
   } else {
@@ -293,12 +305,15 @@ export function calcularFluxoPremios(params: {
       if (temComissao) {
         if (comissao >= 0 && comissao < 100) {
           liqCalculado = netParaLiq / (1 - comissao / 100)
+          comissaoValor = Number((liqCalculado * (comissao / 100)).toFixed(2))
         } else {
           liqCalculado = netParaLiq
+          comissaoValor = 0
         }
       } else {
-        // Comissão ausente: NÃO presume 0%. Líquido permanece nulo/pendente!
+        // Comissão ausente: NÃO presume 0%. Líquido, IOF, Bruto permanecem nulos/pendentes!
         liqCalculado = null
+        comissaoValor = null
       }
     }
   }
@@ -306,7 +321,7 @@ export function calcularFluxoPremios(params: {
   // Regra de IOF no fluxo de prêmios:
   // (1) Se IOF informado explicitamente (> 0), usa o valor informado e Bruto = Líquido + IOF (se houver Líquido).
   // (2) Se IOF NÃO informado (ou vier 0), deriva se houver Líquido: IOF = Líquido * 7,38% e Bruto = Líquido + IOF.
-  //     Se NÃO houver Líquido (ex.: Base Net sem comissão), IOF e Bruto ficam pendentes/nulos!
+  //     Se NÃO houver Líquido (ex.: Base Net sem comissão), IOF e Bruto ficam pendentes/nulos! TUDO null, nunca zero.
   const temIofExplicito = typeof iof === 'number' && iof > 0
   const iofDerivado = !temIofExplicito
   const iofCalculado: number | null = temIofExplicito
@@ -316,7 +331,9 @@ export function calcularFluxoPremios(params: {
       : null
 
   const brutoCalculado =
-    liqCalculado !== null ? Number((liqCalculado + (iofCalculado ?? 0)).toFixed(2)) : null
+    liqCalculado !== null && iofCalculado !== null
+      ? Number((liqCalculado + iofCalculado).toFixed(2))
+      : null
 
   return {
     net: netBase !== null ? Number(netBase.toFixed(2)) : null,
@@ -329,7 +346,8 @@ export function calcularFluxoPremios(params: {
           : null,
     temAgravo,
     liquido: liqCalculado !== null ? Number(liqCalculado.toFixed(2)) : null,
-    iof: iofCalculado !== null ? Number(iofCalculado.toFixed(2)) : 0,
+    comissaoValor,
+    iof: iofCalculado !== null ? Number(iofCalculado.toFixed(2)) : null,
     bruto: brutoCalculado,
     iofDerivado,
   }
@@ -592,6 +610,8 @@ export async function registrarPropostaManual(
     vrdLc,
     vrdLcBase,
     posFranquias,
+    formaPagamento,
+    numeroParcelas,
     clausulas,
     exclusoes,
   } = params
@@ -615,6 +635,12 @@ export async function registrarPropostaManual(
     exclusoes: exclusoes?.trim() || '',
     status: 'Pendente',
   }
+  if (numeroParcelas !== undefined && numeroParcelas !== null) {
+    propPayload.numero_parcelas = Number(numeroParcelas)
+  }
+  if (formaPagamento !== undefined && formaPagamento !== null) {
+    propPayload.forma_pagamento = formaPagamento
+  }
 
   const liqNum =
     premioLiquido !== undefined && premioLiquido !== null && !isNaN(Number(premioLiquido))
@@ -636,9 +662,9 @@ export async function registrarPropostaManual(
     brutoNum = Number((liqNum + (iofNum ?? 0)).toFixed(2))
   }
 
-  propPayload.premio_liquido = liqNum !== null ? liqNum : 0
-  propPayload.premio_bruto = brutoNum !== null ? brutoNum : 0
-  propPayload.iof = iofNum !== null ? iofNum : 0
+  propPayload.premio_liquido = liqNum !== null ? liqNum : null
+  propPayload.premio_bruto = brutoNum !== null ? brutoNum : null
+  propPayload.iof = iofNum !== null ? iofNum : null
 
   if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
   if (agravo !== undefined && agravo !== null) propPayload.agravo = Number(agravo)
@@ -830,6 +856,7 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     vrdLcBase,
     posFranquias,
     formaPagamento,
+    numeroParcelas,
     clausulas,
     exclusoes,
     coberturas = [],
@@ -897,9 +924,21 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   }
 
   if (lmiLmg !== undefined && lmiLmg !== null) formData.append('lmi_lmg', String(lmiLmg))
-  if (uploadLiq !== null && uploadLiq > 0) formData.append('premio_liquido', String(uploadLiq))
-  if (uploadBruto !== null && uploadBruto > 0) formData.append('premio_bruto', String(uploadBruto))
-  if (uploadIof !== null && uploadIof > 0) formData.append('iof', String(uploadIof))
+  if (uploadLiq !== null && uploadLiq > 0) {
+    formData.append('premio_liquido', String(uploadLiq))
+  } else {
+    formData.append('premio_liquido', '')
+  }
+  if (uploadBruto !== null && uploadBruto > 0) {
+    formData.append('premio_bruto', String(uploadBruto))
+  } else {
+    formData.append('premio_bruto', '')
+  }
+  if (uploadIof !== null && uploadIof > 0) {
+    formData.append('iof', String(uploadIof))
+  } else {
+    formData.append('iof', '')
+  }
   if (premioNet !== undefined && premioNet !== null)
     formData.append('premio_net', String(premioNet))
   if (agravo !== undefined && agravo !== null) formData.append('agravo', String(agravo))
@@ -924,6 +963,9 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   if (exclusoes) formData.append('exclusoes', exclusoes)
   if (numeroCotacao) formData.append('numero_cotacao', numeroCotacao)
   if (formaPagamento) formData.append('forma_pagamento', formaPagamento)
+  if (numeroParcelas !== undefined && numeroParcelas !== null && !isNaN(Number(numeroParcelas))) {
+    formData.append('numero_parcelas', String(numeroParcelas))
+  }
   if (validadeCotacao) formData.append('validade_cotacao', validadeCotacao)
   if (vigenciaInicio) formData.append('vigencia_inicio', vigenciaInicio)
   if (vigenciaFim) formData.append('vigencia_fim', vigenciaFim)
