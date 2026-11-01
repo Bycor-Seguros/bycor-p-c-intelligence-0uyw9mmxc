@@ -236,7 +236,11 @@ export function calcularFluxoPremios(params: {
   iofDerivado: boolean
 } {
   const { base, iof } = params
-  const comissao = params.comissaoPerc ?? 0
+  const temComissao =
+    params.comissaoPerc !== undefined &&
+    params.comissaoPerc !== null &&
+    !isNaN(Number(params.comissaoPerc))
+  const comissao = temComissao ? Number(params.comissaoPerc) : 0
   const agravo = params.agravoPerc ?? 0
   const temAgravo = typeof agravo === 'number' && agravo > 0
 
@@ -247,7 +251,7 @@ export function calcularFluxoPremios(params: {
   if (base === 'liquido') {
     const liqInput = params.premioLiquido ?? 0
     if (liqInput > 0) {
-      if (comissao >= 0 && comissao < 100) {
+      if (temComissao && comissao >= 0 && comissao < 100) {
         netBase = liqInput * (1 - comissao / 100)
       } else {
         netBase = liqInput
@@ -255,7 +259,7 @@ export function calcularFluxoPremios(params: {
 
       if (temAgravo && netBase !== null) {
         netPosAgravo = netBase * (1 + agravo / 100)
-        if (comissao >= 0 && comissao < 100) {
+        if (temComissao && comissao >= 0 && comissao < 100) {
           liqCalculado = netPosAgravo / (1 - comissao / 100)
         } else {
           liqCalculado = netPosAgravo
@@ -266,7 +270,15 @@ export function calcularFluxoPremios(params: {
       }
     }
   } else {
-    // Base Net
+    // Base Net:
+    // Regra do usuário: a seguradora NÃO sabe a comissão da corretora; o sistema NÃO pode presumir.
+    // Quando a proposta declara Prêmio Net (sem comissão trabalhada preenchida):
+    // o leitor e os cálculos NÃO completam nenhum derivado — Líquido, IOF e Bruto ficam pendentes/vazios (null).
+    // A cadeia só calcula quando o analista preencher a comissão trabalhada:
+    // Net Pós Agravo = Net * (1 + agravo%)
+    // Líquido = Net Pós Agravo / (1 - comissão)
+    // IOF = Líquido * 7,38%
+    // Bruto = Líquido + IOF
     const netInput = params.premioNet ?? 0
     if (netInput > 0) {
       netBase = netInput
@@ -277,28 +289,34 @@ export function calcularFluxoPremios(params: {
       }
 
       const netParaLiq = temAgravo && netPosAgravo !== null ? netPosAgravo : netBase
-      if (comissao >= 0 && comissao < 100) {
-        liqCalculado = netParaLiq / (1 - comissao / 100)
+
+      if (temComissao) {
+        if (comissao >= 0 && comissao < 100) {
+          liqCalculado = netParaLiq / (1 - comissao / 100)
+        } else {
+          liqCalculado = netParaLiq
+        }
       } else {
-        liqCalculado = netParaLiq
+        // Comissão ausente: NÃO presume 0%. Líquido permanece nulo/pendente!
+        liqCalculado = null
       }
     }
   }
 
   // Regra de IOF no fluxo de prêmios:
-  // (1) Se IOF informado explicitamente (> 0), usa o valor informado e Bruto = Líquido + IOF.
-  // (2) Se IOF NÃO informado (ou vier 0), deriva: IOF = Líquido * 7,38% e Bruto = Líquido + IOF
-  //     inclusive quando o Líquido é derivado da cadeia Net/Agravo (Net Pós Agravo / (1 - comissão)).
+  // (1) Se IOF informado explicitamente (> 0), usa o valor informado e Bruto = Líquido + IOF (se houver Líquido).
+  // (2) Se IOF NÃO informado (ou vier 0), deriva se houver Líquido: IOF = Líquido * 7,38% e Bruto = Líquido + IOF.
+  //     Se NÃO houver Líquido (ex.: Base Net sem comissão), IOF e Bruto ficam pendentes/nulos!
   const temIofExplicito = typeof iof === 'number' && iof > 0
   const iofDerivado = !temIofExplicito
-  const iofCalculado = temIofExplicito
+  const iofCalculado: number | null = temIofExplicito
     ? iof
     : liqCalculado !== null && liqCalculado > 0
       ? Number((liqCalculado * ALIQUOTA_IOF_PADRAO).toFixed(2))
-      : 0
+      : null
 
   const brutoCalculado =
-    liqCalculado !== null ? Number((liqCalculado + iofCalculado).toFixed(2)) : null
+    liqCalculado !== null ? Number((liqCalculado + (iofCalculado ?? 0)).toFixed(2)) : null
 
   return {
     net: netBase !== null ? Number(netBase.toFixed(2)) : null,
@@ -311,7 +329,7 @@ export function calcularFluxoPremios(params: {
           : null,
     temAgravo,
     liquido: liqCalculado !== null ? Number(liqCalculado.toFixed(2)) : null,
-    iof: Number(iofCalculado.toFixed(2)),
+    iof: iofCalculado !== null ? Number(iofCalculado.toFixed(2)) : 0,
     bruto: brutoCalculado,
     iofDerivado,
   }
@@ -598,19 +616,29 @@ export async function registrarPropostaManual(
     status: 'Pendente',
   }
 
-  const liqNum = premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0
-  let iofNum = iof !== undefined && iof !== null ? Number(iof) : 0
-  if ((!iofNum || iofNum === 0) && liqNum > 0) {
+  const liqNum =
+    premioLiquido !== undefined && premioLiquido !== null && !isNaN(Number(premioLiquido))
+      ? Number(premioLiquido)
+      : null
+  let iofNum =
+    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
+  if ((iofNum === null || iofNum === 0) && liqNum !== null && liqNum > 0) {
     iofNum = Number((liqNum * ALIQUOTA_IOF_PADRAO).toFixed(2))
   }
-  let brutoNum = premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0
-  if ((!brutoNum || brutoNum === 0) && liqNum > 0) {
-    brutoNum = Number((liqNum + iofNum).toFixed(2))
+  let brutoNum =
+    premioBruto !== undefined &&
+    premioBruto !== null &&
+    !isNaN(Number(premioBruto)) &&
+    Number(premioBruto) > 0
+      ? Number(premioBruto)
+      : null
+  if ((brutoNum === null || brutoNum === 0) && liqNum !== null && liqNum > 0) {
+    brutoNum = Number((liqNum + (iofNum ?? 0)).toFixed(2))
   }
 
-  propPayload.premio_liquido = liqNum
-  propPayload.premio_bruto = brutoNum
-  propPayload.iof = iofNum
+  propPayload.premio_liquido = liqNum !== null ? liqNum : 0
+  propPayload.premio_bruto = brutoNum !== null ? brutoNum : 0
+  propPayload.iof = iofNum !== null ? iofNum : 0
 
   if (premioNet !== undefined && premioNet !== null) propPayload.premio_net = Number(premioNet)
   if (agravo !== undefined && agravo !== null) propPayload.agravo = Number(agravo)
@@ -849,20 +877,29 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
   formData.append('status', 'Pendente')
 
   const uploadLiq =
-    premioLiquido !== undefined && premioLiquido !== null ? Number(premioLiquido) : 0
-  let uploadIof = iof !== undefined && iof !== null ? Number(iof) : 0
-  if ((!uploadIof || uploadIof === 0) && uploadLiq > 0) {
+    premioLiquido !== undefined && premioLiquido !== null && !isNaN(Number(premioLiquido))
+      ? Number(premioLiquido)
+      : null
+  let uploadIof =
+    iof !== undefined && iof !== null && !isNaN(Number(iof)) && Number(iof) > 0 ? Number(iof) : null
+  if ((uploadIof === null || uploadIof === 0) && uploadLiq !== null && uploadLiq > 0) {
     uploadIof = Number((uploadLiq * ALIQUOTA_IOF_PADRAO).toFixed(2))
   }
-  let uploadBruto = premioBruto !== undefined && premioBruto !== null ? Number(premioBruto) : 0
-  if ((!uploadBruto || uploadBruto === 0) && uploadLiq > 0) {
-    uploadBruto = Number((uploadLiq + uploadIof).toFixed(2))
+  let uploadBruto =
+    premioBruto !== undefined &&
+    premioBruto !== null &&
+    !isNaN(Number(premioBruto)) &&
+    Number(premioBruto) > 0
+      ? Number(premioBruto)
+      : null
+  if ((uploadBruto === null || uploadBruto === 0) && uploadLiq !== null && uploadLiq > 0) {
+    uploadBruto = Number((uploadLiq + (uploadIof ?? 0)).toFixed(2))
   }
 
   if (lmiLmg !== undefined && lmiLmg !== null) formData.append('lmi_lmg', String(lmiLmg))
-  if (uploadLiq > 0) formData.append('premio_liquido', String(uploadLiq))
-  if (uploadBruto > 0) formData.append('premio_bruto', String(uploadBruto))
-  if (uploadIof > 0) formData.append('iof', String(uploadIof))
+  if (uploadLiq !== null && uploadLiq > 0) formData.append('premio_liquido', String(uploadLiq))
+  if (uploadBruto !== null && uploadBruto > 0) formData.append('premio_bruto', String(uploadBruto))
+  if (uploadIof !== null && uploadIof > 0) formData.append('iof', String(uploadIof))
   if (premioNet !== undefined && premioNet !== null)
     formData.append('premio_net', String(premioNet))
   if (agravo !== undefined && agravo !== null) formData.append('agravo', String(agravo))

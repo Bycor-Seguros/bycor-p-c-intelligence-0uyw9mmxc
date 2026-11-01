@@ -533,7 +533,13 @@ export default function TabulacaoPage() {
                       key={p.id}
                       className="py-2.5 px-4 border-r text-base text-emerald-800 font-bold tabular-nums"
                     >
-                      {p.premio_bruto ? formatCurrency(p.premio_bruto) : '—'}
+                      {p.premio_bruto && Number(p.premio_bruto) > 0 ? (
+                        formatCurrency(p.premio_bruto)
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                          Pendente
+                        </span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -546,7 +552,13 @@ export default function TabulacaoPage() {
                       key={p.id}
                       className="py-2 px-4 border-r tabular-nums font-semibold text-blue-950"
                     >
-                      {formatCurrency(p.premio_liquido)}
+                      {p.premio_liquido && Number(p.premio_liquido) > 0 ? (
+                        formatCurrency(p.premio_liquido)
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                          Pendente (informe comissão)
+                        </span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -642,10 +654,14 @@ export default function TabulacaoPage() {
                         ? Number(p.iof)
                         : liqVal > 0
                           ? Number((liqVal * 0.0738).toFixed(2))
-                          : 0
+                          : null
                     return (
                       <td key={p.id} className="py-2 px-4 border-r tabular-nums text-gray-600">
-                        {formatCurrency(iofVal)}
+                        {iofVal !== null && iofVal > 0 ? (
+                          formatCurrency(iofVal)
+                        ) : (
+                          <span className="text-amber-800 text-[11px] font-medium">Pendente</span>
+                        )}
                       </td>
                     )
                   })}

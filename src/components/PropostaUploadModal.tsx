@@ -339,18 +339,35 @@ export default function PropostaUploadModal({
     setValidadeCotacao(seg.validadeCotacao || '')
     setVigenciaInicio(seg.vigenciaInicio || '')
     setVigenciaFim(seg.vigenciaFim || '')
+
+    // Prêmio net e comissão
+    const extractedNet =
+      seg.premioNet !== null && seg.premioNet !== undefined
+        ? seg.premioNet
+        : seg.dadosComplementares?.premioNet !== null &&
+            seg.dadosComplementares?.premioNet !== undefined
+          ? seg.dadosComplementares.premioNet
+          : null
+
     const pLiqVal = seg.premioLiquido ? Number(seg.premioLiquido) : null
     let pIofVal = seg.iof ? Number(seg.iof) : null
     let pTotalVal = seg.premioTotal ? Number(seg.premioTotal) : null
 
-    // Regra de IOF: se não informado (ou 0), deriva: IOF = Líquido * 7,38% e Bruto = Líquido + IOF
-    if (pLiqVal !== null && pLiqVal > 0) {
+    // Regra do usuário: quando a proposta declara Prêmio Net (sem Prêmio Líquido explícito):
+    // Líquido, IOF e Bruto ficam pendentes/vazios (sem presunção de comissão).
+    const temNetSemLiquido =
+      (!pLiqVal || pLiqVal === 0) && extractedNet !== null && extractedNet > 0
+
+    if (!temNetSemLiquido && pLiqVal !== null && pLiqVal > 0) {
       if (!pIofVal || pIofVal === 0) {
         pIofVal = Number((pLiqVal * 0.0738).toFixed(2))
       }
       if (!pTotalVal || pTotalVal === 0) {
         pTotalVal = Number((pLiqVal + pIofVal).toFixed(2))
       }
+    } else if (temNetSemLiquido) {
+      pIofVal = null
+      pTotalVal = null
     }
 
     setPremioLiquido(pLiqVal ? String(pLiqVal) : '')
@@ -395,15 +412,6 @@ export default function PropostaUploadModal({
           : '',
     )
     setVrdLcBase(seg.vrdLcBase || seg.dadosComplementares?.vrdLcBase || 'Lucro Bruto')
-
-    // Prêmio net e comissão
-    const extractedNet =
-      seg.premioNet !== null && seg.premioNet !== undefined
-        ? seg.premioNet
-        : seg.dadosComplementares?.premioNet !== null &&
-            seg.dadosComplementares?.premioNet !== undefined
-          ? seg.dadosComplementares.premioNet
-          : null
 
     if (extractedNet) {
       setPremioNet(String(extractedNet))
@@ -759,6 +767,16 @@ export default function PropostaUploadModal({
                               <strong className="text-emerald-800">
                                 {formatCurrency(valorPremio)}
                               </strong>
+                            </span>
+                          ) : seg.premioNet ? (
+                            <span>
+                              Prêmio Net:{' '}
+                              <strong className="text-blue-900 font-bold">
+                                {formatCurrency(seg.premioNet)}
+                              </strong>{' '}
+                              <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded font-medium border border-amber-200">
+                                Líquido/Bruto pendente de comissão
+                              </span>
                             </span>
                           ) : (
                             <span className="text-gray-400">Prêmio: a confirmar</span>
@@ -1202,10 +1220,13 @@ export default function PropostaUploadModal({
                             type="button"
                             onClick={() => {
                               setBasePremio('liquido')
-                              const c = parseFloat(comissaoTrabalhada) || 0
+                              const temC =
+                                comissaoTrabalhada.trim() !== '' &&
+                                !isNaN(parseFloat(comissaoTrabalhada))
+                              const c = temC ? parseFloat(comissaoTrabalhada) : null
                               const agr = parseFloat(agravo) || 0
                               const pLiq = parseFloat(premioLiquido) || 0
-                              if (pLiq > 0 && c >= 0 && c < 100) {
+                              if (pLiq > 0 && c !== null && c >= 0 && c < 100) {
                                 const net = pLiq * (1 - c / 100)
                                 setPremioNet(net.toFixed(2))
                                 if (agr > 0) {
@@ -1232,10 +1253,13 @@ export default function PropostaUploadModal({
                             type="button"
                             onClick={() => {
                               setBasePremio('net')
-                              const c = parseFloat(comissaoTrabalhada) || 0
+                              const temC =
+                                comissaoTrabalhada.trim() !== '' &&
+                                !isNaN(parseFloat(comissaoTrabalhada))
+                              const c = temC ? parseFloat(comissaoTrabalhada) : null
                               const agr = parseFloat(agravo) || 0
                               const pNet = parseFloat(premioNet) || 0
-                              if (pNet > 0 && c >= 0 && c < 100) {
+                              if (pNet > 0 && c !== null && c >= 0 && c < 100) {
                                 const netBaseParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                 const liq = netBaseParaLiq / (1 - c / 100)
                                 setPremioLiquido(liq.toFixed(2))
@@ -1244,6 +1268,11 @@ export default function PropostaUploadModal({
                                   : Number((liq * 0.0738).toFixed(2))
                                 if (!iof) setIof(iofVal.toFixed(2))
                                 setPremioBruto((liq + iofVal).toFixed(2))
+                              } else if (c === null) {
+                                // Base Net sem comissão: derivados pendentes
+                                setPremioLiquido('')
+                                setIof('')
+                                setPremioBruto('')
                               }
                             }}
                             className={`px-2 py-0.5 rounded font-medium transition-colors ${
@@ -1273,12 +1302,13 @@ export default function PropostaUploadModal({
                           onChange={(e) => {
                             const val = e.target.value
                             setComissaoTrabalhada(val)
-                            const c = parseFloat(val) || 0
+                            const temVal = val.trim() !== '' && !isNaN(parseFloat(val))
+                            const c = temVal ? parseFloat(val) : null
                             const agr = parseFloat(agravo) || 0
 
                             if (basePremio === 'liquido') {
                               const pLiq = parseFloat(premioLiquido) || 0
-                              if (pLiq > 0 && c < 100) {
+                              if (pLiq > 0 && c !== null && c < 100) {
                                 const net = pLiq * (1 - c / 100)
                                 setPremioNet(net.toFixed(2))
                                 if (agr > 0) {
@@ -1301,15 +1331,22 @@ export default function PropostaUploadModal({
                             } else {
                               // base Net
                               const pNet = parseFloat(premioNet) || 0
-                              if (pNet > 0 && c < 100) {
-                                const netParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
-                                const pLiq = netParaLiq / (1 - c / 100)
-                                setPremioLiquido(pLiq.toFixed(2))
-                                const iofVal = iof
-                                  ? parseFloat(iof)
-                                  : Number((pLiq * 0.0738).toFixed(2))
-                                if (!iof) setIof(iofVal.toFixed(2))
-                                setPremioBruto((pLiq + iofVal).toFixed(2))
+                              if (pNet > 0) {
+                                if (c !== null && c >= 0 && c < 100) {
+                                  const netParaLiq = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                  const pLiq = netParaLiq / (1 - c / 100)
+                                  setPremioLiquido(pLiq.toFixed(2))
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((pLiq * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
+                                  setPremioBruto((pLiq + iofVal).toFixed(2))
+                                } else if (c === null) {
+                                  // Comissão apagada/vazia: Líquido, IOF e Bruto voltam a ficar pendentes
+                                  setPremioLiquido('')
+                                  setIof('')
+                                  setPremioBruto('')
+                                }
                               }
                             }
                           }}
@@ -1335,7 +1372,10 @@ export default function PropostaUploadModal({
                             const val = e.target.value
                             setAgravo(val)
                             const agr = parseFloat(val) || 0
-                            const c = parseFloat(comissaoTrabalhada) || 0
+                            const temC =
+                              comissaoTrabalhada.trim() !== '' &&
+                              !isNaN(parseFloat(comissaoTrabalhada))
+                            const c = temC ? parseFloat(comissaoTrabalhada) : null
 
                             if (basePremio === 'liquido') {
                               // Agravo age sobre o Net.
@@ -1343,11 +1383,11 @@ export default function PropostaUploadModal({
                               const pLiq = parseFloat(premioLiquido) || 0
                               const netOriginal =
                                 parseFloat(premioNet) ||
-                                (pLiq > 0 && c < 100 ? pLiq * (1 - c / 100) : 0)
+                                (pLiq > 0 && c !== null && c < 100 ? pLiq * (1 - c / 100) : 0)
                               if (netOriginal > 0) {
                                 setPremioNet(netOriginal.toFixed(2))
                                 const netPos = agr > 0 ? netOriginal * (1 + agr / 100) : netOriginal
-                                if (c < 100) {
+                                if (c !== null && c < 100) {
                                   const liqNovo = netPos / (1 - c / 100)
                                   setPremioLiquido(liqNovo.toFixed(2))
                                   const iofVal = iof
@@ -1360,15 +1400,22 @@ export default function PropostaUploadModal({
                             } else {
                               // base Net
                               const pNet = parseFloat(premioNet) || 0
-                              if (pNet > 0 && c < 100) {
-                                const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
-                                const pLiq = netPos / (1 - c / 100)
-                                setPremioLiquido(pLiq.toFixed(2))
-                                const iofVal = iof
-                                  ? parseFloat(iof)
-                                  : Number((pLiq * 0.0738).toFixed(2))
-                                if (!iof) setIof(iofVal.toFixed(2))
-                                setPremioBruto((pLiq + iofVal).toFixed(2))
+                              if (pNet > 0) {
+                                if (c !== null && c >= 0 && c < 100) {
+                                  const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                  const pLiq = netPos / (1 - c / 100)
+                                  setPremioLiquido(pLiq.toFixed(2))
+                                  const iofVal = iof
+                                    ? parseFloat(iof)
+                                    : Number((pLiq * 0.0738).toFixed(2))
+                                  if (!iof) setIof(iofVal.toFixed(2))
+                                  setPremioBruto((pLiq + iofVal).toFixed(2))
+                                } else {
+                                  // Sem comissão: Líquido, IOF e Bruto continuam vazios/pendentes
+                                  setPremioLiquido('')
+                                  setIof('')
+                                  setPremioBruto('')
+                                }
                               }
                             }
                           }}
@@ -1397,18 +1444,27 @@ export default function PropostaUploadModal({
                             const val = e.target.value
                             setPremioNet(val)
                             const pNet = parseFloat(val) || 0
-                            const c = parseFloat(comissaoTrabalhada) || 0
+                            const temC =
+                              comissaoTrabalhada.trim() !== '' &&
+                              !isNaN(parseFloat(comissaoTrabalhada))
+                            const c = temC ? parseFloat(comissaoTrabalhada) : null
                             const agr = parseFloat(agravo) || 0
 
-                            if (basePremio === 'net' && pNet > 0 && c < 100) {
-                              const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
-                              const pLiq = netPos / (1 - c / 100)
-                              setPremioLiquido(pLiq.toFixed(2))
-                              const iofVal = iof
-                                ? parseFloat(iof)
-                                : Number((pLiq * 0.0738).toFixed(2))
-                              if (!iof) setIof(iofVal.toFixed(2))
-                              setPremioBruto((pLiq + iofVal).toFixed(2))
+                            if (basePremio === 'net') {
+                              if (pNet > 0 && c !== null && c >= 0 && c < 100) {
+                                const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
+                                const pLiq = netPos / (1 - c / 100)
+                                setPremioLiquido(pLiq.toFixed(2))
+                                const iofVal = iof
+                                  ? parseFloat(iof)
+                                  : Number((pLiq * 0.0738).toFixed(2))
+                                if (!iof) setIof(iofVal.toFixed(2))
+                                setPremioBruto((pLiq + iofVal).toFixed(2))
+                              } else {
+                                setPremioLiquido('')
+                                setIof('')
+                                setPremioBruto('')
+                              }
                             }
                           }}
                           placeholder="0,00"
@@ -1533,10 +1589,16 @@ export default function PropostaUploadModal({
                         <span className="text-gray-300">•</span>
                         <span>
                           Líquido:{' '}
-                          <strong className="text-blue-900">
-                            {premioLiquido ? formatCurrency(premioLiquido) : 'R$ 0,00'}
-                          </strong>
-                          {temAgravoVal && (
+                          {premioLiquido ? (
+                            <strong className="text-blue-900">
+                              {formatCurrency(premioLiquido)}
+                            </strong>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                              Pendente (informe comissão)
+                            </span>
+                          )}
+                          {temAgravoVal && premioLiquido && (
                             <span className="text-[9px] text-blue-600 font-sans ml-1">
                               (derivado)
                             </span>
@@ -1545,9 +1607,15 @@ export default function PropostaUploadModal({
                         <span className="text-gray-300">•</span>
                         <span>
                           Bruto:{' '}
-                          <strong className="text-emerald-700">
-                            {premioBruto ? formatCurrency(premioBruto) : 'R$ 0,00'}
-                          </strong>
+                          {premioBruto ? (
+                            <strong className="text-emerald-700">
+                              {formatCurrency(premioBruto)}
+                            </strong>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                              Pendente
+                            </span>
+                          )}
                         </span>
                       </div>
                     </div>

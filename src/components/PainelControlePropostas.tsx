@@ -248,19 +248,28 @@ export function PainelControlePropostas({
     )
     const p = rec.expand?.proposta
     setLmiLmg(p?.lmi_lmg !== undefined && p?.lmi_lmg !== null ? p.lmi_lmg : '')
-    setPremioLiquido(
-      p?.premio_liquido !== undefined && p?.premio_liquido !== null ? p.premio_liquido : '',
-    )
-    setPremioBruto(p?.premio_bruto !== undefined && p?.premio_bruto !== null ? p.premio_bruto : '')
-    setPremioNet(p?.premio_net !== undefined && p?.premio_net !== null ? p.premio_net : '')
-    setAgravo(p?.agravo !== undefined && p?.agravo !== null ? p.agravo : '')
-    setIof(p?.iof !== undefined && p?.iof !== null ? p.iof : '')
-    setComissaoTrabalhada(
+    const rawNet = p?.premio_net !== undefined && p?.premio_net !== null ? p.premio_net : ''
+    const rawLiq =
+      p?.premio_liquido !== undefined && p?.premio_liquido !== null ? p.premio_liquido : ''
+    const rawBruto = p?.premio_bruto !== undefined && p?.premio_bruto !== null ? p.premio_bruto : ''
+    const rawIof = p?.iof !== undefined && p?.iof !== null ? p.iof : ''
+    const rawComissao =
       p?.comissao_trabalhada !== undefined && p?.comissao_trabalhada !== null
         ? p.comissao_trabalhada
-        : '',
-    )
-    setBasePremio(desnormalizarBasePremioParaUi(p?.base_premio))
+        : ''
+
+    // Se é proposta com Prêmio Net e sem comissão trabalhada, Líquido, Bruto e IOF devem ficar vazios (pendentes)
+    const baseUi = desnormalizarBasePremioParaUi(p?.base_premio)
+    const semComissao = rawComissao === '' || rawComissao === null || rawComissao === undefined
+    const isNetSemComissao = baseUi === 'net' && rawNet !== '' && semComissao
+
+    setPremioLiquido(isNetSemComissao ? '' : Number(rawLiq) > 0 ? Number(rawLiq) : '')
+    setPremioBruto(isNetSemComissao ? '' : Number(rawBruto) > 0 ? Number(rawBruto) : '')
+    setPremioNet(rawNet !== '' ? rawNet : '')
+    setAgravo(p?.agravo !== undefined && p?.agravo !== null ? p.agravo : '')
+    setIof(isNetSemComissao ? '' : Number(rawIof) > 0 ? Number(rawIof) : '')
+    setComissaoTrabalhada(rawComissao)
+    setBasePremio(baseUi)
     setVrdDm(p?.vrd_dm !== undefined && p?.vrd_dm !== null ? p.vrd_dm : '')
     setVrdMmu(p?.vrd_mmu !== undefined && p?.vrd_mmu !== null ? p.vrd_mmu : '')
     setVrdMmp(p?.vrd_mmp !== undefined && p?.vrd_mmp !== null ? p.vrd_mmp : '')
@@ -851,40 +860,58 @@ export function PainelControlePropostas({
                         <td className="py-3 px-3">
                           {rec.status === 'Proposta recebida' ? (
                             <div className="space-y-1">
-                              <div className="font-semibold text-gray-900 text-xs">
+                              <div className="font-semibold text-gray-900 text-xs flex items-center gap-2">
                                 <span className="text-emerald-800">
                                   Bruto:{' '}
-                                  {propostaData?.premio_bruto
-                                    ? formatCurrency(propostaData.premio_bruto)
-                                    : '—'}
+                                  {propostaData?.premio_bruto &&
+                                  Number(propostaData.premio_bruto) > 0 ? (
+                                    formatCurrency(propostaData.premio_bruto)
+                                  ) : (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                                      Pendente
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                               <div className="text-[10px] text-gray-600 flex flex-wrap items-center gap-1.5 font-mono">
                                 <span>
                                   Net:{' '}
-                                  {propostaData?.premio_net
-                                    ? formatCurrency(propostaData.premio_net)
-                                    : '—'}
+                                  {propostaData?.premio_net &&
+                                  Number(propostaData.premio_net) > 0 ? (
+                                    <strong className="text-blue-900">
+                                      {formatCurrency(propostaData.premio_net)}
+                                    </strong>
+                                  ) : (
+                                    '—'
+                                  )}
                                 </span>
                                 <span>•</span>
                                 <span>
                                   Líq:{' '}
-                                  {propostaData?.premio_liquido
-                                    ? formatCurrency(propostaData.premio_liquido)
-                                    : '—'}
+                                  {propostaData?.premio_liquido &&
+                                  Number(propostaData.premio_liquido) > 0 ? (
+                                    formatCurrency(propostaData.premio_liquido)
+                                  ) : (
+                                    <span className="text-amber-800 font-sans font-medium">
+                                      Pendente
+                                    </span>
+                                  )}
                                 </span>
                                 <span>•</span>
                                 <span>
                                   IOF:{' '}
-                                  {propostaData?.premio_liquido
-                                    ? formatCurrency(
-                                        propostaData?.iof && Number(propostaData.iof) > 0
-                                          ? Number(propostaData.iof)
-                                          : Number(
-                                              (propostaData.premio_liquido * 0.0738).toFixed(2),
-                                            ),
-                                      )
-                                    : '—'}
+                                  {propostaData?.premio_liquido &&
+                                  Number(propostaData.premio_liquido) > 0 ? (
+                                    formatCurrency(
+                                      propostaData?.iof && Number(propostaData.iof) > 0
+                                        ? Number(propostaData.iof)
+                                        : Number((propostaData.premio_liquido * 0.0738).toFixed(2)),
+                                    )
+                                  ) : (
+                                    <span className="text-amber-800 font-sans font-medium">
+                                      Pendente
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                               {propostaData?.agravo !== undefined &&
@@ -1221,21 +1248,27 @@ export function PainelControlePropostas({
                   onChange={(e) => {
                     const val = e.target.value === '' ? '' : Number(e.target.value)
                     setPremioNet(val)
-                    if (basePremio === 'net' && val !== '') {
-                      const c = typeof comissaoTrabalhada === 'number' ? comissaoTrabalhada : 0
-                      const agr = typeof agravo === 'number' ? agravo : 0
-                      if (c < 100) {
-                        const netPos = agr > 0 ? Number(val) * (1 + agr / 100) : Number(val)
-                        const liq = netPos / (1 - c / 100)
-                        setPremioLiquido(Number(liq.toFixed(2)))
-                        const iofVal =
-                          typeof iof === 'number' && iof > 0
-                            ? iof
-                            : Number((liq * 0.0738).toFixed(2))
-                        if (typeof iof !== 'number' || iof === 0) {
-                          setIof(iofVal)
+                    if (basePremio === 'net') {
+                      if (val !== '' && typeof comissaoTrabalhada === 'number') {
+                        const c = comissaoTrabalhada
+                        const agr = typeof agravo === 'number' ? agravo : 0
+                        if (c >= 0 && c < 100) {
+                          const netPos = agr > 0 ? Number(val) * (1 + agr / 100) : Number(val)
+                          const liq = netPos / (1 - c / 100)
+                          setPremioLiquido(Number(liq.toFixed(2)))
+                          const iofVal =
+                            typeof iof === 'number' && iof > 0
+                              ? iof
+                              : Number((liq * 0.0738).toFixed(2))
+                          if (typeof iof !== 'number' || iof === 0) {
+                            setIof(iofVal)
+                          }
+                          setPremioBruto(Number((liq + iofVal).toFixed(2)))
                         }
-                        setPremioBruto(Number((liq + iofVal).toFixed(2)))
+                      } else if (comissaoTrabalhada === '') {
+                        setPremioLiquido('')
+                        setIof('')
+                        setPremioBruto('')
                       }
                     }
                   }}
@@ -1259,7 +1292,8 @@ export function PainelControlePropostas({
                     const val = e.target.value === '' ? '' : Number(e.target.value)
                     setAgravo(val)
                     const agr = typeof val === 'number' ? val : 0
-                    const c = typeof comissaoTrabalhada === 'number' ? comissaoTrabalhada : 0
+                    const temComissao = typeof comissaoTrabalhada === 'number'
+                    const c = temComissao ? comissaoTrabalhada : 0
 
                     if (basePremio === 'liquido') {
                       const pLiq = typeof premioLiquido === 'number' ? premioLiquido : 0
@@ -1286,7 +1320,12 @@ export function PainelControlePropostas({
                         }
                       }
                     } else {
-                      if (typeof premioNet === 'number' && premioNet > 0 && c < 100) {
+                      if (
+                        typeof premioNet === 'number' &&
+                        premioNet > 0 &&
+                        temComissao &&
+                        c < 100
+                      ) {
                         const netPos = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
                         const liq = netPos / (1 - c / 100)
                         setPremioLiquido(Number(liq.toFixed(2)))
@@ -1298,6 +1337,10 @@ export function PainelControlePropostas({
                           setIof(iofVal)
                         }
                         setPremioBruto(Number((liq + iofVal).toFixed(2)))
+                      } else if (!temComissao) {
+                        setPremioLiquido('')
+                        setIof('')
+                        setPremioBruto('')
                       }
                     }
                   }}
@@ -1324,7 +1367,8 @@ export function PainelControlePropostas({
                   onChange={(e) => {
                     const val = e.target.value === '' ? '' : Number(e.target.value)
                     setComissaoTrabalhada(val)
-                    const c = typeof val === 'number' ? val : 0
+                    const temComissao = typeof val === 'number'
+                    const c = temComissao ? val : 0
                     const agr = typeof agravo === 'number' ? agravo : 0
                     if (basePremio === 'liquido') {
                       if (typeof premioLiquido === 'number' && premioLiquido > 0 && c < 100) {
@@ -1354,18 +1398,24 @@ export function PainelControlePropostas({
                         }
                       }
                     } else {
-                      if (typeof premioNet === 'number' && premioNet > 0 && c < 100) {
-                        const netParaLiq = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
-                        const liq = netParaLiq / (1 - c / 100)
-                        setPremioLiquido(Number(liq.toFixed(2)))
-                        const iofVal =
-                          typeof iof === 'number' && iof > 0
-                            ? iof
-                            : Number((liq * 0.0738).toFixed(2))
-                        if (typeof iof !== 'number' || iof === 0) {
+                      // Base Net: reatividade imediata em cadeia
+                      // Líquido = Net Pós Agravo / (1 - comissão)
+                      // IOF = Líquido * 7,38%
+                      // Bruto = Líquido + IOF
+                      if (typeof premioNet === 'number' && premioNet > 0) {
+                        if (temComissao && c >= 0 && c < 100) {
+                          const netParaLiq = agr > 0 ? premioNet * (1 + agr / 100) : premioNet
+                          const liq = Number((netParaLiq / (1 - c / 100)).toFixed(2))
+                          setPremioLiquido(liq)
+                          const iofVal = Number((liq * 0.0738).toFixed(2))
                           setIof(iofVal)
+                          setPremioBruto(Number((liq + iofVal).toFixed(2)))
+                        } else {
+                          // Sem comissão informada: Líquido, IOF e Bruto voltam a ficar pendentes
+                          setPremioLiquido('')
+                          setIof('')
+                          setPremioBruto('')
                         }
-                        setPremioBruto(Number((liq + iofVal).toFixed(2)))
                       }
                     }
                   }}
@@ -1425,18 +1475,24 @@ export function PainelControlePropostas({
                     <span className="text-gray-300">•</span>
                     <span>
                       Líquido:{' '}
-                      <strong className="text-blue-900">
-                        {typeof premioLiquido === 'number'
-                          ? formatCurrency(premioLiquido)
-                          : 'R$ 0,00'}
-                      </strong>
+                      {typeof premioLiquido === 'number' && premioLiquido > 0 ? (
+                        <strong className="text-blue-900">{formatCurrency(premioLiquido)}</strong>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                          Pendente (informe comissão)
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-300">•</span>
                     <span>
                       Bruto:{' '}
-                      <strong className="text-emerald-700">
-                        {typeof premioBruto === 'number' ? formatCurrency(premioBruto) : 'R$ 0,00'}
-                      </strong>
+                      {typeof premioBruto === 'number' && premioBruto > 0 ? (
+                        <strong className="text-emerald-700">{formatCurrency(premioBruto)}</strong>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                          Pendente
+                        </span>
+                      )}
                     </span>
                   </div>
                 </div>

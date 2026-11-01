@@ -3838,11 +3838,24 @@ export async function processPropostaPdf(file: File): Promise<LeitorPropostaResu
       // Regra de IOF no leitor de propostas (C2):
       // Quando a proposta NÃO informar IOF (ou vier 0), derivar: IOF = Líquido * 7,38% e Bruto = Líquido + IOF.
       // Quando a proposta informar IOF explícito, usar o valor informado e Bruto = Líquido + IOF (se Bruto não vier).
+      // Regra do usuário: quando a proposta declara Prêmio Net (sem Prêmio Líquido explícito),
+      // o leitor grava o Net extraído e NÃO completa nenhum campo derivado — Prêmio Líquido, IOF e
+      // Prêmio Bruto ficam vazios/pendentes (null), sem presunção de comissão.
       const pLiqRaw = extracted.premioLiquido ?? null
       let pIofRaw = extracted.iof ?? null
       let pTotalRaw = extracted.premioTotal ?? null
 
-      if (pLiqRaw !== null && pLiqRaw > 0) {
+      const temNetSemLiquido =
+        (pLiqRaw === null || pLiqRaw === 0) &&
+        extracted.premioNet !== null &&
+        extracted.premioNet !== undefined &&
+        extracted.premioNet > 0
+
+      if (temNetSemLiquido) {
+        // Se só há Prêmio Net sem Líquido explícito, NÃO deriva IOF nem Bruto — ficam pendentes (null)
+        pIofRaw = null
+        pTotalRaw = null
+      } else if (pLiqRaw !== null && pLiqRaw > 0) {
         if (pIofRaw === null || pIofRaw === 0) {
           pIofRaw = Number((pLiqRaw * 0.0738).toFixed(2))
         }
