@@ -24,10 +24,6 @@ export function getErrorMessage(error: unknown): string {
   if (!(error instanceof ClientResponseError)) {
     return error instanceof Error ? error.message : 'An unexpected error occurred.'
   }
-  const fieldErrors = extractFieldErrors(error)
-  const entries = Object.entries(fieldErrors)
-  if (entries.length > 0) {
-    return entries.map(([field, msg]) => `Campo "${field}": ${msg}`).join(' | ')
-  }
-  return error.message || 'An unexpected error occurred.'
+  const msgs = Object.values(extractFieldErrors(error))
+  return msgs.length > 0 ? msgs.join(' ') : error.message || 'An unexpected error occurred.'
 }

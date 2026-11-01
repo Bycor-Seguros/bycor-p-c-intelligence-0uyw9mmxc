@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import pb from '@/lib/pocketbase/client'
 import {
   GitCompare,
@@ -14,6 +14,12 @@ import {
   Building,
   Info,
   Loader2,
+  Layers,
+  Sparkles,
+  ShieldAlert,
+  Split,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,11 +30,25 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog'
-import { formatCurrency, formatDate, CATEGORIAS_48 } from '@/lib/formatters'
+import { formatCurrency, formatDate } from '@/lib/formatters'
 import { PainelControlePropostas } from '@/components/PainelControlePropostas'
+import { PainelEquivalencias } from '@/components/PainelEquivalencias'
 import { desnormalizarBasePremioParaUi, definirVersaoAtiva } from '@/services/rfqPropostasService'
-import { matchCanonicalCategory } from '@/services/riskCardReader'
+import {
+  CoberturaCanonicaRecord,
+  CoberturaSinonimoRecord,
+  listarTaxonomiaCanonicas,
+  listarSinonimos,
+  salvarSinonimo,
+  salvarCoberturaCanonica,
+  casarCoberturaComCanonica,
+  detectarEventosDescobertos,
+  CoverageMatchResult,
+  AlertaDescobertaEvento,
+  derivarEventosTipicosPadrao,
+} from '@/services/equivalenciaCoberturasService'
 
 interface PropostaCoverageItem {
   nome?: string
@@ -98,17 +118,45 @@ export default function TabulacaoPage() {
   const [selectedRfqId, setSelectedRfqId] = useState<string>('todos')
   const [loading, setLoading] = useState(true)
 
-  // Edit Coberturas modal
+  // Equivalências de Coberturas: Canônicas e Sinônimos
+  const [canonicas, setCanonicas] = useState<CoberturaCanonicaRecord[]>([])
+  const [sinonimos, setSinonimos] = useState<CoberturaSinonimoRecord[]>([])
+  const [painelEquivalenciasAberto, setPainelEquivalenciasAberto] = useState(false)
+
+  // Modal para mapear cobertura não mapeada
+  const [modalMapeamentoAberto, setModalMapeamentoAberto] = useState(false)
+  const [aliasParaMapear, setAliasParaMapear] = useState('')
+  const [seguradoraDoAlias, setSeguradoraDoAlias] = useState('')
+  const [seguradoraIdDoAlias, setSeguradoraIdDoAlias] = useState<string | undefined>(undefined)
+  const [canonicaEscolhida, setCanonicaEscolhida] = useState('')
+  const [novaCanonicaNome, setNovaCanonicaNome] = useState('')
+  const [criandoNovaCanonica, setCriandoNovaCanonica] = useState(false)
+  const [eventosExcluidosModal, setEventosExcluidosModal] = useState<string[]>([])
+  const [novoEventoExcluidoModal, setNovoEventoExcluidoModal] = useState('')
+  const [salvandoMapeamento, setSalvandoMapeamento] = useState(false)
+
+  // Edit Coberturas modal manual
   const [editingProp, setEditingProp] = useState<PropostaRecord | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editCoverages, setEditCoverages] = useState<PropostaCoverageItem[]>([])
   const [newCovNome, setNewCovNome] = useState('')
-  const [newCovCat, setNewCovCat] = useState<string>(CATEGORIAS_48[0])
+  const [newCovCat, setNewCovCat] = useState<string>('')
   const [newCovLmi, setNewCovLmi] = useState<number | ''>('')
   const [newCovFranquia, setNewCovFranquia] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
-  const fetchPropostas = async () => {
+  // Carrega propostas, rfqs e a taxonomia de equivalências
+  const fetchEquivalencias = useCallback(async () => {
+    try {
+      const [cans, sins] = await Promise.all([listarTaxonomiaCanonicas(), listarSinonimos()])
+      setCanonicas(cans)
+      setSinonimos(sins)
+    } catch (e) {
+      console.error('Erro ao buscar equivalências:', e)
+    }
+  }, [])
+
+  const fetchPropostas = useCallback(async () => {
     try {
       setLoading(true)
       const [props, rfqList] = await Promise.all([
@@ -123,19 +171,27 @@ export default function TabulacaoPage() {
       ])
       setPropostas(props)
       setRfqs(rfqList)
-      if (selectedRfqId === 'todos' && rfqList.length > 0) {
-        // Mantém 'todos' por padrão para a visão geral
-      }
+      await fetchEquivalencias()
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchEquivalencias])
 
   useEffect(() => {
     fetchPropostas()
-  }, [])
+  }, [fetchPropostas])
+
+  // Lista única com nomes de seguradoras envolvidas nas propostas
+  const seguradorasNomes = useMemo(() => {
+    const set = new Set<string>()
+    propostas.forEach((p) => {
+      const nome = p.expand?.seguradora?.nome
+      if (nome) set.add(nome)
+    })
+    return Array.from(set).sort()
+  }, [propostas])
 
   // Propostas do RFQ selecionado
   const rfqProposals = useMemo(() => {
@@ -146,7 +202,6 @@ export default function TabulacaoPage() {
   }, [propostas, selectedRfqId])
 
   // Agrupa todas as propostas por SEGURADORA + OPÇÃO para permitir seleção de versão dentro de cada opção
-  // Chave do mapa: `${p.seguradora}__op__${p.opcao || 1}`
   const todasPorSeguradoraEOpcao = useMemo(() => {
     const mapa = new Map<string, PropostaRecord[]>()
     rfqProposals.forEach((p) => {
@@ -159,8 +214,7 @@ export default function TabulacaoPage() {
     return mapa
   }, [rfqProposals])
 
-  // A matriz comparativa side-by-side passa a ter UMA COLUNA POR CIA+OPÇÃO (ex.: "AXA — Opção 1", "AXA — Opção 2"),
-  // cada coluna usando a versão ATIVA daquela opção.
+  // Propostas ativas comparadas lado a lado
   const comparedProposals = useMemo(() => {
     const ativas: PropostaRecord[] = []
     todasPorSeguradoraEOpcao.forEach((pList) => {
@@ -168,12 +222,10 @@ export default function TabulacaoPage() {
       if (ativa) {
         ativas.push(ativa)
       } else if (pList.length > 0) {
-        // Fallback: se nenhuma marcada como ativa, usa a de maior versão
         const sorted = [...pList].sort((a, b) => Number(b.versao || 1) - Number(a.versao || 1))
         ativas.push(sorted[0])
       }
     })
-    // Ordena colunas por nome da seguradora e depois pelo número da opção
     ativas.sort((a, b) => {
       const nomeA = a.expand?.seguradora?.nome || ''
       const nomeB = b.expand?.seguradora?.nome || ''
@@ -182,6 +234,60 @@ export default function TabulacaoPage() {
     })
     return ativas
   }, [todasPorSeguradoraEOpcao])
+
+  // Mapeia todas as coberturas das propostas comparadas contra a taxonomia canônica Bycor
+  // Retorna para cada proposta a lista de coberturas com sua equivalência resolvida
+  const propostasComEquivalencia = useMemo(() => {
+    return comparedProposals.map((p) => {
+      const segNome = p.expand?.seguradora?.nome || ''
+      const coberturasCasadas = (p.coberturas || []).map((c) => {
+        const rawName =
+          c.nome || c.cobertura || c.categoria_normalizada || c.categoriaNormalizada || 'Cobertura'
+        const match: CoverageMatchResult = casarCoberturaComCanonica(
+          rawName,
+          segNome,
+          canonicas,
+          sinonimos,
+        )
+
+        return {
+          originalItem: c,
+          nomeOriginal: rawName,
+          lmi: c.lmi !== undefined && c.lmi !== null ? Number(c.lmi) : 0,
+          franquia: c.franquia || '',
+          premio: c.premio || c.premioLiquido || null,
+          canonica: match.canonica,
+          canonicaId: match.canonicaId,
+          matchType: match.matchType,
+          sinonimo: match.sinonimo,
+          eventosEfetivos: match.eventosEfetivos,
+          eventosExcluidos: match.eventosExcluidos,
+          realocacoes: match.realocacoes,
+        }
+      })
+
+      return {
+        proposta: p,
+        seguradoraNome: segNome,
+        seguradoraId: p.seguradora,
+        coberturasCasadas,
+      }
+    })
+  }, [comparedProposals, canonicas, sinonimos])
+
+  // Lista consolidada de coberturas canônicas presentes nas propostas comparadas
+  // Garante que a tabulação SEMPRE compare pela cobertura canônica
+  const categoriasCanonicasTabulacao = useMemo(() => {
+    const set = new Set<string>()
+    propostasComEquivalencia.forEach((p) => {
+      p.coberturasCasadas.forEach((c) => {
+        if (c.canonica) set.add(c.canonica)
+      })
+    })
+
+    // Se nenhuma estiver nas propostas mas houver canônicas cadastradas, exibe as primeiras canônicas
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [propostasComEquivalencia])
 
   // Alternar versão ativa diretamente pela tela de Tabulação (C3)
   const handleTrocarVersaoC3 = async (segId: string, novaPropId: string) => {
@@ -196,20 +302,18 @@ export default function TabulacaoPage() {
     }
   }
 
-  // Mark Proposal as Selected
+  // Marcar proposta como Selecionada
   const handleSelectProposal = async (propId: string) => {
     try {
       const target = propostas.find((p) => p.id === propId)
       if (!target) return
 
-      // Set this one as Selecionada, and others from same RFQ as Não selecionada
       await pb.collection('propostas').update(propId, { status: 'Selecionada' })
       const siblings = propostas.filter((p) => p.rfq === target.rfq && p.id !== propId)
       for (const s of siblings) {
         await pb.collection('propostas').update(s.id, { status: 'Não selecionada' })
       }
 
-      // Append relationship history to insurer
       if (target.seguradora) {
         try {
           const segRec = await pb.collection('seguradoras').getOne(target.seguradora)
@@ -234,32 +338,69 @@ export default function TabulacaoPage() {
     }
   }
 
-  // Open Edit Modal
+  // Abrir modal de mapeamento para cobertura não mapeada ou para ajustar mapeamento
+  const abrirModalMapearCobertura = (alias: string, segNome: string, segId?: string) => {
+    setAliasParaMapear(alias)
+    setSeguradoraDoAlias(segNome)
+    setSeguradoraIdDoAlias(segId)
+    setCriandoNovaCanonica(false)
+    setNovaCanonicaNome('')
+    setEventosExcluidosModal([])
+    setNovoEventoExcluidoModal('')
+
+    // Tenta pré-selecionar a canônica mais próxima
+    const primeiraCanonica = canonicas[0]?.nome || ''
+    setCanonicaEscolhida(primeiraCanonica)
+    setModalMapeamentoAberto(true)
+  }
+
+  // Salvar mapeamento a partir do clique do analista na célula/badge não mapeada
+  const handleGravarMapeamentoAnalista = async () => {
+    let destinoCanonica = canonicaEscolhida
+
+    try {
+      setSalvandoMapeamento(true)
+
+      // Se o analista escolheu criar uma nova cobertura canônica
+      if (criandoNovaCanonica && novaCanonicaNome.trim()) {
+        const criada = await salvarCoberturaCanonica({
+          nome: novaCanonicaNome.trim(),
+          descricao: `Criada pelo analista a partir do alias "${aliasParaMapear}"`,
+          eventosTipicos: derivarEventosTipicosPadrao(novaCanonicaNome.trim()),
+        })
+        destinoCanonica = criada.nome
+      }
+
+      if (!destinoCanonica) {
+        alert('Selecione ou crie uma cobertura canônica de destino.')
+        return
+      }
+
+      // Grava o sinônimo permanentemente no banco para propostas futuras
+      await salvarSinonimo({
+        alias: aliasParaMapear.trim(),
+        seguradoraId: seguradoraIdDoAlias,
+        seguradoraNome: seguradoraDoAlias.trim(),
+        canonicaNome: destinoCanonica.trim(),
+        eventosExcluidos: eventosExcluidosModal,
+        observacao: `Mapeado pelo analista na Tabulação C3`,
+      })
+
+      setModalMapeamentoAberto(false)
+      await fetchEquivalencias()
+    } catch (err: unknown) {
+      alert('Erro ao gravar mapeamento: ' + (err as Error).message)
+    } finally {
+      setSalvandoMapeamento(false)
+    }
+  }
+
+  // Open Edit Modal manual
   const openEditModal = (prop: PropostaRecord) => {
     setEditingProp(prop)
     setEditCoverages(prop.coberturas || [])
+    setNewCovCat(canonicas[0]?.nome || 'Incêndio / Básica')
     setEditModalOpen(true)
-  }
-
-  // Retorna a categoria canônica normalizada da cobertura
-  const getCanonicalCat = (c: PropostaCoverageItem): string => {
-    const rawCat = c.categoria_normalizada || c.categoriaNormalizada || c.cobertura || c.nome || ''
-    return rawCat ? matchCanonicalCategory(rawCat) : ''
-  }
-
-  // Normalizar item de cobertura para acesso consistente
-  const getCoverageFields = (c: PropostaCoverageItem) => {
-    const nome = c.nome || c.cobertura || 'Cobertura'
-    const cat = getCanonicalCat(c)
-    const lmi = c.lmi !== undefined && c.lmi !== null ? Number(c.lmi) : 0
-    const franquia = c.franquia || 'Conforme apólice'
-    const premio =
-      c.premio !== undefined && c.premio !== null
-        ? Number(c.premio)
-        : c.premioLiquido !== undefined && c.premioLiquido !== null
-          ? Number(c.premioLiquido)
-          : null
-    return { nome, cat, lmi, franquia, premio }
   }
 
   // Add coverage row inline
@@ -303,24 +444,12 @@ export default function TabulacaoPage() {
     }
   }
 
-  // Collect distinct coverage categories across proposals for the side-by-side matrix
-  const distinctCategories = useMemo(() => {
-    const set = new Set<string>()
-    comparedProposals.forEach((p) => {
-      ;(p.coberturas || []).forEach((c) => {
-        const cat = getCanonicalCat(c)
-        if (cat) set.add(cat)
-      })
-    })
-    return Array.from(set).sort()
-  }, [comparedProposals])
-
   // Export Matrix CSV
   const handleExportMatrixCsv = () => {
     if (comparedProposals.length === 0) return
 
     const headers = [
-      'Categoria Normalizada',
+      'Cobertura Canônica (Bycor)',
       ...comparedProposals.map((p) => {
         const seg = p.expand?.seguradora?.nome || p.id
         const op = Number(p.opcao || 1)
@@ -328,9 +457,9 @@ export default function TabulacaoPage() {
         return `"${seg} — Opção ${op} (v${v})"`
       }),
     ]
-    const rows = distinctCategories.map((cat) => {
-      const values = comparedProposals.map((p) => {
-        const found = (p.coberturas || []).find((c) => getCanonicalCat(c) === cat)
+    const rows = categoriasCanonicasTabulacao.map((cat) => {
+      const values = propostasComEquivalencia.map((pe) => {
+        const found = pe.coberturasCasadas.find((c) => c.canonica === cat)
         return found && found.lmi !== null && found.lmi !== undefined ? found.lmi : 0
       })
       return [`"${cat}"`, ...values].join(';')
@@ -341,7 +470,7 @@ export default function TabulacaoPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `matriz_comparativa_rfq_${selectedRfqId}.csv`
+    a.download = `matriz_equivalencias_c3_rfq_${selectedRfqId}.csv`
     a.click()
   }
 
@@ -355,16 +484,35 @@ export default function TabulacaoPage() {
               Módulo C3
             </span>
             <h2 className="text-xl font-bold text-gray-900">
-              Tabulação & Matriz Comparativa de Propostas
+              Tabulação &amp; Tabela de Equivalências de Coberturas
             </h2>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Comparação analítica lado a lado entre ofertas recebidas de seguradoras, com detecção
-            automática de desvios e lacunas frente às necessidades do segurado.
+          <p className="text-xs text-gray-500 mt-1 max-w-2xl">
+            Granularidade em dois níveis: comparação sempre pela cobertura canônica Bycor com gestão
+            de pacotes de eventos. Detecção em tempo real de lacunas e alerta{' '}
+            <strong className="text-red-700">"Segurado descoberto: [evento]"</strong>.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            onClick={() => setPainelEquivalenciasAberto(!painelEquivalenciasAberto)}
+            variant={painelEquivalenciasAberto ? 'default' : 'outline'}
+            className={`text-xs h-9 ${
+              painelEquivalenciasAberto
+                ? 'bg-[#0F2B46] hover:bg-[#1B3C5D] text-white'
+                : 'border-blue-300 text-[#16578B] bg-blue-50/50 hover:bg-blue-100'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 mr-1.5" />
+            Painel Equivalências ({sinonimos.length} sinônimos)
+            {painelEquivalenciasAberto ? (
+              <ChevronUp className="w-3.5 h-3.5 ml-1" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 ml-1" />
+            )}
+          </Button>
+
           <Button
             onClick={handleExportMatrixCsv}
             disabled={comparedProposals.length === 0}
@@ -376,6 +524,18 @@ export default function TabulacaoPage() {
           </Button>
         </div>
       </div>
+
+      {/* PAINEL DE EQUIVALÊNCIAS RETRÁTIL */}
+      {painelEquivalenciasAberto && (
+        <div className="animate-fade-in">
+          <PainelEquivalencias
+            canonicas={canonicas}
+            sinonimos={sinonimos}
+            seguradorasNomes={seguradorasNomes}
+            onDataChange={() => fetchEquivalencias()}
+          />
+        </div>
+      )}
 
       {/* RFQ Selector Filter */}
       <div className="bg-white rounded-xl border border-[#E4E9F0] p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -398,7 +558,8 @@ export default function TabulacaoPage() {
         </div>
 
         <span className="text-xs text-gray-500">
-          Exibindo <strong>{comparedProposals.length}</strong> proposta(s) em análise
+          Exibindo <strong>{comparedProposals.length}</strong> proposta(s) em análise |{' '}
+          <strong>{categoriasCanonicasTabulacao.length}</strong> coberturas canônicas ativas
         </span>
       </div>
 
@@ -441,8 +602,8 @@ export default function TabulacaoPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#0F2B46] text-white">
-                  <th className="py-3.5 px-4 font-bold border-r border-[#1B3C5D] w-64 sticky left-0 bg-[#0F2B46] z-10">
-                    Critério / Cobertura
+                  <th className="py-3.5 px-4 font-bold border-r border-[#1B3C5D] w-72 sticky left-0 bg-[#0F2B46] z-10">
+                    Critério / Cobertura Canônica Bycor
                   </th>
                   {comparedProposals.map((p) => {
                     const isSelected = p.status === 'Selecionada'
@@ -453,7 +614,7 @@ export default function TabulacaoPage() {
                     return (
                       <th
                         key={p.id}
-                        className={`py-3.5 px-4 min-w-[270px] border-r border-[#1B3C5D] ${
+                        className={`py-3.5 px-4 min-w-[280px] border-r border-[#1B3C5D] ${
                           isSelected ? 'bg-[#16578B]' : ''
                         }`}
                       >
@@ -550,7 +711,7 @@ export default function TabulacaoPage() {
                         )}
                       </td>
                     )
-                  })}{' '}
+                  })}
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
@@ -775,7 +936,7 @@ export default function TabulacaoPage() {
                 </tr>
                 <tr>
                   <td className="py-2 px-4 sticky left-0 bg-white border-r font-medium text-gray-600">
-                    VRD - Lucros Cessantes (LC) & Base
+                    VRD - Lucros Cessantes (LC) &amp; Base
                   </td>
                   {comparedProposals.map((p) => (
                     <td
@@ -796,59 +957,246 @@ export default function TabulacaoPage() {
                   ))}
                 </tr>
 
-                {/* 2. Coberturas Item a Item (Matriz side-by-side) */}
-                <tr className="bg-blue-50/60 font-bold text-[#0F2B46]">
+                {/* 2. TABELA DE EQUIVALÊNCIAS DE COBERTURAS (CANÔNICA & EVENTOS) */}
+                <tr className="bg-gradient-to-r from-blue-900 to-[#16578B] font-bold text-white">
                   <td
                     colSpan={comparedProposals.length + 1}
-                    className="py-2 px-4 tracking-wider uppercase text-[10px]"
+                    className="py-2.5 px-4 tracking-wider uppercase text-[10.5px] flex items-center justify-between"
                   >
-                    Coberturas Tabuladas por Categoria Normalizada
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-3.5 h-3.5 text-blue-300" />
+                      <span>
+                        Equivalências de Coberturas Bycor (Agrupadas pela Canônica + Análise de
+                        Descoberta por Evento)
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-blue-200 font-normal">
+                      Clique em coberturas 'não mapeadas' para registrar o sinônimo permanentemente
+                    </span>
                   </td>
                 </tr>
 
-                {distinctCategories.length === 0 ? (
+                {categoriasCanonicasTabulacao.length === 0 ? (
                   <tr>
                     <td
                       colSpan={comparedProposals.length + 1}
-                      className="py-6 text-center text-gray-400"
+                      className="py-8 text-center text-gray-400"
                     >
-                      Nenhuma cobertura cadastrada nas propostas. Clique em "Editar coberturas" em
-                      cada proposta para tabulá-las.
+                      Nenhuma cobertura cadastrada nas propostas comparadas. Clique em "Editar
+                      coberturas" para tabular os dados ou abra o Painel de Equivalências.
                     </td>
                   </tr>
                 ) : (
-                  distinctCategories.map((cat) => (
-                    <tr key={cat} className="hover:bg-gray-50/50">
-                      <td className="py-2 px-4 sticky left-0 bg-white border-r font-semibold text-gray-800">
-                        {cat}
-                      </td>
-                      {comparedProposals.map((p) => {
-                        const cov = (p.coberturas || []).find((c) => getCanonicalCat(c) === cat)
-                        const covFields = cov ? getCoverageFields(cov) : null
-                        return (
-                          <td key={p.id} className="py-2 px-4 border-r">
-                            {covFields ? (
-                              <div>
-                                <div className="font-bold text-gray-900 tabular-nums">
-                                  {formatCurrency(covFields.lmi)}
-                                </div>
-                                {covFields.franquia && (
-                                  <div className="text-[10px] text-gray-500 mt-0.5">
-                                    Franquia: {covFields.franquia}
+                  categoriasCanonicasTabulacao.map((canonicaNome) => {
+                    const canInfo = canonicas.find((c) => c.nome === canonicaNome)
+                    const eventosTipicos = canInfo?.eventos_tipicos?.length
+                      ? canInfo.eventos_tipicos
+                      : derivarEventosTipicosPadrao(canonicaNome)
+
+                    return (
+                      <tr key={canonicaNome} className="hover:bg-gray-50/60 transition-colors">
+                        {/* Célula Fixa da Cobertura Canônica Bycor */}
+                        <td className="py-2.5 px-4 sticky left-0 bg-white border-r font-semibold text-gray-900 align-top shadow-[1px_0_0_0_#E4E9F0]">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-gray-900 text-xs">
+                                {canonicaNome}
+                              </span>
+                              {canInfo?.ramo && (
+                                <span className="text-[9px] px-1 py-0.2 rounded bg-blue-50 text-[#16578B] border border-blue-200">
+                                  {canInfo.ramo}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Dica de eventos típicos do pacote */}
+                            <div className="text-[10px] text-gray-500 leading-tight">
+                              <span className="text-gray-400 font-medium">Eventos do pacote:</span>{' '}
+                              {eventosTipicos.slice(0, 4).join(', ')}
+                              {eventosTipicos.length > 4 ? ` (+${eventosTipicos.length - 4})` : ''}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Células das Propostas Comparadas */}
+                        {propostasComEquivalencia.map((pe) => {
+                          const covMatch = pe.coberturasCasadas.find(
+                            (c) => c.canonica === canonicaNome,
+                          )
+
+                          // Análise de Descoberta por Evento:
+                          // Compara eventos cobertos em outras propostas com a proposta atual
+                          const alertasDescoberta: AlertaDescobertaEvento[] =
+                            detectarEventosDescobertos({
+                              propostaAtual: {
+                                seguradoraNome: pe.seguradoraNome,
+                                coberturasCasadas: pe.coberturasCasadas,
+                              },
+                              outrasPropostas: propostasComEquivalencia
+                                .filter((other) => other.proposta.id !== pe.proposta.id)
+                                .map((other) => ({
+                                  seguradoraNome: other.seguradoraNome,
+                                  coberturasCasadas: other.coberturasCasadas,
+                                })),
+                              canonicaAlvo: canonicaNome,
+                            })
+
+                          return (
+                            <td key={pe.proposta.id} className="py-2.5 px-4 border-r align-top">
+                              {covMatch ? (
+                                <div className="space-y-1.5">
+                                  {/* LMI & Nome Original da Cia */}
+                                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                                    <div className="font-extrabold text-gray-900 tabular-nums text-xs">
+                                      {covMatch.lmi > 0 ? (
+                                        formatCurrency(covMatch.lmi)
+                                      ) : (
+                                        <span className="text-gray-400 italic">
+                                          Sem valor (R$ 0)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Badge de Match com Canônica */}
+                                    {covMatch.matchType === 'nao_mapeada' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          abrirModalMapearCobertura(
+                                            covMatch.nomeOriginal,
+                                            pe.seguradoraNome,
+                                            pe.seguradoraId,
+                                          )
+                                        }
+                                        title="Clique para mapear esta cobertura para a taxonomia canônica Bycor"
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 transition-colors animate-pulse"
+                                      >
+                                        <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
+                                        <span>Não mapeada (clique)</span>
+                                      </button>
+                                    ) : covMatch.matchType === 'sinonimo_cia' ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1 py-0.2 rounded text-[9.5px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                        title={`Mapeado por sinônimo gravado para ${pe.seguradoraNome}`}
+                                      >
+                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                        Sinônimo Cia
+                                      </span>
+                                    ) : covMatch.matchType === 'sinonimo_global' ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1 py-0.2 rounded text-[9.5px] font-semibold bg-blue-50 text-blue-800 border border-blue-200"
+                                        title="Mapeado por sinônimo global"
+                                      >
+                                        <Check className="w-2.5 h-2.5 text-blue-600" />
+                                        Sinônimo Global
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1 py-0.2 rounded text-[9.5px] font-medium bg-gray-100 text-gray-700"
+                                        title="Match automático por similaridade"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5 text-gray-500" />
+                                        Match similaridade
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold border border-red-200">
-                                <AlertTriangle className="w-3 h-3" />
-                                <span>Desvio: Não Cotada</span>
-                              </div>
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))
+
+                                  {/* Nome Original declarado pela seguradora */}
+                                  <div className="text-[10px] text-gray-600 bg-gray-50/80 p-1 rounded border border-gray-100">
+                                    <span className="text-gray-400 font-medium">
+                                      Nome na proposta:
+                                    </span>{' '}
+                                    <strong className="text-gray-800">
+                                      {covMatch.nomeOriginal}
+                                    </strong>
+                                  </div>
+
+                                  {/* Franquia */}
+                                  {covMatch.franquia && (
+                                    <div className="text-[10px] text-gray-500">
+                                      Franquia: {covMatch.franquia}
+                                    </div>
+                                  )}
+
+                                  {/* Exceções de Exclusão Gravadas */}
+                                  {covMatch.eventosExcluidos.length > 0 && (
+                                    <div className="p-1 rounded bg-amber-50 border border-amber-200 text-[10px] text-amber-900">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <ShieldAlert className="w-2.5 h-2.5 text-amber-700" />
+                                        Exclusão Cia:
+                                      </span>
+                                      <span>{covMatch.eventosExcluidos.join(', ')}</span>
+                                    </div>
+                                  )}
+
+                                  {/* Realocações para outras coberturas da mesma proposta */}
+                                  {covMatch.realocacoes.length > 0 && (
+                                    <div className="p-1 rounded bg-purple-50 border border-purple-200 text-[10px] text-purple-900">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <Split className="w-2.5 h-2.5 text-purple-700" />
+                                        Realocado nesta Cia:
+                                      </span>
+                                      {covMatch.realocacoes.map((r, rIdx) => (
+                                        <div key={rIdx}>
+                                          {r.evento} &rarr; <em>{r.cobertura_destino}</em>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* ALERTA DE DESCOBERTA POR EVENTO */}
+                                  {alertasDescoberta.length > 0 && (
+                                    <div className="space-y-1 pt-0.5">
+                                      {alertasDescoberta.map((alerta, aIdx) => (
+                                        <div
+                                          key={aIdx}
+                                          className="p-1.5 rounded bg-red-50 border border-red-300 text-red-900 text-[10.5px] font-bold flex items-start gap-1.5 animate-pulse"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                                          <div className="leading-tight">
+                                            <span>Segurado descoberto: {alerta.evento}</span>
+                                            <div className="text-[9.5px] font-normal text-red-700 mt-0.5">
+                                              (coberto por {alerta.ciaComCobertura})
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[10px] font-medium border border-gray-200">
+                                    <span>Não Cotada nesta proposta</span>
+                                  </div>
+
+                                  {/* Se outras propostas cobrirem eventos desta canônica, exibe o alerta de segurado descoberto */}
+                                  {alertasDescoberta.length > 0 && (
+                                    <div className="space-y-1 pt-0.5">
+                                      {alertasDescoberta.map((alerta, aIdx) => (
+                                        <div
+                                          key={aIdx}
+                                          className="p-1.5 rounded bg-red-50 border border-red-300 text-red-900 text-[10.5px] font-bold flex items-start gap-1.5"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                                          <div className="leading-tight">
+                                            <span>Segurado descoberto: {alerta.evento}</span>
+                                            <div className="text-[9.5px] font-normal text-red-700 mt-0.5">
+                                              (coberto por {alerta.ciaComCobertura})
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })
                 )}
 
                 {/* 3. Condições Gerais & Exclusões */}
@@ -857,7 +1205,7 @@ export default function TabulacaoPage() {
                     colSpan={comparedProposals.length + 1}
                     className="py-2 px-4 tracking-wider uppercase text-[10px]"
                   >
-                    Condições Contratuais & Exclusões
+                    Condições Contratuais &amp; Exclusões
                   </td>
                 </tr>
                 <tr>
@@ -886,7 +1234,145 @@ export default function TabulacaoPage() {
         </div>
       )}
 
-      {/* MODAL: EDITAR COBERTURAS DA PROPOSTA */}
+      {/* MODAL: MAPEAR COBERTURA NÃO MAPEADA / ESCOLHER CANÔNICA NO CLIQUE */}
+      <Dialog open={modalMapeamentoAberto} onOpenChange={setModalMapeamentoAberto}>
+        <DialogContent className="max-w-lg animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#16578B]" />
+              Equivalência: Mapear para Cobertura Canônica Bycor
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Associe a nomenclatura da proposta{' '}
+              <strong className="text-gray-800">"{aliasParaMapear}"</strong> (
+              {seguradoraDoAlias || 'Cia'}) à cobertura canônica correspondente. A escolha será
+              gravada permanentemente como sinônimo e se aplicará a propostas futuras.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-4 text-xs">
+            <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between text-xs">
+              <div>
+                <span className="text-gray-500 block text-[11px]">Nome original na proposta:</span>
+                <strong className="text-gray-900 text-sm">{aliasParaMapear}</strong>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white text-[#16578B] border border-blue-300">
+                {seguradoraDoAlias || 'Seguradora'}
+              </span>
+            </div>
+
+            {/* Alternar entre Canônica Existente vs Criar Nova */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">
+                  {criandoNovaCanonica
+                    ? 'Criar Nova Cobertura Canônica Bycor'
+                    : 'Escolher Cobertura Canônica Existente *'}
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setCriandoNovaCanonica(!criandoNovaCanonica)}
+                  className="text-xs text-[#16578B] hover:underline font-semibold"
+                >
+                  {criandoNovaCanonica ? '← Voltar para lista existente' : '+ Criar nova canônica'}
+                </button>
+              </div>
+
+              {!criandoNovaCanonica ? (
+                <select
+                  value={canonicaEscolhida}
+                  onChange={(e) => setCanonicaEscolhida(e.target.value)}
+                  className="w-full h-8 border rounded text-xs px-2 bg-white font-medium"
+                >
+                  <option value="">Selecione a canônica correspondente...</option>
+                  {canonicas.map((c) => (
+                    <option key={c.id} value={c.nome}>
+                      {c.nome} {c.ramo ? `(${c.ramo})` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    type="text"
+                    placeholder="Nome da nova canônica (ex: Riscos Diversos Especiais)"
+                    value={novaCanonicaNome}
+                    onChange={(e) => setNovaCanonicaNome(e.target.value)}
+                    className="h-8 text-xs bg-white"
+                  />
+                  <p className="text-[10px] text-gray-500">
+                    A nova canônica será adicionada à taxonomia padrão Bycor e ficará disponível
+                    para todas as cotações futuras.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Exceções por evento no mapeamento */}
+            <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg space-y-2">
+              <span className="font-bold text-amber-900 block text-[11px]">
+                Exceção: Esta cobertura da {seguradoraDoAlias || 'Cia'} NÃO cobre algum evento
+                típico?
+              </span>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Evento excluído (ex: Queda de Aeronave)"
+                  value={novoEventoExcluidoModal}
+                  onChange={(e) => setNovoEventoExcluidoModal(e.target.value)}
+                  className="h-7 text-xs bg-white flex-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    if (!novoEventoExcluidoModal.trim()) return
+                    setEventosExcluidosModal((p) => [...p, novoEventoExcluidoModal.trim()])
+                    setNovoEventoExcluidoModal('')
+                  }}
+                  className="h-7 text-xs bg-amber-800 text-white"
+                >
+                  Adicionar
+                </Button>
+              </div>
+
+              {eventosExcluidosModal.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {eventosExcluidosModal.map((ex, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-300"
+                    >
+                      Não cobre: {ex}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModalMapeamentoAberto(false)}
+              className="h-8 text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              disabled={salvandoMapeamento}
+              onClick={handleGravarMapeamentoAnalista}
+              className="h-8 text-xs bg-[#0F2B46] hover:bg-[#1B3C5D] text-white font-semibold"
+            >
+              {salvandoMapeamento ? 'Gravando...' : 'Gravar Equivalência Permanente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: EDITAR COBERTURAS DA PROPOSTA (MANUAL) */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-2xl animate-scale-in">
           <DialogHeader>
@@ -906,7 +1392,7 @@ export default function TabulacaoPage() {
                 <div className="sm:col-span-2">
                   <Input
                     type="text"
-                    placeholder="Nome na proposta (ex: Vendaval)"
+                    placeholder="Nome na proposta (ex: Vendaval e Granizo)"
                     value={newCovNome}
                     onChange={(e) => setNewCovNome(e.target.value)}
                     className="h-8 text-xs bg-white"
@@ -918,9 +1404,9 @@ export default function TabulacaoPage() {
                     onChange={(e) => setNewCovCat(e.target.value)}
                     className="w-full h-8 border rounded text-xs px-2 bg-white"
                   >
-                    {CATEGORIAS_48.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
+                    {canonicas.map((c) => (
+                      <option key={c.id} value={c.nome}>
+                        {c.nome}
                       </option>
                     ))}
                   </select>
@@ -963,17 +1449,19 @@ export default function TabulacaoPage() {
                 <div className="p-4 text-center text-gray-400">Nenhuma cobertura inserida</div>
               ) : (
                 editCoverages.map((cov, idx) => {
-                  const f = getCoverageFields(cov)
+                  const nome = cov.nome || cov.cobertura || 'Cobertura'
+                  const cat = cov.categoria_normalizada || cov.categoriaNormalizada || ''
+                  const lmi = cov.lmi ? Number(cov.lmi) : 0
                   return (
                     <div
                       key={idx}
                       className="p-2.5 flex items-center justify-between hover:bg-gray-50"
                     >
                       <div>
-                        <div className="font-bold text-gray-900">{f.nome}</div>
-                        <div className="text-[11px] text-[#16578B]">{f.cat}</div>
+                        <div className="font-bold text-gray-900">{nome}</div>
+                        {cat && <div className="text-[11px] text-[#16578B]">{cat}</div>}
                         <div className="text-[11px] text-gray-500">
-                          LMI: {formatCurrency(f.lmi)} | Franquia: {f.franquia || '—'}
+                          LMI: {formatCurrency(lmi)} | Franquia: {cov.franquia || '—'}
                         </div>
                       </div>
                       <button

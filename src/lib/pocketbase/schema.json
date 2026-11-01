@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T22:16:04.825Z",
+  "generatedAt": "2026-11-01T23:31:30.296Z",
   "collections": [
     {
       "name": "users",
@@ -2289,6 +2289,146 @@
         "CREATE INDEX idx_auditoria_rodadas_emp ON auditoria_rodadas (empreendimento)",
         "CREATE INDEX idx_auditoria_rodadas_apolice ON auditoria_rodadas (apolice)",
         "CREATE INDEX idx_auditoria_rodadas_created ON auditoria_rodadas (created DESC)"
+      ]
+    },
+    {
+      "name": "coberturas_canonicas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ramo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "eventos_tipicos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX idx_cob_canonicas_nome ON coberturas_canonicas (nome)"]
+    },
+    {
+      "name": "cobertura_sinonimos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "alias",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "seguradora",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "seguradoras"
+        },
+        {
+          "name": "seguradora_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cobertura_canonica",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "coberturas_canonicas"
+        },
+        {
+          "name": "canonica_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "eventos_excluidos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "realocacoes_evento",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_cob_sinonimos_alias ON cobertura_sinonimos (alias)",
+        "CREATE INDEX idx_cob_sinonimos_seg ON cobertura_sinonimos (seguradora)",
+        "CREATE INDEX idx_cob_sinonimos_can ON cobertura_sinonimos (cobertura_canonica)"
       ]
     }
   ]
