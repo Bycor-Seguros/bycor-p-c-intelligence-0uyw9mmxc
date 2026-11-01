@@ -26,7 +26,15 @@ export interface PptxPresentationData {
 
 function escapeXml(unsafe: string | number | null | undefined): string {
   if (unsafe === null || unsafe === undefined) return ''
+  // Remove caracteres de controle proibidos em XML 1.0 (exceto \t, \n, \r)
   const str = String(unsafe)
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0)
+      if (code === 0x09 || code === 0x0a || code === 0x0d) return true
+      return code >= 0x20 && code !== 0x7f
+    })
+    .join('')
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -48,21 +56,22 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   // 1. [Content_Types].xml
   files.push({
     name: '[Content_Types].xml',
-    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
-  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
-  <Override PartName="/ppt/slides/slide3.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
-  <Override PartName="/ppt/slides/slide4.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
-  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-</Types>`,
+    content:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\r\n' +
+      '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\r\n' +
+      '  <Default Extension="xml" ContentType="application/xml"/>\r\n' +
+      '  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>\r\n' +
+      '  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slides/slide3.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
+      '  <Override PartName="/ppt/slides/slide4.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>\r\n' +
+      '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\r\n' +
+      '  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\r\n' +
+      '</Types>',
   })
 
   // 2. _rels/.rels
@@ -206,6 +215,11 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   <p:sldLayoutIdLst>
     <p:sldLayoutId id="2147483649" r:id="rId1"/>
   </p:sldLayoutIdLst>
+  <p:txStyles>
+    <p:titleStyle/>
+    <p:bodyStyle/>
+    <p:otherStyle/>
+  </p:txStyles>
 </p:sldMaster>`,
   })
 
@@ -517,60 +531,178 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
   })
 
   // SLIDE 3: Tabela de Coberturas Tabuladas
-  // Gera linhas XML da tabela
+  // Gera linhas XML da tabela com estrutura estrita conforme ECMA-376 (a:tc -> a:txBody -> a:tcPr)
   const cobsList = data.coberturas.length > 0 ? data.coberturas.slice(0, 8) : []
-  const tableRowsXml = [
-    // Header row
-    `<a:tr h="365760">
-      <a:tc>
-        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Garantia / Cobertura Contratada</a:t></a:r></a:p></a:txBody>
-        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
-      </a:tc>
-      <a:tc>
-        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Limite (LMI)</a:t></a:r></a:p></a:txBody>
-        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
-      </a:tc>
-      <a:tc>
-        <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1200" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Franquia / POS</a:t></a:r></a:p></a:txBody>
-        <a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>
-      </a:tc>
-    </a:tr>`,
-  ]
+  const tableRowsXml: string[] = []
+
+  // Header row (3 colunas exatas)
+  tableRowsXml.push(
+    '<a:tr h="365760">' +
+      '<a:tc>' +
+      '<a:txBody>' +
+      '<a:bodyPr/>' +
+      '<a:lstStyle/>' +
+      '<a:p>' +
+      '<a:r>' +
+      '<a:rPr sz="1200" b="1">' +
+      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+      '</a:rPr>' +
+      '<a:t>Garantia / Cobertura Contratada</a:t>' +
+      '</a:r>' +
+      '</a:p>' +
+      '</a:txBody>' +
+      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+      '</a:tc>' +
+      '<a:tc>' +
+      '<a:txBody>' +
+      '<a:bodyPr/>' +
+      '<a:lstStyle/>' +
+      '<a:p>' +
+      '<a:pPr algn="r"/>' +
+      '<a:r>' +
+      '<a:rPr sz="1200" b="1">' +
+      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+      '</a:rPr>' +
+      '<a:t>Limite (LMI)</a:t>' +
+      '</a:r>' +
+      '</a:p>' +
+      '</a:txBody>' +
+      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+      '</a:tc>' +
+      '<a:tc>' +
+      '<a:txBody>' +
+      '<a:bodyPr/>' +
+      '<a:lstStyle/>' +
+      '<a:p>' +
+      '<a:r>' +
+      '<a:rPr sz="1200" b="1">' +
+      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+      '</a:rPr>' +
+      '<a:t>Franquia / POS</a:t>' +
+      '</a:r>' +
+      '</a:p>' +
+      '</a:txBody>' +
+      '<a:tcPr><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:tcPr>' +
+      '</a:tc>' +
+      '</a:tr>',
+  )
+
+  const buildCellText = (val: string | number | null | undefined, fallback: string): string => {
+    if (val === null || val === undefined) return fallback
+    const s = String(val).trim()
+    return s.length > 0 ? escapeXml(s) : fallback
+  }
 
   if (cobsList.length > 0) {
     cobsList.forEach((c, idx) => {
       const bgClr = idx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
-      tableRowsXml.push(`
-        <a:tr h="320040">
-          <a:tc>
-            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(c.nome)}</a:t></a:r></a:p></a:txBody>
-            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
-          </a:tc>
-          <a:tc>
-            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(formatCurrency(c.lmi))}</a:t></a:r></a:p></a:txBody>
-            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
-          </a:tc>
-          <a:tc>
-            <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="475569"/></a:solidFill></a:rPr><a:t>${escapeXml(c.franquia)}</a:t></a:r></a:p></a:txBody>
-            <a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>
-          </a:tc>
-        </a:tr>
-      `)
+      const nomeText = buildCellText(c.nome, 'Cobertura Contratada')
+      const lmiText = buildCellText(formatCurrency(c.lmi), 'Consulte Apólice')
+      const franqText = buildCellText(c.franquia, 'Padrão da Seguradora')
+
+      tableRowsXml.push(
+        '<a:tr h="320040">' +
+          '<a:tc>' +
+          '<a:txBody>' +
+          '<a:bodyPr/>' +
+          '<a:lstStyle/>' +
+          '<a:p>' +
+          '<a:r>' +
+          '<a:rPr sz="1100" b="1">' +
+          '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+          '</a:rPr>' +
+          `<a:t>${nomeText}</a:t>` +
+          '</a:r>' +
+          '</a:p>' +
+          '</a:txBody>' +
+          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '</a:tc>' +
+          '<a:tc>' +
+          '<a:txBody>' +
+          '<a:bodyPr/>' +
+          '<a:lstStyle/>' +
+          '<a:p>' +
+          '<a:pPr algn="r"/>' +
+          '<a:r>' +
+          '<a:rPr sz="1100" b="1">' +
+          '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+          '</a:rPr>' +
+          `<a:t>${lmiText}</a:t>` +
+          '</a:r>' +
+          '</a:p>' +
+          '</a:txBody>' +
+          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '</a:tc>' +
+          '<a:tc>' +
+          '<a:txBody>' +
+          '<a:bodyPr/>' +
+          '<a:lstStyle/>' +
+          '<a:p>' +
+          '<a:r>' +
+          '<a:rPr sz="1100">' +
+          '<a:solidFill><a:srgbClr val="475569"/></a:solidFill>' +
+          '</a:rPr>' +
+          `<a:t>${franqText}</a:t>` +
+          '</a:r>' +
+          '</a:p>' +
+          '</a:txBody>' +
+          `<a:tcPr><a:solidFill><a:srgbClr val="${bgClr}"/></a:solidFill></a:tcPr>` +
+          '</a:tc>' +
+          '</a:tr>',
+      )
     })
   } else {
-    tableRowsXml.push(`
-      <a:tr h="320040">
-        <a:tc>
-          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="64748B"/></a:solidFill></a:rPr><a:t>Incêndio Básica (Danos Materiais)</a:t></a:r></a:p></a:txBody>
-        </a:tc>
-        <a:tc>
-          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="r"/><a:r><a:rPr sz="1100" b="1"><a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill></a:rPr><a:t>${escapeXml(formatCurrency(data.lmiLmg))}</a:t></a:r></a:p></a:txBody>
-        </a:tc>
-        <a:tc>
-          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1100"><a:solidFill><a:srgbClr val="475569"/></a:solidFill></a:rPr><a:t>Padrão de mercado</a:t></a:r></a:p></a:txBody>
-        </a:tc>
-      </a:tr>
-    `)
+    const lmiVal = buildCellText(formatCurrency(data.lmiLmg), 'Consulte Apólice')
+    tableRowsXml.push(
+      '<a:tr h="320040">' +
+        '<a:tc>' +
+        '<a:txBody>' +
+        '<a:bodyPr/>' +
+        '<a:lstStyle/>' +
+        '<a:p>' +
+        '<a:r>' +
+        '<a:rPr sz="1100">' +
+        '<a:solidFill><a:srgbClr val="64748B"/></a:solidFill>' +
+        '</a:rPr>' +
+        '<a:t>Incêndio Básica (Danos Materiais)</a:t>' +
+        '</a:r>' +
+        '</a:p>' +
+        '</a:txBody>' +
+        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
+        '</a:tc>' +
+        '<a:tc>' +
+        '<a:txBody>' +
+        '<a:bodyPr/>' +
+        '<a:lstStyle/>' +
+        '<a:p>' +
+        '<a:pPr algn="r"/>' +
+        '<a:r>' +
+        '<a:rPr sz="1100" b="1">' +
+        '<a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>' +
+        '</a:rPr>' +
+        `<a:t>${lmiVal}</a:t>` +
+        '</a:r>' +
+        '</a:p>' +
+        '</a:txBody>' +
+        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
+        '</a:tc>' +
+        '<a:tc>' +
+        '<a:txBody>' +
+        '<a:bodyPr/>' +
+        '<a:lstStyle/>' +
+        '<a:p>' +
+        '<a:r>' +
+        '<a:rPr sz="1100">' +
+        '<a:solidFill><a:srgbClr val="475569"/></a:solidFill>' +
+        '</a:rPr>' +
+        '<a:t>Padrão de mercado</a:t>' +
+        '</a:r>' +
+        '</a:p>' +
+        '</a:txBody>' +
+        '<a:tcPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr>' +
+        '</a:tc>' +
+        '</a:tr>',
+    )
   }
 
   files.push({
@@ -595,14 +727,14 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
           </a:p>
         </p:txBody>
       </p:sp>
-      <!-- Table Frame -->
+      <!-- Table Frame: nvGraphicFramePr -> xfrm -> graphic (p:xfrm contem a:off e a:ext) -->
       <p:graphicFrame>
         <p:nvGraphicFramePr>
           <p:cNvPr id="3" name="CoberturasTable"/>
           <p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>
           <p:nvPr/>
         </p:nvGraphicFramePr>
-        <p:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="4572000"/></a:xfrm>
+        <p:xfrm><a:off x="731520" y="1463040"/><a:ext cx="10728960" cy="4572000"/></p:xfrm>
         <a:graphic>
           <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
             <a:tbl>
