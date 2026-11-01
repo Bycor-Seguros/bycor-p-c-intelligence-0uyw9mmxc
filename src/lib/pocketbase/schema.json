@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T13:48:37.273Z",
+  "generatedAt": "2026-11-01T15:20:26.555Z",
   "collections": [
     {
       "name": "users",
@@ -1555,6 +1555,12 @@
         {
           "name": "ativa",
           "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "opcao",
+          "type": "number",
           "required": false,
           "system": false
         }

@@ -45,6 +45,7 @@ interface PropostaRecord {
   id: string
   rfq: string
   seguradora: string
+  opcao?: number
   versao?: number
   ativa?: boolean
   data_proposta: string
@@ -142,21 +143,25 @@ export default function TabulacaoPage() {
     return propostas.filter((p) => p.rfq === selectedRfqId)
   }, [propostas, selectedRfqId])
 
-  // Agrupa todas as propostas por seguradora para permitir seleção de versão
-  const todasPorSeguradora = useMemo(() => {
+  // Agrupa todas as propostas por SEGURADORA + OPÇÃO para permitir seleção de versão dentro de cada opção
+  // Chave do mapa: `${p.seguradora}__op__${p.opcao || 1}`
+  const todasPorSeguradoraEOpcao = useMemo(() => {
     const mapa = new Map<string, PropostaRecord[]>()
     rfqProposals.forEach((p) => {
-      const list = mapa.get(p.seguradora) || []
+      const op = Number(p.opcao || 1)
+      const chave = `${p.seguradora}__op__${op}`
+      const list = mapa.get(chave) || []
       list.push(p)
-      mapa.set(p.seguradora, list)
+      mapa.set(chave, list)
     })
     return mapa
   }, [rfqProposals])
 
-  // A matriz comparativa side-by-side trabalha SEMPRE com a versão ativa de cada seguradora
+  // A matriz comparativa side-by-side passa a ter UMA COLUNA POR CIA+OPÇÃO (ex.: "AXA — Opção 1", "AXA — Opção 2"),
+  // cada coluna usando a versão ATIVA daquela opção.
   const comparedProposals = useMemo(() => {
     const ativas: PropostaRecord[] = []
-    todasPorSeguradora.forEach((pList) => {
+    todasPorSeguradoraEOpcao.forEach((pList) => {
       const ativa = pList.find((p) => p.ativa)
       if (ativa) {
         ativas.push(ativa)
@@ -166,8 +171,15 @@ export default function TabulacaoPage() {
         ativas.push(sorted[0])
       }
     })
+    // Ordena colunas por nome da seguradora e depois pelo número da opção
+    ativas.sort((a, b) => {
+      const nomeA = a.expand?.seguradora?.nome || ''
+      const nomeB = b.expand?.seguradora?.nome || ''
+      if (nomeA !== nomeB) return nomeA.localeCompare(nomeB)
+      return Number(a.opcao || 1) - Number(b.opcao || 1)
+    })
     return ativas
-  }, [todasPorSeguradora])
+  }, [todasPorSeguradoraEOpcao])
 
   // Alternar versão ativa diretamente pela tela de Tabulação (C3)
   const handleTrocarVersaoC3 = async (segId: string, novaPropId: string) => {
@@ -307,7 +319,12 @@ export default function TabulacaoPage() {
 
     const headers = [
       'Categoria Normalizada',
-      ...comparedProposals.map((p) => p.expand?.seguradora?.nome || p.id),
+      ...comparedProposals.map((p) => {
+        const seg = p.expand?.seguradora?.nome || p.id
+        const op = Number(p.opcao || 1)
+        const v = Number(p.versao || 1)
+        return `"${seg} — Opção ${op} (v${v})"`
+      }),
     ]
     const rows = distinctCategories.map((cat) => {
       const values = comparedProposals.map((p) => {
@@ -427,18 +444,20 @@ export default function TabulacaoPage() {
                   </th>
                   {comparedProposals.map((p) => {
                     const isSelected = p.status === 'Selecionada'
-                    const versoesDestaCia = todasPorSeguradora.get(p.seguradora) || []
+                    const opNum = Number(p.opcao || 1)
+                    const chaveOpcao = `${p.seguradora}__op__${opNum}`
+                    const versoesDestaOpcao = todasPorSeguradoraEOpcao.get(chaveOpcao) || []
 
                     return (
                       <th
                         key={p.id}
-                        className={`py-3.5 px-4 min-w-[260px] border-r border-[#1B3C5D] ${
+                        className={`py-3.5 px-4 min-w-[270px] border-r border-[#1B3C5D] ${
                           isSelected ? 'bg-[#16578B]' : ''
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center justify-between gap-1 flex-wrap">
                           <span className="font-extrabold text-sm truncate">
-                            {p.expand?.seguradora?.nome || 'Seguradora'}
+                            {p.expand?.seguradora?.nome || 'Seguradora'} — Opção {opNum}
                           </span>
                           <span className="shrink-0 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-900 text-blue-100 border border-blue-400">
                             v{p.versao || 1}
@@ -453,16 +472,18 @@ export default function TabulacaoPage() {
                           )}
                         </div>
 
-                        {/* Seletor de Versão quando a seguradora tiver mais de 1 versão no RFQ */}
-                        {versoesDestaCia.length > 1 && (
+                        {/* Seletor de Versão quando esta mesma opção tiver mais de 1 versão no RFQ */}
+                        {versoesDestaOpcao.length > 1 && (
                           <div className="mt-2 flex items-center gap-1.5 bg-black/20 p-1.5 rounded-lg border border-white/10">
-                            <span className="text-[10px] text-blue-200">Trocar versão ativa:</span>
+                            <span className="text-[10px] text-blue-200">
+                              Versão ativa (Opção {opNum}):
+                            </span>
                             <select
                               value={p.id}
                               onChange={(e) => handleTrocarVersaoC3(p.seguradora, e.target.value)}
                               className="text-[11px] h-6 px-1.5 rounded bg-white text-gray-900 font-semibold focus:outline-none"
                             >
-                              {versoesDestaCia.map((v) => (
+                              {versoesDestaOpcao.map((v) => (
                                 <option key={v.id} value={v.id}>
                                   v{v.versao || 1} (
                                   {v.premio_bruto ? formatCurrency(v.premio_bruto) : 's/ prêmio'})

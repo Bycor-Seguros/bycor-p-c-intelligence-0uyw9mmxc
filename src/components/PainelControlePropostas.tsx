@@ -173,18 +173,18 @@ export function PainelControlePropostas({
     return computeRfqSummary(records)
   }, [records])
 
-  // Alternar Versão Ativa da Proposta
+  // Alternar Versão Ativa da Proposta (opera dentro da opção do registro escolhido)
   const handleTrocarVersaoAtiva = async (rec: RfqSeguradoraRecord, novaPropostaId: string) => {
     try {
       setUpdatingId(rec.id)
       await definirVersaoAtiva(rfqId, rec.seguradora, novaPropostaId)
       await loadData()
       setFeedback(
-        `Versão ativa de ${rec.expand?.seguradora?.nome || 'Seguradora'} alterada com sucesso.`,
+        `Versão ativa de ${rec.expand?.seguradora?.nome || 'Seguradora'} alterada com sucesso dentro da opção selecionada.`,
       )
-      setTimeout(() => setFeedback(null), 3000)
+      setTimeout(() => setFeedback(null), 4000)
       onDataChange?.()
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err)
       alert('Falha ao trocar versão ativa: ' + (err as Error).message)
     } finally {
@@ -703,300 +703,340 @@ export function PainelControlePropostas({
                   const Icon = badge.icon
                   const isUpdating = updatingId === rec.id
 
-                  const temProposta = rec.status === 'Proposta recebida' && rec.expand?.proposta
-                  const propostaData = rec.expand?.proposta
+                  const todasPropostas = rec.propostas_todas || []
 
-                  return (
-                    <tr
-                      key={rec.id}
-                      className={`hover:bg-blue-50/30 transition-colors ${
-                        rec.status === 'Proposta recebida'
-                          ? 'bg-emerald-50/15'
-                          : rec.status === 'Declinou'
-                            ? 'bg-rose-50/15 opacity-80'
-                            : ''
-                      }`}
-                    >
-                      {/* Nome da Seguradora com Versão e Seletor de Versão Ativa */}
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-gray-900 text-xs flex items-center gap-2">
-                          <span>{segNome}</span>
-                          {propostaData && (
-                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-300">
-                              v{propostaData.versao || 1}
-                              <span className="ml-1 text-[9px] text-emerald-700 font-sans uppercase">
-                                ● ativa
+                  // Agrupa todas as propostas da seguradora por OPÇÃO
+                  // Se não houver propostas (ex: convidada/declinou), cria uma linha padrão com opcao = 1
+                  const mapaOpcoes = new Map<number, PropostaModelo[]>()
+                  if (todasPropostas.length > 0) {
+                    todasPropostas.forEach((p) => {
+                      const op = Number(p.opcao || 1)
+                      const list = mapaOpcoes.get(op) || []
+                      list.push(p)
+                      mapaOpcoes.set(op, list)
+                    })
+                  } else {
+                    mapaOpcoes.set(1, [])
+                  }
+
+                  const opcoesList = Array.from(mapaOpcoes.entries()).sort(([a], [b]) => a - b)
+
+                  return opcoesList.map(([opcaoNum, propsDestaOpcao], idxOpcao) => {
+                    // Identifica a versão ativa desta opção específica
+                    const propostaAtivaDestaOpcao =
+                      propsDestaOpcao.find((p) => p.ativa) ||
+                      (propsDestaOpcao.length > 0
+                        ? [...propsDestaOpcao].sort(
+                            (a, b) => Number(b.versao || 1) - Number(a.versao || 1),
+                          )[0]
+                        : rec.expand?.proposta)
+
+                    const propostaData = propostaAtivaDestaOpcao
+
+                    return (
+                      <tr
+                        key={`${rec.id}-op-${opcaoNum}`}
+                        className={`hover:bg-blue-50/30 transition-colors ${
+                          rec.status === 'Proposta recebida'
+                            ? 'bg-emerald-50/15'
+                            : rec.status === 'Declinou'
+                              ? 'bg-rose-50/15 opacity-80'
+                              : ''
+                        } ${idxOpcao > 0 ? 'border-t border-dashed border-blue-200' : ''}`}
+                      >
+                        {/* Nome da Seguradora com Opção, Versão e Seletor de Versão Ativa dentro da Opção */}
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-gray-900 text-xs flex items-center gap-2 flex-wrap">
+                            <span>{segNome}</span>
+                            {propostaData ? (
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-300">
+                                Opção {opcaoNum} · v{propostaData.versao || 1}
+                                <span className="ml-1 text-[9px] text-emerald-700 font-sans uppercase">
+                                  ● ativa
+                                </span>
                               </span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Seletor quando houver múltiplas versões da mesma seguradora */}
-                        {rec.propostas_todas && rec.propostas_todas.length > 1 && (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <span className="text-[10px] text-gray-500">Versão ativa:</span>
-                            <select
-                              value={propostaData?.id || ''}
-                              onChange={(e) => handleTrocarVersaoAtiva(rec, e.target.value)}
-                              disabled={isUpdating}
-                              className="text-[11px] h-6 px-1.5 py-0 rounded border border-blue-300 bg-blue-50/50 text-[#16578B] font-semibold focus:outline-none focus:ring-1 focus:ring-[#16578B]"
-                            >
-                              {rec.propostas_todas.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  v{p.versao || 1} (
-                                  {p.premio_bruto ? formatCurrency(p.premio_bruto) : 's/ prêmio'})
-                                  {p.id === propostaData?.id ? ' ★ Ativa' : ''}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        {segPos && (
-                          <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
-                            {segPos}
-                          </div>
-                        )}
-                        {rec.expand?.seguradora?.faixa_lmi && (
-                          <div className="text-[10px] text-gray-400 mt-0.5">
-                            Capacidade: {rec.expand?.seguradora?.faixa_lmi}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Situação (Badge com cor por estado) */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.bg}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                          <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span>{badge.label}</span>
-                        </span>
-                      </td>
-
-                      {/* Kit Submissão (Toggle Entregue / Desfazer) */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={isUpdating}
-                            onClick={() => handleToggleKit(rec)}
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
-                              rec.kit_entregue
-                                ? 'bg-blue-100 text-[#16578B] border-blue-300 hover:bg-blue-200'
-                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                            }`}
-                            title={
-                              rec.kit_entregue
-                                ? 'Kit marcado como entregue no portal da cia. Clique para desfazer.'
-                                : 'Clique para marcar que o Kit foi entregue no portal da cia.'
-                            }
-                          >
-                            {isUpdating ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : rec.kit_entregue ? (
-                              <Check className="w-3 h-3 text-[#16578B]" />
                             ) : (
-                              <RotateCcw className="w-3 h-3 text-gray-400" />
+                              <span className="text-[10px] text-gray-400 font-normal">
+                                Opção {opcaoNum}
+                              </span>
                             )}
-                            <span>{rec.kit_entregue ? 'Entregue' : 'Marcar entrega'}</span>
-                          </button>
+                          </div>
 
-                          {rec.kit_entregue_em && (
-                            <span className="text-[10px] text-gray-400" title={rec.kit_entregue_em}>
-                              {formatDate(rec.kit_entregue_em)}
+                          {/* Seletor quando houver múltiplas versões DESTA MESMA OPÇÃO */}
+                          {propsDestaOpcao.length > 1 && (
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500">
+                                Versão ativa (Opção {opcaoNum}):
+                              </span>
+                              <select
+                                value={propostaData?.id || ''}
+                                onChange={(e) => handleTrocarVersaoAtiva(rec, e.target.value)}
+                                disabled={isUpdating}
+                                className="text-[11px] h-6 px-1.5 py-0 rounded border border-blue-300 bg-blue-50/50 text-[#16578B] font-semibold focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+                              >
+                                {propsDestaOpcao.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    v{p.versao || 1} (
+                                    {p.premio_bruto ? formatCurrency(p.premio_bruto) : 's/ prêmio'})
+                                    {p.id === propostaData?.id ? ' ★ Ativa' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {segPos && idxOpcao === 0 && (
+                            <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
+                              {segPos}
+                            </div>
+                          )}
+                          {rec.expand?.seguradora?.faixa_lmi && idxOpcao === 0 && (
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              Capacidade: {rec.expand?.seguradora?.faixa_lmi}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Situação (Badge com cor por estado) */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.bg}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                            <Icon className="w-3.5 h-3.5 shrink-0" />
+                            <span>{badge.label}</span>
+                          </span>
+                        </td>
+
+                        {/* Kit Submissão (Toggle Entregue / Desfazer) */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleToggleKit(rec)}
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                                rec.kit_entregue
+                                  ? 'bg-blue-100 text-[#16578B] border-blue-300 hover:bg-blue-200'
+                                  : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                              }`}
+                              title={
+                                rec.kit_entregue
+                                  ? 'Kit marcado como entregue no portal da cia. Clique para desfazer.'
+                                  : 'Clique para marcar que o Kit foi entregue no portal da cia.'
+                              }
+                            >
+                              {isUpdating ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : rec.kit_entregue ? (
+                                <Check className="w-3 h-3 text-[#16578B]" />
+                              ) : (
+                                <RotateCcw className="w-3 h-3 text-gray-400" />
+                              )}
+                              <span>{rec.kit_entregue ? 'Entregue' : 'Marcar entrega'}</span>
+                            </button>
+
+                            {rec.kit_entregue_em && (
+                              <span
+                                className="text-[10px] text-gray-400"
+                                title={rec.kit_entregue_em}
+                              >
+                                {formatDate(rec.kit_entregue_em)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Dados da Oferta / Motivo do Declínio */}
+                        <td className="py-3 px-3">
+                          {rec.status === 'Proposta recebida' ? (
+                            <div className="space-y-1">
+                              <div className="font-semibold text-gray-900 text-xs">
+                                <span className="text-emerald-800">
+                                  Bruto:{' '}
+                                  {propostaData?.premio_bruto
+                                    ? formatCurrency(propostaData.premio_bruto)
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-gray-600 flex flex-wrap items-center gap-1.5 font-mono">
+                                <span>
+                                  Net:{' '}
+                                  {propostaData?.premio_net
+                                    ? formatCurrency(propostaData.premio_net)
+                                    : '—'}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  Líq:{' '}
+                                  {propostaData?.premio_liquido
+                                    ? formatCurrency(propostaData.premio_liquido)
+                                    : '—'}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  IOF:{' '}
+                                  {propostaData?.premio_liquido
+                                    ? formatCurrency(
+                                        propostaData?.iof && Number(propostaData.iof) > 0
+                                          ? Number(propostaData.iof)
+                                          : Number(
+                                              (propostaData.premio_liquido * 0.0738).toFixed(2),
+                                            ),
+                                      )
+                                    : '—'}
+                                </span>
+                              </div>
+                              {propostaData?.agravo !== undefined &&
+                                propostaData?.agravo !== null &&
+                                Number(propostaData.agravo) > 0 && (
+                                  <div className="text-[10px] text-amber-800 font-mono">
+                                    Net Pós Agravo ({propostaData.agravo}%):{' '}
+                                    <strong>
+                                      {propostaData.premio_net_pos_agravo
+                                        ? formatCurrency(propostaData.premio_net_pos_agravo)
+                                        : propostaData.premio_net
+                                          ? formatCurrency(
+                                              Number(
+                                                (
+                                                  propostaData.premio_net *
+                                                  (1 + Number(propostaData.agravo) / 100)
+                                                ).toFixed(2),
+                                              ),
+                                            )
+                                          : '—'}
+                                    </strong>{' '}
+                                    <span className="text-[9px] uppercase font-sans text-amber-700">
+                                      [calc]
+                                    </span>
+                                  </div>
+                                )}
+                              {propostaData?.comissao_trabalhada !== undefined &&
+                                propostaData?.comissao_trabalhada !== null && (
+                                  <div className="text-[10px] text-blue-700">
+                                    Comis: {propostaData.comissao_trabalhada}% ({' '}
+                                    {desnormalizarBasePremioParaUi(propostaData.base_premio) ===
+                                    'net'
+                                      ? 'base Net'
+                                      : 'base Líquido'}
+                                    )
+                                  </div>
+                                )}
+                              {/* Bloco VRD compacto */}
+                              {(propostaData?.vrd_dm || propostaData?.vrd_lc) && (
+                                <div className="text-[10px] text-gray-500 pt-0.5 border-t border-gray-100 flex flex-wrap gap-1">
+                                  {propostaData.vrd_dm ? (
+                                    <span>VRD DM: {formatCurrency(propostaData.vrd_dm)}</span>
+                                  ) : null}
+                                  {propostaData.vrd_lc ? (
+                                    <span>
+                                      • LC: {formatCurrency(propostaData.vrd_lc)} (
+                                      {propostaData.vrd_lc_base || 'LB'})
+                                    </span>
+                                  ) : null}
+                                </div>
+                              )}
+                              {propostaData?.lmi_lmg ? (
+                                <div className="text-[10px] text-gray-500">
+                                  LMI Total: {formatCurrency(propostaData.lmi_lmg)}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : rec.status === 'Declinou' ? (
+                            <div className="text-xs">
+                              <span className="text-rose-700 font-medium">Motivo:</span>{' '}
+                              <span className="text-gray-700">
+                                {rec.declinou_motivo || 'Sem apetite no momento'}
+                              </span>
+                            </div>
+                          ) : rec.kit_entregue ? (
+                            <span className="text-[11px] text-blue-700">
+                              Aguardando resposta no portal da cia
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-gray-400">
+                              Kit ainda não inserido no portal
                             </span>
                           )}
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Dados da Oferta / Motivo do Declínio */}
-                      <td className="py-3 px-3">
-                        {rec.status === 'Proposta recebida' ? (
-                          <div className="space-y-1">
-                            <div className="font-semibold text-gray-900 text-xs">
-                              <span className="text-emerald-800">
-                                Bruto:{' '}
-                                {propostaData?.premio_bruto
-                                  ? formatCurrency(propostaData.premio_bruto)
-                                  : '—'}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-gray-600 flex flex-wrap items-center gap-1.5 font-mono">
-                              <span>
-                                Net:{' '}
-                                {propostaData?.premio_net
-                                  ? formatCurrency(propostaData.premio_net)
-                                  : '—'}
-                              </span>
-                              <span>•</span>
-                              <span>
-                                Líq:{' '}
-                                {propostaData?.premio_liquido
-                                  ? formatCurrency(propostaData.premio_liquido)
-                                  : '—'}
-                              </span>
-                              <span>•</span>
-                              <span>
-                                IOF:{' '}
-                                {propostaData?.premio_liquido
-                                  ? formatCurrency(
-                                      propostaData?.iof && Number(propostaData.iof) > 0
-                                        ? Number(propostaData.iof)
-                                        : Number((propostaData.premio_liquido * 0.0738).toFixed(2)),
-                                    )
-                                  : '—'}
-                              </span>
-                            </div>
-                            {propostaData?.agravo !== undefined &&
-                              propostaData?.agravo !== null &&
-                              Number(propostaData.agravo) > 0 && (
-                                <div className="text-[10px] text-amber-800 font-mono">
-                                  Net Pós Agravo ({propostaData.agravo}%):{' '}
-                                  <strong>
-                                    {propostaData.premio_net_pos_agravo
-                                      ? formatCurrency(propostaData.premio_net_pos_agravo)
-                                      : propostaData.premio_net
-                                        ? formatCurrency(
-                                            Number(
-                                              (
-                                                propostaData.premio_net *
-                                                (1 + Number(propostaData.agravo) / 100)
-                                              ).toFixed(2),
-                                            ),
-                                          )
-                                        : '—'}
-                                  </strong>{' '}
-                                  <span className="text-[9px] uppercase font-sans text-amber-700">
-                                    [calc]
-                                  </span>
-                                </div>
-                              )}
-                            {propostaData?.comissao_trabalhada !== undefined &&
-                              propostaData?.comissao_trabalhada !== null && (
-                                <div className="text-[10px] text-blue-700">
-                                  Comis: {propostaData.comissao_trabalhada}% ({' '}
-                                  {desnormalizarBasePremioParaUi(propostaData.base_premio) === 'net'
-                                    ? 'base Net'
-                                    : 'base Líquido'}
-                                  )
-                                </div>
-                              )}
-                            {/* Bloco VRD compacto */}
-                            {(propostaData?.vrd_dm || propostaData?.vrd_lc) && (
-                              <div className="text-[10px] text-gray-500 pt-0.5 border-t border-gray-100 flex flex-wrap gap-1">
-                                {propostaData.vrd_dm ? (
-                                  <span>VRD DM: {formatCurrency(propostaData.vrd_dm)}</span>
-                                ) : null}
-                                {propostaData.vrd_lc ? (
-                                  <span>
-                                    • LC: {formatCurrency(propostaData.vrd_lc)} (
-                                    {propostaData.vrd_lc_base || 'LB'})
-                                  </span>
-                                ) : null}
-                              </div>
-                            )}
-                            {propostaData?.lmi_lmg ? (
-                              <div className="text-[10px] text-gray-500">
-                                LMI Total: {formatCurrency(propostaData.lmi_lmg)}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : rec.status === 'Declinou' ? (
-                          <div className="text-xs">
-                            <span className="text-rose-700 font-medium">Motivo:</span>{' '}
-                            <span className="text-gray-700">
-                              {rec.declinou_motivo || 'Sem apetite no momento'}
-                            </span>
-                          </div>
-                        ) : rec.kit_entregue ? (
-                          <span className="text-[11px] text-blue-700">
-                            Aguardando resposta no portal da cia
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-gray-400">
-                            Kit ainda não inserido no portal
-                          </span>
-                        )}
-                      </td>
+                        {/* Data Resposta */}
+                        <td className="py-3 px-3 whitespace-nowrap text-gray-600 text-xs">
+                          {rec.data_resposta ? (
+                            <span>{formatDate(rec.data_resposta)}</span>
+                          ) : rec.status === 'Declinou' && rec.declinou_em ? (
+                            <span>{formatDate(rec.declinou_em)}</span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
 
-                      {/* Data Resposta */}
-                      <td className="py-3 px-3 whitespace-nowrap text-gray-600 text-xs">
-                        {rec.data_resposta ? (
-                          <span>{formatDate(rec.data_resposta)}</span>
-                        ) : rec.status === 'Declinou' && rec.declinou_em ? (
-                          <span>{formatDate(rec.declinou_em)}</span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
+                        {/* Ações por Linha */}
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Botão de Upload com Extração (Ação Principal) */}
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenUploadProposta(rec)}
+                              className="h-7 px-2.5 text-[11px] font-semibold flex items-center gap-1 shadow-sm bg-[#0F2B46] hover:bg-[#1B3C5D] text-white"
+                              title="Subir PDF da proposta desta seguradora com extração automática"
+                            >
+                              <UploadCloud className="w-3.5 h-3.5 text-blue-300" />
+                              <span>Subir PDF</span>
+                            </Button>
 
-                      {/* Ações por Linha */}
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Botão de Upload com Extração (Ação Principal) */}
-                          <Button
-                            size="sm"
-                            onClick={() => handleOpenUploadProposta(rec)}
-                            className="h-7 px-2.5 text-[11px] font-semibold flex items-center gap-1 shadow-sm bg-[#0F2B46] hover:bg-[#1B3C5D] text-white"
-                            title="Subir PDF da proposta desta seguradora com extração automática"
-                          >
-                            <UploadCloud className="w-3.5 h-3.5 text-blue-300" />
-                            <span>Subir PDF</span>
-                          </Button>
-
-                          {/* Registrar / Editar Proposta Manual (Fallback) */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenRegistrarProposta(rec)}
-                            className={`h-7 px-2 text-[11px] font-semibold flex items-center gap-1 border ${
-                              rec.status === 'Proposta recebida'
-                                ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                            }`}
-                            title={
-                              rec.status === 'Proposta recebida'
-                                ? 'Editar proposta manualmente'
-                                : 'Digitar proposta manualmente sem arquivo PDF'
-                            }
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>
-                              {rec.status === 'Proposta recebida'
-                                ? 'Editar manual'
-                                : 'Digitar manual'}
-                            </span>
-                          </Button>
-
-                          {/* Marcar Declínio */}
-                          {rec.status !== 'Declinou' ? (
+                            {/* Registrar / Editar Proposta Manual (Fallback) */}
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleOpenMarcarDeclinio(rec)}
-                              className="h-7 px-2 text-[11px] text-rose-700 border-rose-200 hover:bg-rose-50 hover:border-rose-300 font-semibold"
-                              title="Marcar que a seguradora declinou a cotação"
+                              onClick={() => handleOpenRegistrarProposta(rec)}
+                              className={`h-7 px-2 text-[11px] font-semibold flex items-center gap-1 border ${
+                                rec.status === 'Proposta recebida'
+                                  ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                              }`}
+                              title={
+                                rec.status === 'Proposta recebida'
+                                  ? 'Editar proposta manualmente'
+                                  : 'Digitar proposta manualmente sem arquivo PDF'
+                              }
                             >
-                              <XCircle className="w-3.5 h-3.5 mr-0.5 text-rose-600" />
-                              <span>Declinou</span>
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>
+                                {rec.status === 'Proposta recebida'
+                                  ? 'Editar manual'
+                                  : 'Digitar manual'}
+                              </span>
                             </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleOpenMarcarDeclinio(rec)}
-                              className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-800"
-                              title="Alterar motivo do declínio"
-                            >
-                              <span>Editar motivo</span>
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
+
+                            {/* Marcar Declínio */}
+                            {rec.status !== 'Declinou' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenMarcarDeclinio(rec)}
+                                className="h-7 px-2 text-[11px] text-rose-700 border-rose-200 hover:bg-rose-50 hover:border-rose-300 font-semibold"
+                                title="Marcar que a seguradora declinou a cotação"
+                              >
+                                <XCircle className="w-3.5 h-3.5 mr-0.5 text-rose-600" />
+                                <span>Declinou</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenMarcarDeclinio(rec)}
+                                className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-800"
+                                title="Alterar motivo do declínio"
+                              >
+                                <span>Editar motivo</span>
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 })}
               </tbody>
             </table>

@@ -90,6 +90,11 @@ export default function PropostaUploadModal({
   const [seguradoraSusep, setSeguradoraSusep] = useState<string>('')
   const [dataProposta, setDataProposta] = useState<string>('')
   const [numeroCotacao, setNumeroCotacao] = useState<string>('')
+  const [opcaoSelecionada, setOpcaoSelecionada] = useState<number>(1)
+  const [opcoesExistentes, setOpcoesExistentes] = useState<number[]>([1])
+  const [modoRegistro, setModoRegistro] = useState<'nova_versao' | 'nova_opcao' | 'sobrescrever'>(
+    'nova_versao',
+  )
   const [versao, setVersao] = useState<string>('')
   const [criarNovaVersao, setCriarNovaVersao] = useState<boolean>(true)
   const [temPropostaPrevia, setTemPropostaPrevia] = useState<boolean>(false)
@@ -217,6 +222,9 @@ export default function PropostaUploadModal({
     setTemPropostaPrevia(false)
     setCriarNovaVersao(true)
     setVersaoExistenteMax(1)
+    setOpcaoSelecionada(1)
+    setOpcoesExistentes([1])
+    setModoRegistro('nova_versao')
     setDeletingIndex(null)
     setEditingIndex(null)
     setShowAddForm(false)
@@ -421,27 +429,48 @@ export default function PropostaUploadModal({
       if (resolvedSegId && resolvedSegId !== 'auto') {
         const existProps = await pb
           .collection('propostas')
-          .getFullList<{ id: string; versao?: number }>({
+          .getFullList<{ id: string; versao?: number; opcao?: number }>({
             filter: `rfq = "${rfqId}" && seguradora = "${resolvedSegId}"`,
             sort: '-versao',
           })
         if (existProps.length > 0) {
-          const maxV = Math.max(...existProps.map((p) => Number(p.versao || 1)))
+          const ops = Array.from(new Set(existProps.map((p) => Number(p.opcao || 1)))).sort(
+            (a, b) => a - b,
+          )
+          const opAtiva = ops[0] || 1
+          const propsDestaOp = existProps.filter((p) => Number(p.opcao || 1) === opAtiva)
+          const maxV =
+            propsDestaOp.length > 0
+              ? Math.max(...propsDestaOp.map((p) => Number(p.versao || 1)))
+              : 1
+
           setTemPropostaPrevia(true)
+          setOpcoesExistentes(ops)
+          setOpcaoSelecionada(opAtiva)
           setVersaoExistenteMax(maxV)
+          setModoRegistro('nova_versao')
           setCriarNovaVersao(true)
           setVersao(String(maxV + 1))
         } else {
           setTemPropostaPrevia(false)
+          setOpcoesExistentes([1])
+          setOpcaoSelecionada(1)
           setCriarNovaVersao(true)
+          setModoRegistro('nova_versao')
         }
       } else {
         setTemPropostaPrevia(false)
+        setOpcoesExistentes([1])
+        setOpcaoSelecionada(1)
         setCriarNovaVersao(true)
+        setModoRegistro('nova_versao')
       }
     } catch {
       setTemPropostaPrevia(false)
+      setOpcoesExistentes([1])
+      setOpcaoSelecionada(1)
       setCriarNovaVersao(true)
+      setModoRegistro('nova_versao')
     }
 
     setStep('preview')
@@ -506,8 +535,11 @@ export default function PropostaUploadModal({
         seguradoraSusep: seguradoraSusep.trim() || undefined,
         dataProposta,
         numeroCotacao: numeroCotacao.trim() || undefined,
+        opcao:
+          modoRegistro === 'nova_opcao' ? Math.max(...opcoesExistentes, 1) + 1 : opcaoSelecionada,
         versao: versao.trim() || undefined,
-        criarNovaVersao: temPropostaPrevia ? criarNovaVersao : true,
+        modoRegistro: temPropostaPrevia ? modoRegistro : 'nova_versao',
+        criarNovaVersao: temPropostaPrevia ? modoRegistro !== 'sobrescrever' : true,
         validadeCotacao: validadeCotacao || undefined,
         vigenciaInicio: vigenciaInicio || undefined,
         vigenciaFim: vigenciaFim || undefined,
@@ -905,58 +937,151 @@ export default function PropostaUploadModal({
             </div>
 
             {/* SEÇÃO 2: DADOS DA PROPOSTA / COTAÇÃO E VIGÊNCIA */}
-            {/* DIÁLOGO / PERGUNTA DE NOVA VERSÃO QUANDO JÁ EXISTIR PROPOSTA DESTA CIA */}
+            {/* DIÁLOGO / PERGUNTA DE OPÇÃO × VERSÃO QUANDO JÁ EXISTIR PROPOSTA DESTA CIA */}
             {temPropostaPrevia && (
-              <div className="p-3.5 rounded-xl border-2 border-amber-300 bg-amber-50/70 space-y-2.5">
+              <div className="p-3.5 rounded-xl border-2 border-amber-300 bg-amber-50/70 space-y-3">
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                  <div>
+                  <div className="space-y-1">
                     <div className="font-bold text-amber-950 text-xs">
-                      Esta seguradora já possui proposta(s) registrada(s) neste RFQ (até v
+                      Esta seguradora já possui proposta registrada neste RFQ (Opções:{' '}
+                      {opcoesExistentes.map((o) => `Opção ${o}`).join(', ')} — até v
                       {versaoExistenteMax})
                     </div>
-                    <div className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                      Deseja criar uma{' '}
-                      <strong>nova versão (v{versao || versaoExistenteMax + 1})</strong> preservando
-                      integralmente os dados e coberturas da versão anterior, ou atualizar o
-                      registro existente?
+                    {/* Pergunta-guia do usuário */}
+                    <div className="text-[11px] text-amber-900 bg-white/80 p-2 rounded-md border border-amber-200 leading-relaxed">
+                      <strong>💡 Pergunta-guia para classificação:</strong> A estrutura da oferta
+                      (VRD, LMI, LMG ou coberturas) mudou fundamentalmente?
+                      <br />• <strong>Se SIM</strong> (oferta distinta de contratação com
+                      limites/franquias diferentes): selecione{' '}
+                      <span className="text-blue-800 font-bold">"Nova Opção da mesma cia"</span>.
+                      <br />• <strong>Se NÃO</strong> (apenas revisão de preço, reajuste ou correção
+                      da mesma oferta): selecione{' '}
+                      <span className="text-emerald-800 font-bold">
+                        "Mesma Opção — nova versão"
+                      </span>
+                      .
                     </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-800 text-xs bg-white px-3 py-1.5 rounded-lg border border-amber-300 shadow-sm hover:bg-amber-50/50">
-                    <input
-                      type="radio"
-                      name="opcaoVersao"
-                      checked={criarNovaVersao}
-                      onChange={() => {
-                        setCriarNovaVersao(true)
-                        setVersao(String(versaoExistenteMax + 1))
-                      }}
-                      className="text-[#16578B] focus:ring-[#16578B]"
-                    />
-                    <span>✨ Criar Nova Versão (v{versaoExistenteMax + 1}) — Recomendado</span>
+                {/* 3 Escolhas definidas no conceito de produto */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {/* (a) Mesma Opção - nova versão */}
+                  <label
+                    className={`flex flex-col gap-1 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      modoRegistro === 'nova_versao'
+                        ? 'bg-blue-50 border-[#16578B] ring-1 ring-[#16578B] shadow-sm'
+                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="modoRegistro"
+                        checked={modoRegistro === 'nova_versao'}
+                        onChange={() => {
+                          setModoRegistro('nova_versao')
+                          setCriarNovaVersao(true)
+                          setVersao(String(versaoExistenteMax + 1))
+                        }}
+                        className="text-[#16578B] focus:ring-[#16578B]"
+                      />
+                      <span className="font-bold text-gray-900 text-[11px]">
+                        ✨ Mesma Opção — v{versaoExistenteMax + 1}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 pl-5">
+                      Recomendado para revisão/reajuste da Opção {opcaoSelecionada}. Preserva
+                      histórico.
+                    </span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-600 text-xs bg-white px-3 py-1.5 rounded-lg border border-gray-300 shadow-sm hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      name="opcaoVersao"
-                      checked={!criarNovaVersao}
-                      onChange={() => {
-                        setCriarNovaVersao(false)
-                        setVersao(String(versaoExistenteMax))
-                      }}
-                      className="text-[#16578B] focus:ring-[#16578B]"
-                    />
-                    <span>Sobrescrever versão atual (v{versaoExistenteMax})</span>
+                  {/* (b) Nova Opção da mesma cia */}
+                  <label
+                    className={`flex flex-col gap-1 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      modoRegistro === 'nova_opcao'
+                        ? 'bg-purple-50 border-purple-600 ring-1 ring-purple-600 shadow-sm'
+                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="modoRegistro"
+                        checked={modoRegistro === 'nova_opcao'}
+                        onChange={() => {
+                          setModoRegistro('nova_opcao')
+                          setCriarNovaVersao(true)
+                          setVersao('1')
+                        }}
+                        className="text-purple-600 focus:ring-purple-600"
+                      />
+                      <span className="font-bold text-purple-950 text-[11px]">
+                        🏢 Nova Opção {Math.max(...opcoesExistentes, 1) + 1} (v1)
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 pl-5">
+                      Oferta distinta da mesma cia com LMI/LMG/VRD diferentes. Cada opção mantém sua
+                      ativa.
+                    </span>
+                  </label>
+
+                  {/* (c) Sobrescrever */}
+                  <label
+                    className={`flex flex-col gap-1 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      modoRegistro === 'sobrescrever'
+                        ? 'bg-amber-50 border-amber-600 ring-1 ring-amber-600 shadow-sm'
+                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="modoRegistro"
+                        checked={modoRegistro === 'sobrescrever'}
+                        onChange={() => {
+                          setModoRegistro('sobrescrever')
+                          setCriarNovaVersao(false)
+                          setVersao(String(versaoExistenteMax))
+                        }}
+                        className="text-amber-600 focus:ring-amber-600"
+                      />
+                      <span className="font-bold text-gray-900 text-[11px]">
+                        Sobrescrever versão atual
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 pl-5">
+                      Atualiza os dados da Opção {opcaoSelecionada} v{versaoExistenteMax} no mesmo
+                      registro.
+                    </span>
                   </label>
                 </div>
+
+                {/* Seletor de qual opção existente está sendo versionada caso haja múltiplas */}
+                {modoRegistro === 'nova_versao' && opcoesExistentes.length > 1 && (
+                  <div className="flex items-center gap-2 pt-1 text-xs">
+                    <span className="font-semibold text-gray-700">Vincular à Opção:</span>
+                    <select
+                      value={opcaoSelecionada}
+                      onChange={(e) => {
+                        const op = Number(e.target.value)
+                        setOpcaoSelecionada(op)
+                      }}
+                      className="h-7 text-xs rounded border border-gray-300 bg-white px-2 font-bold text-[#16578B]"
+                    >
+                      {opcoesExistentes.map((op) => (
+                        <option key={op} value={op}>
+                          Opção {op}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold text-gray-700">
                   Nº da Cotação / Proposta
@@ -972,8 +1097,31 @@ export default function PropostaUploadModal({
 
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold text-gray-700 flex items-center justify-between">
+                  <span>Opção</span>
+                  {modoRegistro === 'nova_opcao' && (
+                    <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1 rounded">
+                      Nova
+                    </span>
+                  )}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={
+                    modoRegistro === 'nova_opcao'
+                      ? Math.max(...opcoesExistentes, 1) + 1
+                      : opcaoSelecionada
+                  }
+                  onChange={(e) => setOpcaoSelecionada(Number(e.target.value) || 1)}
+                  disabled={modoRegistro === 'nova_opcao'}
+                  className="h-8 text-xs font-mono font-bold bg-gray-50/70"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-gray-700 flex items-center justify-between">
                   <span>Versão</span>
-                  {criarNovaVersao && temPropostaPrevia && (
+                  {modoRegistro === 'nova_versao' && temPropostaPrevia && (
                     <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 rounded">
                       Nova
                     </span>

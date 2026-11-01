@@ -54,6 +54,7 @@ export interface PropostaModelo {
   id: string
   rfq: string
   seguradora: string
+  opcao?: number
   versao: number
   ativa: boolean
   premio_bruto: number
@@ -146,6 +147,7 @@ export interface RegistrarPropostaParams {
   rfqId: string
   seguradoraId: string
   dataProposta: string
+  opcao?: number
   versao?: number
   criarNovaVersao?: boolean
   lmiLmg?: number
@@ -176,7 +178,9 @@ export interface RegistrarPropostaUploadParams {
   seguradoraSusep?: string
   dataProposta: string
   numeroCotacao?: string
+  opcao?: number
   versao?: string | number
+  modoRegistro?: 'nova_versao' | 'nova_opcao' | 'sobrescrever'
   criarNovaVersao?: boolean
   propostaSubstituirId?: string
   validadeCotacao?: string
@@ -347,7 +351,7 @@ export async function syncAndLoadRfqSeguradoras(
       sort: '-versao',
     })
 
-    // Agrupa todas por seguradora e identifica a proposta ativa
+    // Agrupa todas por seguradora e identifica a proposta ativa principal (opção 1 ou primeira ativa encontrada)
     const allPropostasBySeg = new Map<string, PropostaModelo[]>()
     const activePropostaBySeg = new Map<string, PropostaModelo>()
 
@@ -355,15 +359,21 @@ export async function syncAndLoadRfqSeguradoras(
       const list = allPropostasBySeg.get(p.seguradora) || []
       list.push(p)
       allPropostasBySeg.set(p.seguradora, list)
-
-      if (p.ativa && !activePropostaBySeg.has(p.seguradora)) {
-        activePropostaBySeg.set(p.seguradora, p)
-      }
     })
 
-    // Fallback: se nenhuma marcada como ativa, a de maior versão vira ativa
+    // Para o ponteiro singular de rfq_seguradoras (compatibilidade), escolhe a proposta ativa
+    // dando preferência à menor opção (Opção 1 ativa) ou à de maior versão
     for (const [segId, pList] of allPropostasBySeg.entries()) {
-      if (!activePropostaBySeg.has(segId) && pList.length > 0) {
+      const ativas = pList.filter((p) => p.ativa)
+      if (ativas.length > 0) {
+        // Ordena por opcao asc, depois versao desc
+        ativas.sort(
+          (a, b) =>
+            Number(a.opcao || 1) - Number(b.opcao || 1) ||
+            Number(b.versao || 1) - Number(a.versao || 1),
+        )
+        activePropostaBySeg.set(segId, ativas[0])
+      } else if (pList.length > 0) {
         activePropostaBySeg.set(segId, pList[0])
       }
     }
@@ -622,22 +632,28 @@ export async function registrarPropostaManual(
     propPayload.coberturas = coberturas
   }
 
+  const targetOpcao = params.opcao || 1
+  const propsDestaOpcao = existingProps.filter((p) => Number(p.opcao || 1) === targetOpcao)
+
   const isNovaVersao = Boolean(params.criarNovaVersao)
-  if (existingProps.length > 0 && !isNovaVersao) {
-    propostaId = existingProps[0].id
+  if (propsDestaOpcao.length > 0 && !isNovaVersao) {
+    propostaId = propsDestaOpcao[0].id
     // Se coberturas não foi passado na edição, mantém as que já existiam
-    if (coberturas === undefined && existingProps[0].coberturas) {
-      propPayload.coberturas = existingProps[0].coberturas
+    if (coberturas === undefined && propsDestaOpcao[0].coberturas) {
+      propPayload.coberturas = propsDestaOpcao[0].coberturas
     }
+    propPayload.opcao = targetOpcao
     await pb.collection('propostas').update(propostaId, propPayload)
   } else {
-    // Nova versão ou primeira versão
+    // Nova versão de uma opção ou primeira versão de nova opção
     const maiorVersao =
-      existingProps.length > 0 ? Math.max(...existingProps.map((p) => Number(p.versao || 1))) : 0
+      propsDestaOpcao.length > 0
+        ? Math.max(...propsDestaOpcao.map((p) => Number(p.versao || 1)))
+        : 0
     const proxVersao = params.versao ? Number(params.versao) : maiorVersao + 1
 
-    // Desativa as outras versões desta seguradora neste RFQ
-    for (const exp of existingProps) {
+    // Desativa apenas as outras versões DESTA MESMA OPÇÃO (cada opção mantém sua versão ativa independente!)
+    for (const exp of propsDestaOpcao) {
       if (exp.ativa) {
         try {
           await pb.collection('propostas').update(exp.id, { ativa: false })
@@ -650,6 +666,7 @@ export async function registrarPropostaManual(
     if (propPayload.coberturas === undefined) {
       propPayload.coberturas = []
     }
+    propPayload.opcao = targetOpcao
     propPayload.versao = proxVersao
     propPayload.ativa = true
 
@@ -888,36 +905,82 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
     formData.append('arquivo_tipo', arquivo.type || 'application/pdf')
   }
 
-  const isNovaVersao =
-    params.criarNovaVersao !== undefined
-      ? Boolean(params.criarNovaVersao)
-      : existingProps.length === 0
+  // Determina modo de registro: nova_versao (default) | nova_opcao | sobrescrever
+  let modo: 'nova_versao' | 'nova_opcao' | 'sobrescrever' = params.modoRegistro || 'nova_versao'
+  if (!params.modoRegistro) {
+    if (params.criarNovaVersao === false) {
+      modo = 'sobrescrever'
+    } else {
+      modo = 'nova_versao'
+    }
+  }
+
+  // Descobre opções já existentes para esta seguradora neste RFQ
+  const opcoesExistentes = Array.from(new Set(existingProps.map((p) => Number(p.opcao || 1)))).sort(
+    (a, b) => a - b,
+  )
+  const maiorOpcao = opcoesExistentes.length > 0 ? Math.max(...opcoesExistentes) : 1
+
+  let targetOpcao: number
+  let targetVersao: number
   let propostaId: string
 
-  if (existingProps.length > 0 && !isNovaVersao && params.propostaSubstituirId) {
-    // Usuário optou explicitamente por substituir/atualizar registro existente específico
-    propostaId = params.propostaSubstituirId
-    formData.append('ativa', 'true')
-    await pb.collection('propostas').update(propostaId, formData)
-  } else if (existingProps.length > 0 && !isNovaVersao) {
-    // Substitui a mais recente
-    propostaId = existingProps[0].id
-    formData.append('ativa', 'true')
-    await pb.collection('propostas').update(propostaId, formData)
-  } else {
-    // Nova versão ou primeira versão
-    const maiorVersao =
-      existingProps.length > 0 ? Math.max(...existingProps.map((p) => Number(p.versao || 1))) : 0
-    let proxVersao = maiorVersao + 1
+  if (existingProps.length === 0) {
+    // Primeira proposta da seguradora: Opção 1, Versão 1, ativa
+    targetOpcao = params.opcao || 1
+    targetVersao = 1
     if (params.versao) {
       const parsed = parseInt(String(params.versao).replace(/\D/g, ''), 10)
-      if (!isNaN(parsed) && parsed > 0) {
-        proxVersao = parsed
-      }
+      if (!isNaN(parsed) && parsed > 0) targetVersao = parsed
+    }
+    formData.append('opcao', String(targetOpcao))
+    formData.append('versao', String(targetVersao))
+    formData.append('ativa', 'true')
+    const createdProp = await pb.collection('propostas').create(formData)
+    propostaId = createdProp.id
+  } else if (modo === 'sobrescrever') {
+    // (c) Sobrescrever: atualiza registro existente preservando opcao e versao originais
+    const targetRec = params.propostaSubstituirId
+      ? existingProps.find((p) => p.id === params.propostaSubstituirId) || existingProps[0]
+      : existingProps[0]
+    propostaId = targetRec.id
+    targetOpcao = Number(targetRec.opcao || 1)
+    targetVersao = Number(targetRec.versao || 1)
+    formData.append('opcao', String(targetOpcao))
+    formData.append('versao', String(targetVersao))
+    formData.append('ativa', 'true')
+    await pb.collection('propostas').update(propostaId, formData)
+  } else if (modo === 'nova_opcao') {
+    // (b) "Nova Opção da mesma cia" — cria registro novo com opcao = M+1, versao = 1, ativa.
+    // A versão ativa da opção anterior permanece como está (a versão ativa é por opção, cada opção mantém a sua).
+    targetOpcao = params.opcao || maiorOpcao + 1
+    targetVersao = 1
+    if (params.versao) {
+      const parsed = parseInt(String(params.versao).replace(/\D/g, ''), 10)
+      if (!isNaN(parsed) && parsed > 0) targetVersao = parsed
+    }
+    formData.append('opcao', String(targetOpcao))
+    formData.append('versao', String(targetVersao))
+    formData.append('ativa', 'true')
+    const createdProp = await pb.collection('propostas').create(formData)
+    propostaId = createdProp.id
+  } else {
+    // (a) "Mesma Opção — nova versão (vN)" (recomendado) — cria novo registro com mesma opcao, versao = N+1, ativa.
+    // Desativa apenas as outras versões DESTA MESMA OPÇÃO. As outras opções mantêm suas versões ativas intactas.
+    targetOpcao = params.opcao || 1
+    const propsDestaOpcao = existingProps.filter((p) => Number(p.opcao || 1) === targetOpcao)
+    const maiorVersaoOpcao =
+      propsDestaOpcao.length > 0
+        ? Math.max(...propsDestaOpcao.map((p) => Number(p.versao || 1)))
+        : 0
+    targetVersao = maiorVersaoOpcao + 1
+    if (params.versao) {
+      const parsed = parseInt(String(params.versao).replace(/\D/g, ''), 10)
+      if (!isNaN(parsed) && parsed > 0) targetVersao = parsed
     }
 
-    // Desativa as outras versões desta seguradora neste RFQ
-    for (const exp of existingProps) {
+    // Desativa apenas as versões anteriores da MESMA OPÇÃO
+    for (const exp of propsDestaOpcao) {
       if (exp.ativa) {
         try {
           await pb.collection('propostas').update(exp.id, { ativa: false })
@@ -927,9 +990,9 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
       }
     }
 
-    formData.append('versao', String(proxVersao))
+    formData.append('opcao', String(targetOpcao))
+    formData.append('versao', String(targetVersao))
     formData.append('ativa', 'true')
-
     const createdProp = await pb.collection('propostas').create(formData)
     propostaId = createdProp.id
   }
@@ -1051,7 +1114,9 @@ export async function registrarPropostaComArquivo(params: RegistrarPropostaUploa
 }
 
 /**
- * Define qual versão da proposta está ativa para a seguradora no RFQ
+ * Define qual versão da proposta está ativa para uma OPÇÃO específica da seguradora no RFQ.
+ * CONCEITO DO USUÁRIO: A versão ativa passa a existir POR OPÇÃO (não por seguradora).
+ * Trocar a versão ativa de uma opção não afeta as outras opções da mesma cia.
  */
 export async function definirVersaoAtiva(
   rfqId: string,
@@ -1063,20 +1128,26 @@ export async function definirVersaoAtiva(
     filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
   })
 
-  // 2. Atualiza ativa = true na escolhida, ativa = false nas outras
+  const targetProp = props.find((p) => p.id === propostaId)
+  if (!targetProp) return
+
+  const targetOpcao = Number(targetProp.opcao || 1)
+
+  // 2. Atualiza ativa = true na escolhida, ativa = false APENAS nas outras da MESMA OPÇÃO
   for (const p of props) {
-    const deveSerAtiva = p.id === propostaId
-    if (Boolean(p.ativa) !== deveSerAtiva) {
-      await pb.collection('propostas').update(p.id, { ativa: deveSerAtiva })
+    const pOpcao = Number(p.opcao || 1)
+    if (pOpcao === targetOpcao) {
+      const deveSerAtiva = p.id === propostaId
+      if (Boolean(p.ativa) !== deveSerAtiva) {
+        await pb.collection('propostas').update(p.id, { ativa: deveSerAtiva })
+      }
     }
   }
 
-  // 3. Atualiza o ponteiro em rfq_seguradoras para refletir a proposta ativa
+  // 3. Atualiza o ponteiro em rfq_seguradoras para refletir a proposta ativa relevante
   const rfqSegs = await pb.collection('rfq_seguradoras').getFullList<RfqSeguradoraRecord>({
     filter: `rfq = "${rfqId}" && seguradora = "${seguradoraId}"`,
   })
-
-  const targetProp = props.find((p) => p.id === propostaId)
 
   if (rfqSegs.length > 0) {
     await pb.collection('rfq_seguradoras').update(rfqSegs[0].id, {
