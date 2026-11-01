@@ -124,7 +124,7 @@ export default function PropostaUploadModal({
 
   // Comissão trabalhada, agravo e base do prêmio (reativo)
   const [comissaoTrabalhada, setComissaoTrabalhada] = useState<string>('')
-  const [agravo, setAgravo] = useState<string>('')
+  const [agravo, setAgravo] = useState<string>('0')
   const [basePremio, setBasePremio] = useState<'liquido' | 'net'>('liquido')
 
   // Estado para exclusão com confirmação e edição inline de coberturas
@@ -234,7 +234,7 @@ export default function PropostaUploadModal({
     setVrdLc('')
     setVrdLcBase('Lucro Bruto')
     setComissaoTrabalhada('')
-    setAgravo('')
+    setAgravo('0')
     setBasePremio('liquido')
     setPremioNet('')
   }
@@ -429,7 +429,7 @@ export default function PropostaUploadModal({
       )
     }
     setComissaoTrabalhada('')
-    setAgravo('')
+    setAgravo('0')
 
     // Checa se já existe proposta para essa seguradora neste RFQ
     try {
@@ -1406,10 +1406,8 @@ export default function PropostaUploadModal({
                                   const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                   const pLiq = netPos / (1 - c / 100)
                                   setPremioLiquido(pLiq.toFixed(2))
-                                  const iofVal = iof
-                                    ? parseFloat(iof)
-                                    : Number((pLiq * 0.0738).toFixed(2))
-                                  if (!iof) setIof(iofVal.toFixed(2))
+                                  const iofVal = Number((pLiq * 0.0738).toFixed(2))
+                                  setIof(iofVal.toFixed(2))
                                   setPremioBruto((pLiq + iofVal).toFixed(2))
                                 } else {
                                   // Sem comissão: Líquido, IOF e Bruto continuam vazios/pendentes
@@ -1456,15 +1454,21 @@ export default function PropostaUploadModal({
                                 const netPos = agr > 0 ? pNet * (1 + agr / 100) : pNet
                                 const pLiq = netPos / (1 - c / 100)
                                 setPremioLiquido(pLiq.toFixed(2))
-                                const iofVal = iof
-                                  ? parseFloat(iof)
-                                  : Number((pLiq * 0.0738).toFixed(2))
-                                if (!iof) setIof(iofVal.toFixed(2))
+                                const iofVal = Number((pLiq * 0.0738).toFixed(2))
+                                setIof(iofVal.toFixed(2))
                                 setPremioBruto((pLiq + iofVal).toFixed(2))
                               } else {
                                 setPremioLiquido('')
                                 setIof('')
                                 setPremioBruto('')
+                              }
+                            } else if (basePremio === 'liquido') {
+                              if (pNet > 0 && c !== null && c >= 0 && c < 100) {
+                                const pLiq = pNet / (1 - c / 100)
+                                setPremioLiquido(pLiq.toFixed(2))
+                                const iofVal = Number((pLiq * 0.0738).toFixed(2))
+                                setIof(iofVal.toFixed(2))
+                                setPremioBruto((pLiq + iofVal).toFixed(2))
                               }
                             }
                           }}

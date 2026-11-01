@@ -1153,6 +1153,29 @@ export async function runAllSuites() {
 
   runTest(
     'Regra de Prêmio Net C2',
+    'Base Net AXA Condomínio São International Square: Net R$ 49.343,34 + Agravo 0 neutro + comissão 15% -> Líquido = 58.051,00, IOF = 4.284,16, Bruto = 62.335,16',
+    () => {
+      // Net = 49.343,34, Agravo = 0 (neutro)
+      // Net Pós Agravo = 49.343,34
+      // Comissão = 15% -> Líquido = 49.343,34 / 0.85 = 58.050,988... -> 58.050,99
+      // IOF = 58.050,99 * 0.0738 = 4.284,163... -> 4.284,16
+      // Bruto = 58.050,99 + 4.284,16 = 62.335,15
+      const res = calcularFluxoPremios({
+        base: 'net',
+        premioNet: 49343.34,
+        agravoPerc: 0,
+        comissaoPerc: 15,
+      })
+      assertEqual(res.net, 49343.34, 'Prêmio Net base extraído')
+      assertEqual(res.netPosAgravo, 49343.34, 'Net Pós Agravo com agravo 0 neutro')
+      assertEqual(res.liquido, 58050.99, 'Líquido = Net / (1 - comissão)')
+      assertEqual(res.iof, 4284.16, 'IOF 7,38%')
+      assertEqual(res.bruto, 62335.15, 'Bruto = Líquido + IOF')
+    },
+  )
+
+  runTest(
+    'Regra de Prêmio Net C2',
     'Base Líquido explícita (ex: AXA RN): IOF e Bruto calculam mesmo sem comissão',
     () => {
       const res = calcularFluxoPremios({

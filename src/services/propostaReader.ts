@@ -707,11 +707,21 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
 
   if (isAxaRnLayout) {
     // 4.1 Prêmio LIQUIDO de seguro para 100% do risco: R$ 32.314,71
-    const prLiqRn = fullText.match(
-      /Pr[êe]mio\s+LIQUIDO\s+de\s+seguro\s+para\s+100%\s+do\s+risco[:\s]*R?\$?\s*([\d.,]+)/i,
+    // OU: 4.1 Prêmio NET de seguro para 100% do risco: R$ 49.343,34
+    const prNetRn = fullText.match(
+      /Pr[êe]mio\s+NET\s+de\s+seguro\s+para\s+100%\s+do\s+risco[:\s]*R?\$?\s*([\d.,]+)/i,
     )
-    if (prLiqRn) {
-      premioLiquido = parsePtBrNumber(prLiqRn[1])
+    if (prNetRn) {
+      // Quando for Prêmio NET explícito no 4.1 da AXA RN
+      // Deixar premioLiquido nulo/pendente
+      premioLiquido = null
+    } else {
+      const prLiqRn = fullText.match(
+        /Pr[êe]mio\s+LIQUIDO\s+de\s+seguro\s+para\s+100%\s+do\s+risco[:\s]*R?\$?\s*([\d.,]+)/i,
+      )
+      if (prLiqRn) {
+        premioLiquido = parsePtBrNumber(prLiqRn[1])
+      }
     }
 
     // Tabela de parcelamento (página 11):
@@ -1097,9 +1107,14 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
   }
 
   // Extração de Prêmio Net quando a proposta o apresentar (persistir em premio_net)
-  // Formatos comuns: "Prêmio Net[:\s]*R$ ...", "Premio Net[:\s]*...", "Prêmio sem comissão", etc.
+  // Formatos comuns:
+  // - "4.1 Prêmio NET de seguro para 100% do risco: R$ 49.343,34" (AXA RN com Net)
+  // - "Prêmio Net[:\s]*R$ ...", "Premio Net[:\s]*...", "Prêmio sem comissão", etc.
   let premioNetExtracted: number | null = null
   const prNetMatch =
+    fullText.match(
+      /Pr[êe]mio\s+NET\s+de\s+seguro\s+para\s+100%\s+do\s+risco[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
+    ) ||
     fullText.match(
       /Pr[êe]mio\s+Net(?:\s*\(sem\s+comiss[ãa]o\))?[:\s]*R?\$?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2})/i,
     ) ||
