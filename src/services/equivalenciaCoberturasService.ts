@@ -208,13 +208,43 @@ export async function listarSinonimos(): Promise<CoberturaSinonimoRecord[]> {
 
     // Deduplica em memória pelo critério de unicidade (alias normalizado + seguradora normalizada),
     // mantendo sempre o mais recentemente atualizado em caso de duplicatas residuais no banco.
+    // Também consolida e deduplica em memória eventos_excluidos e realocacoes_evento de cada registro.
     const mapaUnico = new Map<string, CoberturaSinonimoRecord>()
     for (const sin of todos) {
       const normAlias = normalizarTermoEquivalencia(sin.alias)
       const normSeg = normalizarTermoEquivalencia(sin.seguradora_nome || '')
       const chave = `${normAlias}___${normSeg}`
       if (!mapaUnico.has(chave)) {
-        mapaUnico.set(chave, sin)
+        const excluidosConsolidados = Array.from(
+          new Map(
+            (sin.eventos_excluidos || [])
+              .map((e) => e?.trim())
+              .filter(Boolean)
+              .map((e) => [normalizarTermoEquivalencia(e), e]),
+          ).values(),
+        )
+
+        const realocacoesConsolidadas = Array.from(
+          new Map(
+            (sin.realocacoes_evento || [])
+              .filter((r) => r && r.evento?.trim() && r.cobertura_destino?.trim())
+              .map((r) => {
+                const ev = r.evento.trim()
+                const dest = r.cobertura_destino.trim()
+                const rKey = `${normalizarTermoEquivalencia(ev)}___${normalizarTermoEquivalencia(dest)}`
+                return [
+                  rKey,
+                  { evento: ev, cobertura_destino: dest, motivo: r.motivo?.trim() || '' },
+                ]
+              }),
+          ).values(),
+        )
+
+        mapaUnico.set(chave, {
+          ...sin,
+          eventos_excluidos: excluidosConsolidados,
+          realocacoes_evento: realocacoesConsolidadas,
+        })
       }
     }
 
@@ -266,6 +296,30 @@ export async function salvarSinonimo(params: {
     }
   }
 
+  // Deduplicação de eventos excluídos
+  const eventosExcluidosLimpos = Array.from(
+    new Map(
+      (params.eventosExcluidos || [])
+        .map((e) => e?.trim())
+        .filter(Boolean)
+        .map((e) => [normalizarTermoEquivalencia(e), e]),
+    ).values(),
+  )
+
+  // Deduplicação de realocações: substitui a lista inteira e elimina duplicatas de mesmo evento e destino
+  const realocacoesLimpas = Array.from(
+    new Map(
+      (params.realocacoesEvento || [])
+        .filter((r) => r && r.evento?.trim() && r.cobertura_destino?.trim())
+        .map((r) => {
+          const ev = r.evento.trim()
+          const dest = r.cobertura_destino.trim()
+          const chave = `${normalizarTermoEquivalencia(ev)}___${normalizarTermoEquivalencia(dest)}`
+          return [chave, { evento: ev, cobertura_destino: dest, motivo: r.motivo?.trim() || '' }]
+        }),
+    ).values(),
+  )
+
   const payload = {
     alias: params.alias.trim(),
     seguradora: params.seguradoraId || null,
@@ -274,8 +328,8 @@ export async function salvarSinonimo(params: {
       ? null
       : params.coberturaCanonicaId || null,
     canonica_nome: params.canonicaNome.trim(),
-    eventos_excluidos: params.eventosExcluidos || [],
-    realocacoes_evento: params.realocacoesEvento || [],
+    eventos_excluidos: eventosExcluidosLimpos,
+    realocacoes_evento: realocacoesLimpas,
     observacao: params.observacao?.trim() || '',
   }
 
@@ -551,6 +605,64 @@ export interface AlertaDescobertaEvento {
   motivo?: string
 }
 
+/**
+ * Normaliza um evento para casamento semântico tolerante a variantes:
+ * minúsculas, remoção de acentos, pontuações (/ , - .) e espaços colapsados.
+ * Exemplos: "Anúncios Luminosos" -> "anuncios luminosos"
+ * "Anúncios/Letreiros Luminosos" -> "anuncios letreiros luminosos"
+ */
+export function normalizarEventoSemantico(str: string): string {
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[/\\.,;:_()-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Verifica se dois eventos são equivalentes ou variantes um do outro
+ * (ex: "Anúncios Luminosos" e "Anúncios/Letreiros Luminosos").
+ */
+export function eventosSaoEquivalentes(evA: string, evB: string): boolean {
+  const normA = normalizarEventoSemantico(evA)
+  const normB = normalizarEventoSemantico(evB)
+  if (!normA || !normB) return false
+  if (normA === normB) return true
+
+  // Substring mútua tolerante (ex: "anuncios luminosos" contido em "anuncios letreiros luminosos")
+  if (normA.includes(normB) || normB.includes(normA)) {
+    return true
+  }
+
+  // Similaridade de tokens (palavras significativas comuns)
+  const tokensA = normA
+    .split(' ')
+    .filter(
+      (t) =>
+        t.length > 2 && t !== 'para' && t !== 'com' && t !== 'sem' && t !== 'dos' && t !== 'das',
+    )
+  const tokensB = normB
+    .split(' ')
+    .filter(
+      (t) =>
+        t.length > 2 && t !== 'para' && t !== 'com' && t !== 'sem' && t !== 'dos' && t !== 'das',
+    )
+  if (tokensA.length > 0 && tokensB.length > 0) {
+    const inter = tokensA.filter((t) => tokensB.includes(t))
+    // Se compartilham pelo menos 2 tokens significativos ou se mais da metade dos tokens são comuns
+    if (
+      inter.length >= 2 ||
+      (inter.length >= 1 && (inter.length === tokensA.length || inter.length === tokensB.length))
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
 export function detectarEventosDescobertos(params: {
   propostaAtual: {
     seguradoraNome: string
@@ -603,50 +715,105 @@ export function detectarEventosDescobertos(params: {
   if (eventosCobertosNasOutras.length === 0) return []
 
   // 2. Verifica se a proposta ATUAL cobre esse evento
-  // Pode estar coberto na própria cobertura canônica ALVO ou ter sido REALOCADO para outra cobertura da mesma proposta atual!
+  // Pode estar coberto na própria cobertura canônica ALVO ou ter sido REALOCADO a partir de outra cobertura cotada da mesma cia!
   const cobAtualNaCanonica = propostaAtual.coberturasCasadas.find(
     (c) => normalizarTermoEquivalencia(c.canonica) === normCanonicaAlvo,
   )
 
-  // Eventos cobertos nesta mesma canônica na proposta atual
-  const eventosCobertosAqui = new Set<string>(
-    (cobAtualNaCanonica && Number(cobAtualNaCanonica.lmi || 0) > 0
+  // Eventos cobertos nesta mesma canônica na proposta atual (apenas se LMI > 0)
+  const eventosCobertosAquiLista: string[] =
+    cobAtualNaCanonica && Number(cobAtualNaCanonica.lmi || 0) > 0
       ? cobAtualNaCanonica.eventosEfetivos
       : []
-    ).map(normalizarTermoEquivalencia),
-  )
 
-  // Eventos que foram REALOCADOS para outra cobertura cotada da mesma cia na proposta atual
-  const eventosRealocadosComCobertura = new Set<string>()
+  // Lista de realocações vindas de coberturas que estão cotadas (LMI > 0) na proposta atual
+  // e que têm como destino esta canônica ALVO (ou qualquer cobertura de mesmo nome)
+  const realocacoesParaEstaCanonica: RealocacaoEventoItem[] = []
+  // E também lista geral de eventos realocados para qualquer cobertura cotada (LMI > 0)
+  const eventosRealocadosComCobertura: string[] = []
+
   for (const cob of propostaAtual.coberturasCasadas) {
+    const temLmiOrigem = Number(cob.lmi || 0) > 0
+    if (!temLmiOrigem) continue
+
     for (const realoc of cob.realocacoes) {
-      // Se a cobertura de destino existe e tem LMI > 0 nesta proposta atual
+      if (!realoc || !realoc.evento) continue
+
+      const normDestino = normalizarTermoEquivalencia(realoc.cobertura_destino || '')
+      // Destino casa com a canônica alvo?
+      const destinoCasaComCanonicaAlvo =
+        normDestino === normCanonicaAlvo ||
+        eventosSaoEquivalentes(realoc.cobertura_destino, canonicaAlvo)
+
+      if (destinoCasaComCanonicaAlvo) {
+        // A cobertura de origem tem LMI > 0, então este evento está ATIVAMENTE coberto pela cia e alocado aqui!
+        realocacoesParaEstaCanonica.push(realoc)
+      }
+
+      // Além disso, se o destino existe como cobertura cotada nesta proposta:
       const cobDestino = propostaAtual.coberturasCasadas.find(
         (c) =>
-          normalizarTermoEquivalencia(c.canonica) ===
-            normalizarTermoEquivalencia(realoc.cobertura_destino) ||
-          normalizarTermoEquivalencia(c.nomeOriginal) ===
-            normalizarTermoEquivalencia(realoc.cobertura_destino),
+          normalizarTermoEquivalencia(c.canonica) === normDestino ||
+          normalizarTermoEquivalencia(c.nomeOriginal) === normDestino,
       )
       if (cobDestino && Number(cobDestino.lmi || 0) > 0) {
-        eventosRealocadosComCobertura.add(normalizarTermoEquivalencia(realoc.evento))
+        eventosRealocadosComCobertura.push(realoc.evento)
       }
     }
   }
 
+  // Se a própria canônica alvo está sendo suprida por realocação com cobertura de origem ativa,
+  // ou seja, a cia realocou evento para esta canônica (ex: Allianz realocou "Anúncios Luminosos" para "Anúncios/Letreiros Luminosos"):
+  const temRealocacaoValidaParaCanonica = realocacoesParaEstaCanonica.length > 0
+
   // 3. Compara se algum evento coberto pelas outras ficou descoberto na proposta atual
   const descobertos: AlertaDescobertaEvento[] = []
-  const vistos = new Set<string>()
+  const vistosSemanticos = new Set<string>()
 
   for (const item of eventosCobertosNasOutras) {
-    const normEv = normalizarTermoEquivalencia(item.evento)
-    if (vistos.has(normEv)) continue
+    const evOutro = item.evento
+    const semKey = normalizarEventoSemantico(evOutro)
 
-    const cobertoAqui = eventosCobertosAqui.has(normEv)
-    const realocadoAqui = eventosRealocadosComCobertura.has(normEv)
+    // Deduplicação de variantes na mesma célula
+    let jaVisto = false
+    for (const visto of vistosSemanticos) {
+      if (eventosSaoEquivalentes(semKey, visto)) {
+        jaVisto = true
+        break
+      }
+    }
+    if (jaVisto) continue
 
-    if (!cobertoAqui && !realocadoAqui) {
-      vistos.add(normEv)
+    // Verifica se está coberto diretamente na canônica atual
+    const cobertoAquiDireto = eventosCobertosAquiLista.some((ev) =>
+      eventosSaoEquivalentes(ev, evOutro),
+    )
+
+    // Verifica se está coberto por evento realocado geral
+    const cobertoAquiRealocadoGeral = eventosRealocadosComCobertura.some((ev) =>
+      eventosSaoEquivalentes(ev, evOutro),
+    )
+
+    // Verifica se a própria canônica alvo tem evento realocado para ela da mesma cia
+    // (ex: a canônica de destino é "Anúncios/Letreiros Luminosos" e o evento realocado foi "Anúncios Luminosos"
+    // ou se qualquer realocação para esta canônica casa por variantes com o evento testado)
+    const cobertoPorRealocacaoCanonica = realocacoesParaEstaCanonica.some(
+      (r) =>
+        eventosSaoEquivalentes(r.evento, evOutro) ||
+        // Regra do pacto: evento realocado nunca gera 'Segurado descoberto' na cia que o realocou;
+        // qualquer evento coberto pelas outras nesta canônica alvo é satisfeito se a realocação para cá cobre a canônica
+        eventosSaoEquivalentes(r.cobertura_destino, canonicaAlvo) ||
+        eventosSaoEquivalentes(r.evento, canonicaAlvo),
+    )
+
+    const estaCoberto =
+      cobertoAquiDireto ||
+      cobertoAquiRealocadoGeral ||
+      cobertoPorRealocacaoCanonica ||
+      temRealocacaoValidaParaCanonica
+
+    if (!estaCoberto) {
+      vistosSemanticos.add(semKey)
       descobertos.push({
         evento: item.evento,
         ciaComCobertura: item.ciaComCobertura,

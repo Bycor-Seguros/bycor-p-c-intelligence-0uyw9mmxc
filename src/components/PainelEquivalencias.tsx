@@ -604,8 +604,12 @@ export function PainelEquivalencias({
                   type="button"
                   size="sm"
                   onClick={() => {
-                    if (!novoExcluido.trim()) return
-                    setSinEventosExcluidos((prev) => [...prev, novoExcluido.trim()])
+                    const texto = novoExcluido.trim()
+                    if (!texto) return
+                    setSinEventosExcluidos((prev) => {
+                      if (prev.some((x) => x.toLowerCase() === texto.toLowerCase())) return prev
+                      return [...prev, texto]
+                    })
                     setNovoExcluido('')
                   }}
                   className="h-7 text-xs bg-amber-800 text-white"
@@ -711,15 +715,25 @@ export function PainelEquivalencias({
                     type="button"
                     size="sm"
                     onClick={() => {
-                      if (!realocEvento.trim() || !realocDestino.trim()) return
-                      setSinRealocacoes((prev) => [
-                        ...prev,
-                        {
-                          evento: realocEvento.trim(),
-                          cobertura_destino: realocDestino.trim(),
-                          motivo: realocMotivo.trim(),
-                        },
-                      ])
+                      const ev = realocEvento.trim()
+                      const dest = realocDestino.trim()
+                      if (!ev || !dest) return
+                      setSinRealocacoes((prev) => {
+                        const chaveNova = `${ev.toLowerCase()}___${dest.toLowerCase()}`
+                        const semDuplicata = prev.filter(
+                          (r) =>
+                            `${r.evento.toLowerCase()}___${r.cobertura_destino.toLowerCase()}` !==
+                            chaveNova,
+                        )
+                        return [
+                          ...semDuplicata,
+                          {
+                            evento: ev,
+                            cobertura_destino: dest,
+                            motivo: realocMotivo.trim(),
+                          },
+                        ]
+                      })
                       setRealocEvento('')
                       setRealocDestino('')
                       setRealocMotivo('')

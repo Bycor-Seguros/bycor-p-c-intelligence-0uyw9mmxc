@@ -48,6 +48,7 @@ import {
   CoverageMatchResult,
   AlertaDescobertaEvento,
   derivarEventosTipicosPadrao,
+  normalizarTermoEquivalencia,
 } from '@/services/equivalenciaCoberturasService'
 
 interface PropostaCoverageItem {
@@ -277,11 +278,17 @@ export default function TabulacaoPage() {
 
   // Lista consolidada de coberturas canônicas presentes nas propostas comparadas
   // Garante que a tabulação SEMPRE compare pela cobertura canônica
+  // E também inclui coberturas de destino referenciadas em realocações ativas
   const categoriasCanonicasTabulacao = useMemo(() => {
     const set = new Set<string>()
     propostasComEquivalencia.forEach((p) => {
       p.coberturasCasadas.forEach((c) => {
         if (c.canonica) set.add(c.canonica)
+        if (c.realocacoes && c.realocacoes.length > 0) {
+          c.realocacoes.forEach((r) => {
+            if (r.cobertura_destino) set.add(r.cobertura_destino)
+          })
+        }
       })
     })
 
@@ -1025,8 +1032,30 @@ export default function TabulacaoPage() {
                         {/* Células das Propostas Comparadas */}
                         {propostasComEquivalencia.map((pe) => {
                           const covMatch = pe.coberturasCasadas.find(
-                            (c) => c.canonica === canonicaNome,
+                            (c) =>
+                              c.canonica === canonicaNome ||
+                              normalizarTermoEquivalencia(c.canonica) ===
+                                normalizarTermoEquivalencia(canonicaNome),
                           )
+
+                          // Se a cobertura não foi cotada como canônica direta nesta proposta,
+                          // mas a proposta possui outra cobertura com evento realocado para esta canônica de destino:
+                          const realocacaoParaCa = !covMatch
+                            ? pe.coberturasCasadas
+                                .filter((c) => Number(c.lmi || 0) > 0)
+                                .flatMap((c) =>
+                                  (c.realocacoes || [])
+                                    .filter(
+                                      (r) =>
+                                        normalizarTermoEquivalencia(r.cobertura_destino || '') ===
+                                        normalizarTermoEquivalencia(canonicaNome),
+                                    )
+                                    .map((r) => ({
+                                      realocacao: r,
+                                      coberturaOrigem: c,
+                                    })),
+                                )
+                            : []
 
                           // Análise de Descoberta por Evento:
                           // Compara eventos cobertos em outras propostas com a proposta atual
@@ -1155,6 +1184,60 @@ export default function TabulacaoPage() {
                                         <div
                                           key={aIdx}
                                           className="p-1.5 rounded bg-red-50 border border-red-300 text-red-900 text-[10.5px] font-bold flex items-start gap-1.5 animate-pulse"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                                          <div className="leading-tight">
+                                            <span>Segurado descoberto: {alerta.evento}</span>
+                                            <div className="text-[9.5px] font-normal text-red-700 mt-0.5">
+                                              (coberto por {alerta.ciaComCobertura})
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : realocacaoParaCa.length > 0 ? (
+                                <div className="space-y-1.5">
+                                  {/* Cobertura suprida via realocação de evento de outra cobertura cotada */}
+                                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                                    <div className="font-extrabold text-gray-900 tabular-nums text-xs">
+                                      {formatCurrency(realocacaoParaCa[0].coberturaOrigem.lmi || 0)}
+                                    </div>
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-900 border border-purple-200"
+                                      title={`Coberto via realocação do evento "${realocacaoParaCa[0].realocacao.evento}" a partir de "${realocacaoParaCa[0].coberturaOrigem.nomeOriginal}"`}
+                                    >
+                                      <Split className="w-2.5 h-2.5 text-purple-700" />
+                                      Via realocação Cia
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[10px] text-purple-900 bg-purple-50/70 p-1.5 rounded border border-purple-200 leading-tight">
+                                    <span className="text-purple-700 font-medium block">
+                                      Coberto via pacote:
+                                    </span>
+                                    <strong className="text-gray-900 block mt-0.5">
+                                      {realocacaoParaCa[0].coberturaOrigem.nomeOriginal}
+                                    </strong>
+                                    <span className="text-[9.5px] text-purple-800 italic block mt-0.5">
+                                      Evento "{realocacaoParaCa[0].realocacao.evento}" realocado
+                                    </span>
+                                  </div>
+
+                                  {realocacaoParaCa[0].coberturaOrigem.franquia && (
+                                    <div className="text-[10px] text-gray-500">
+                                      Franquia: {realocacaoParaCa[0].coberturaOrigem.franquia}
+                                    </div>
+                                  )}
+
+                                  {/* Alertas de descoberta residuais se houver algum outro evento não contemplado */}
+                                  {alertasDescoberta.length > 0 && (
+                                    <div className="space-y-1 pt-0.5">
+                                      {alertasDescoberta.map((alerta, aIdx) => (
+                                        <div
+                                          key={aIdx}
+                                          className="p-1.5 rounded bg-red-50 border border-red-300 text-red-900 text-[10.5px] font-bold flex items-start gap-1.5"
                                         >
                                           <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
                                           <div className="leading-tight">

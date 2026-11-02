@@ -1261,6 +1261,147 @@ export async function runAllSuites() {
   )
 
   // =========================================================================
+  // SUITE D: EQUIVALÊNCIAS, REALOCAÇÃO E DETECÇÃO DE DESCOBERTA (C3)
+  // =========================================================================
+  console.log('\nSUITE D: Equivalências de Coberturas & Detecção de Descoberta (C3)')
+
+  runTest(
+    'C3 Equivalências',
+    'normalizarEventoSemantico e eventosSaoEquivalentes casam variantes de nomenclatura (ex: Anúncios Luminosos vs Anúncios/Letreiros Luminosos)',
+    async () => {
+      const { eventosSaoEquivalentes, normalizarEventoSemantico } =
+        await import('../equivalenciaCoberturasService')
+      assertEqual(
+        normalizarEventoSemantico('Anúncios/Letreiros Luminosos'),
+        'anuncios letreiros luminosos',
+        'Normalização de pontuações e acentos',
+      )
+      assertEqual(
+        normalizarEventoSemantico('Anúncios Luminosos'),
+        'anuncios luminosos',
+        'Normalização do evento simples',
+      )
+      assert(
+        eventosSaoEquivalentes('Anúncios Luminosos', 'Anúncios/Letreiros Luminosos'),
+        'Anúncios Luminosos deve ser equivalente a Anúncios/Letreiros Luminosos',
+      )
+      assert(
+        eventosSaoEquivalentes('Anúncios/Letreiros Luminosos', 'Anúncios Luminosos'),
+        'Comutativo: Anúncios/Letreiros Luminosos equivalente a Anúncios Luminosos',
+      )
+      assert(eventosSaoEquivalentes('Danos Elétricos', 'Danos Eletricos'), 'Tolerância a acentos')
+      assert(!eventosSaoEquivalentes('Incêndio', 'Vendaval'), 'Eventos distintos não casam')
+    },
+  )
+
+  runTest(
+    'C3 Equivalências',
+    'detectarEventosDescobertos não aponta descoberto para seguradora que cobre o evento via realocação (Allianz x AXA)',
+    async () => {
+      const { detectarEventosDescobertos } = await import('../equivalenciaCoberturasService')
+
+      // Cenário exato da tarefa:
+      // AXA tem a cobertura canônica "Anúncios/Letreiros Luminosos" cotada com LMI 200.000,00 e eventos ["Anúncios/Letreiros Luminosos"].
+      // Allianz não tem a linha "Anúncios/Letreiros Luminosos" cotada diretamente, mas tem a cobertura "Quebra de Vidros e Anúncios Luminosos e Mármores"
+      // cotada (LMI 52.500) com evento "Anúncios Luminosos" realocado para "Anúncios/Letreiros Luminosos".
+      const propostaAllianz = {
+        seguradoraNome: 'Allianz Seguros S.A.',
+        coberturasCasadas: [
+          {
+            canonica: 'Quebra de Vidros/Espelhos/Mármores',
+            nomeOriginal: 'Quebra de Vidros e Anúncios Luminosos e Mármores',
+            lmi: 52500,
+            eventosEfetivos: ['Quebra de Vidros', 'Quebra de Mármores'],
+            realocacoes: [
+              {
+                evento: 'Anúncios Luminosos',
+                cobertura_destino: 'Anúncios/Letreiros Luminosos',
+              },
+            ],
+          },
+        ],
+      }
+
+      const propostaAxa = {
+        seguradoraNome: 'AXA Seguros S.A.',
+        coberturasCasadas: [
+          {
+            canonica: 'Anúncios/Letreiros Luminosos',
+            nomeOriginal: 'Anúncios E Letreiros Luminosos',
+            lmi: 200000,
+            eventosEfetivos: ['Anúncios/Letreiros Luminosos'],
+            realocacoes: [],
+          },
+        ],
+      }
+
+      const alertasAllianz = detectarEventosDescobertos({
+        propostaAtual: propostaAllianz,
+        outrasPropostas: [propostaAxa],
+        canonicaAlvo: 'Anúncios/Letreiros Luminosos',
+      })
+
+      assertEqual(
+        alertasAllianz.length,
+        0,
+        'Allianz não deve ter alerta de descoberto porque cobre o evento via realocação',
+      )
+    },
+  )
+
+  runTest(
+    'C3 Equivalências',
+    'detectarEventosDescobertos deduplica variantes do mesmo evento na mesma célula',
+    async () => {
+      const { detectarEventosDescobertos } = await import('../equivalenciaCoberturasService')
+
+      // Duas outras cias cobrindo variantes de nomenclatura do mesmo evento em propostas sem cobertura da proposta atual
+      const propostaSemCobertura = {
+        seguradoraNome: 'Cia Teste',
+        coberturasCasadas: [],
+      }
+
+      const outraA = {
+        seguradoraNome: 'AXA Seguros S.A.',
+        coberturasCasadas: [
+          {
+            canonica: 'Anúncios/Letreiros Luminosos',
+            nomeOriginal: 'Anúncios/Letreiros Luminosos',
+            lmi: 100000,
+            eventosEfetivos: ['Anúncios/Letreiros Luminosos'],
+            realocacoes: [],
+          },
+        ],
+      }
+
+      const outraB = {
+        seguradoraNome: 'Porto Seguro',
+        coberturasCasadas: [
+          {
+            canonica: 'Anúncios/Letreiros Luminosos',
+            nomeOriginal: 'Anúncios Luminosos',
+            lmi: 100000,
+            eventosEfetivos: ['Anúncios Luminosos'],
+            realocacoes: [],
+          },
+        ],
+      }
+
+      const alertas = detectarEventosDescobertos({
+        propostaAtual: propostaSemCobertura,
+        outrasPropostas: [outraA, outraB],
+        canonicaAlvo: 'Anúncios/Letreiros Luminosos',
+      })
+
+      assertEqual(
+        alertas.length,
+        1,
+        'Mesmo evento com variantes de nome não deve duplicar alerta na mesma célula',
+      )
+    },
+  )
+
+  // =========================================================================
   // RESUMO DA EXECUÇÃO
   // =========================================================================
   console.log('\n-----------------------------------------------------------------')
