@@ -30,9 +30,7 @@ function run() {
   const files = fs.readdirSync(assetsDir)
   const tokioFile = files.find(
     (f) =>
-      f.includes('diagnostico-fragmentos') &&
-      f.includes('tokiobtfortaleza') &&
-      f.endsWith('.json'),
+      f.includes('diagnostico-fragmentos') && f.includes('tokiobtfortaleza') && f.endsWith('.json'),
   )
 
   if (!tokioFile) return

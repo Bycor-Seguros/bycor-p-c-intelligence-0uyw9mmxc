@@ -160,7 +160,9 @@ export function validatePptxOpenXml(data: PptxPresentationData): PptxValidationR
 
   if (tableStylesRaw) {
     if (!tableStylesXml.includes('<a:tblStyle ')) {
-      errors.push('tableStyles.xml não define nenhuma entrada <a:tblStyle>, causando reparo ao renderizar tabelas')
+      errors.push(
+        'tableStyles.xml não define nenhuma entrada <a:tblStyle>, causando reparo ao renderizar tabelas',
+      )
     }
   }
 
