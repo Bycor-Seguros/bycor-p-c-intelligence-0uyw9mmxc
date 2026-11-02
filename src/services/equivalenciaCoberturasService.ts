@@ -6,6 +6,7 @@ export interface CoberturaCanonicaRecord {
   nome: string
   ramo?: string
   descricao?: string
+  origem_matriz?: string
   eventos_tipicos?: string[]
   ordem?: number
   created?: string
@@ -94,8 +95,22 @@ export async function listarTaxonomiaCanonicas(): Promise<CoberturaCanonicaRecor
     console.warn('Erro ao carregar coberturas_canonicas:', err)
   }
 
-  // Conjunto dos nomes já existentes em `coberturas_canonicas`
-  const nomesExistentes = new Set(canonicasDb.map((c) => normalizarTermoEquivalencia(c.nome)))
+  // Conjuntos para deduplicação robusta:
+  // 1. Nomes atuais das canônicas
+  // 2. Nomes de origem da matriz persistidos no campo `origem_matriz`
+  // 3. Casos históricos conhecidos (ex: "Danos por Água" que substituiu "Danos por Água / Sprinklers")
+  const nomesExistentes = new Set<string>()
+  for (const c of canonicasDb) {
+    if (c.nome) nomesExistentes.add(normalizarTermoEquivalencia(c.nome))
+    if (c.origem_matriz) nomesExistentes.add(normalizarTermoEquivalencia(c.origem_matriz))
+
+    // Heurística de segurança para transição: se existe "Danos por Água", nunca ressuscitar "Danos por Água / Sprinklers"
+    const normNome = normalizarTermoEquivalencia(c.nome)
+    if (normNome === normalizarTermoEquivalencia('Danos por Água')) {
+      nomesExistentes.add(normalizarTermoEquivalencia('Danos por Água / Sprinklers'))
+      nomesExistentes.add(normalizarTermoEquivalencia('Danos por Agua / Sprinklers'))
+    }
+  }
 
   // Consulta matriz existente no banco para ler as categorias normalizadas
   try {
@@ -109,13 +124,14 @@ export async function listarTaxonomiaCanonicas(): Promise<CoberturaCanonicaRecor
     )
 
     // Para cada categoria encontrada na matriz que ainda não esteja explicitamente cadastrada em `coberturas_canonicas`,
-    // adiciona um item virtual (ou cadastrável no banco pelo painel)
+    // adiciona um item virtual
     for (const catMatriz of categoriasMatrizDistintas) {
       const norm = normalizarTermoEquivalencia(catMatriz)
       if (!nomesExistentes.has(norm)) {
         canonicasDb.push({
           id: `matriz_${norm}`,
           nome: catMatriz,
+          origem_matriz: catMatriz,
           descricao: 'Importada da Matriz de Mercado',
           eventos_tipicos: derivarEventosTipicosPadrao(catMatriz),
           ordem: 999,
@@ -186,9 +202,23 @@ export function derivarEventosTipicosPadrao(nomeCobertura: string): string[] {
  */
 export async function listarSinonimos(): Promise<CoberturaSinonimoRecord[]> {
   try {
-    return await pb.collection('cobertura_sinonimos').getFullList<CoberturaSinonimoRecord>({
-      sort: '-created',
+    const todos = await pb.collection('cobertura_sinonimos').getFullList<CoberturaSinonimoRecord>({
+      sort: '-updated,-created',
     })
+
+    // Deduplica em memória pelo critério de unicidade (alias normalizado + seguradora normalizada),
+    // mantendo sempre o mais recentemente atualizado em caso de duplicatas residuais no banco.
+    const mapaUnico = new Map<string, CoberturaSinonimoRecord>()
+    for (const sin of todos) {
+      const normAlias = normalizarTermoEquivalencia(sin.alias)
+      const normSeg = normalizarTermoEquivalencia(sin.seguradora_nome || '')
+      const chave = `${normAlias}___${normSeg}`
+      if (!mapaUnico.has(chave)) {
+        mapaUnico.set(chave, sin)
+      }
+    }
+
+    return Array.from(mapaUnico.values())
   } catch (err) {
     console.warn('Erro ao carregar cobertura_sinonimos:', err)
     return []
@@ -196,9 +226,13 @@ export async function listarSinonimos(): Promise<CoberturaSinonimoRecord[]> {
 }
 
 /**
- * Grava ou atualiza um sinônimo de cobertura de uma seguradora (ou global)
+ * Grava ou atualiza um sinônimo de cobertura de uma seguradora (ou global).
+ * Critério de unicidade: alias normalizado + seguradora normalizada (vazio = Global).
+ * Se o parâmetro `id` for fornecido (edição no painel), atualiza o registro diretamente
+ * mesmo que o usuário troque entre Global e uma seguradora específica.
  */
 export async function salvarSinonimo(params: {
+  id?: string
   alias: string
   seguradoraId?: string
   seguradoraNome?: string
@@ -211,19 +245,25 @@ export async function salvarSinonimo(params: {
   const normAlias = normalizarTermoEquivalencia(params.alias)
   const normSeg = normalizarTermoEquivalencia(params.seguradoraNome || '')
 
-  // Procura se já existe um sinônimo para este alias + seguradora
-  let existente: CoberturaSinonimoRecord | null = null
-  try {
-    const list = await pb.collection('cobertura_sinonimos').getFullList<CoberturaSinonimoRecord>({
-      filter: `alias = "${params.alias.replace(/"/g, '\\"')}"`,
-    })
-    existente =
-      list.find((s) => {
+  // Procura se já existe um sinônimo para este alias + seguradora ou pelo ID direto
+  let existenteId = params.id || null
+
+  if (!existenteId) {
+    try {
+      const allSins = await pb
+        .collection('cobertura_sinonimos')
+        .getFullList<CoberturaSinonimoRecord>()
+      const match = allSins.find((s) => {
+        const sAlias = normalizarTermoEquivalencia(s.alias)
         const sSeg = normalizarTermoEquivalencia(s.seguradora_nome || '')
-        return sSeg === normSeg || (!sSeg && !normSeg)
-      }) || null
-  } catch {
-    // ignore
+        return sAlias === normAlias && (sSeg === normSeg || (!sSeg && !normSeg))
+      })
+      if (match) {
+        existenteId = match.id
+      }
+    } catch {
+      // ignore
+    }
   }
 
   const payload = {
@@ -239,10 +279,10 @@ export async function salvarSinonimo(params: {
     observacao: params.observacao?.trim() || '',
   }
 
-  if (existente) {
+  if (existenteId) {
     return await pb
       .collection('cobertura_sinonimos')
-      .update<CoberturaSinonimoRecord>(existente.id, payload)
+      .update<CoberturaSinonimoRecord>(existenteId, payload)
   }
   return await pb.collection('cobertura_sinonimos').create<CoberturaSinonimoRecord>(payload)
 }
@@ -253,25 +293,82 @@ export async function salvarSinonimo(params: {
 export async function salvarCoberturaCanonica(params: {
   id?: string
   nome: string
+  origemMatriz?: string
   ramo?: string
   descricao?: string
   eventosTipicos: string[]
   ordem?: number
 }): Promise<CoberturaCanonicaRecord> {
-  const payload = {
-    nome: params.nome.trim(),
+  const novoNome = params.nome.trim()
+  const payload: Record<string, any> = {
+    nome: novoNome,
     ramo: params.ramo?.trim() || 'Patrimonial',
     descricao: params.descricao?.trim() || '',
     eventos_tipicos: params.eventosTipicos.map((e) => e.trim()).filter(Boolean),
     ordem: params.ordem ?? 100,
   }
+  if (params.origemMatriz) {
+    payload.origem_matriz = params.origemMatriz.trim()
+  }
 
+  let canonicaSalva: CoberturaCanonicaRecord
+
+  // Se for edição de registro real já existente
   if (params.id && !params.id.startsWith('matriz_')) {
-    return await pb
+    const anterior = await pb
+      .collection('coberturas_canonicas')
+      .getOne<CoberturaCanonicaRecord>(params.id)
+    canonicaSalva = await pb
       .collection('coberturas_canonicas')
       .update<CoberturaCanonicaRecord>(params.id, payload)
+
+    // Se o nome foi alterado, atualiza em cascata os sinônimos que apontavam para este ID ou para o nome anterior
+    if (anterior.nome !== novoNome) {
+      await sincronizarNomeCanonicaNosSinonimos(canonicaSalva.id, novoNome, anterior.nome)
+    }
+  } else {
+    // Se o ID vinha como virtual da matriz (ex: 'matriz_danos_por_agua_sprinklers')
+    // ou se foi informada origemMatriz, garantimos gravar origem_matriz para nunca ressuscitar
+    if (params.id?.startsWith('matriz_') && !payload.origem_matriz) {
+      // Extrai ou usa o próprio nome como origem_matriz
+      payload.origem_matriz = params.origemMatriz || novoNome
+    }
+    canonicaSalva = await pb
+      .collection('coberturas_canonicas')
+      .create<CoberturaCanonicaRecord>(payload)
   }
-  return await pb.collection('coberturas_canonicas').create<CoberturaCanonicaRecord>(payload)
+
+  return canonicaSalva
+}
+
+/**
+ * Atualiza o campo `canonica_nome` em todos os sinônimos que apontam para esta canônica (por ID ou pelo nome anterior)
+ */
+async function sincronizarNomeCanonicaNosSinonimos(
+  canonicaId: string,
+  novoNome: string,
+  nomeAnterior?: string,
+): Promise<void> {
+  try {
+    const sinonimos = await pb
+      .collection('cobertura_sinonimos')
+      .getFullList<CoberturaSinonimoRecord>()
+    const normAnterior = nomeAnterior ? normalizarTermoEquivalencia(nomeAnterior) : ''
+
+    for (const sin of sinonimos) {
+      const casaPorId = sin.cobertura_canonica === canonicaId
+      const casaPorNome =
+        normAnterior && normalizarTermoEquivalencia(sin.canonica_nome || '') === normAnterior
+      if (casaPorId || casaPorNome) {
+        await pb.collection('cobertura_sinonimos').update(sin.id, {
+          cobertura_canonica: canonicaId,
+          canonica_nome: novoNome,
+        })
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso: falha ao sincronizar sinônimos ao renomear canônica:', err)
+  }
 }
 
 /**
@@ -322,14 +419,18 @@ export function casarCoberturaComCanonica(
     )
   })
   if (sinCia) {
-    const canRec = canonicas.find(
-      (c) =>
+    // Casamento prioritário por ID da canônica; fallback para o nome se não houver ID gravado
+    const canRec = canonicas.find((c) => {
+      if (sinCia.cobertura_canonica && c.id === sinCia.cobertura_canonica) return true
+      return (
         normalizarTermoEquivalencia(c.nome) ===
-        normalizarTermoEquivalencia(sinCia.canonica_nome || ''),
-    )
+        normalizarTermoEquivalencia(sinCia.canonica_nome || '')
+      )
+    })
+    const nomeDestino = canRec?.nome || sinCia.canonica_nome || raw
     const baseEventos = canRec?.eventos_tipicos?.length
       ? canRec.eventos_tipicos
-      : derivarEventosTipicosPadrao(sinCia.canonica_nome || '')
+      : derivarEventosTipicosPadrao(nomeDestino)
     const excluidos = sinCia.eventos_excluidos || []
     const efetivos = baseEventos.filter(
       (ev) =>
@@ -339,7 +440,7 @@ export function casarCoberturaComCanonica(
     )
 
     return {
-      canonica: sinCia.canonica_nome || raw,
+      canonica: nomeDestino,
       canonicaId: canRec?.id,
       matchType: 'sinonimo_cia',
       sinonimo: sinCia,
@@ -355,14 +456,18 @@ export function casarCoberturaComCanonica(
     return sAlias === normOriginal && !s.seguradora_nome
   })
   if (sinGlobal) {
-    const canRec = canonicas.find(
-      (c) =>
+    // Casamento prioritário por ID da canônica; fallback para o nome se não houver ID gravado
+    const canRec = canonicas.find((c) => {
+      if (sinGlobal.cobertura_canonica && c.id === sinGlobal.cobertura_canonica) return true
+      return (
         normalizarTermoEquivalencia(c.nome) ===
-        normalizarTermoEquivalencia(sinGlobal.canonica_nome || ''),
-    )
+        normalizarTermoEquivalencia(sinGlobal.canonica_nome || '')
+      )
+    })
+    const nomeDestino = canRec?.nome || sinGlobal.canonica_nome || raw
     const baseEventos = canRec?.eventos_tipicos?.length
       ? canRec.eventos_tipicos
-      : derivarEventosTipicosPadrao(sinGlobal.canonica_nome || '')
+      : derivarEventosTipicosPadrao(nomeDestino)
     const excluidos = sinGlobal.eventos_excluidos || []
     const efetivos = baseEventos.filter(
       (ev) =>
@@ -372,7 +477,7 @@ export function casarCoberturaComCanonica(
     )
 
     return {
-      canonica: sinGlobal.canonica_nome || raw,
+      canonica: nomeDestino,
       canonicaId: canRec?.id,
       matchType: 'sinonimo_global',
       sinonimo: sinGlobal,

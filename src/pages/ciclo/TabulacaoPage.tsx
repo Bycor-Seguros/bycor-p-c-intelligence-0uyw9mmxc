@@ -361,6 +361,8 @@ export default function TabulacaoPage() {
     try {
       setSalvandoMapeamento(true)
 
+      let canRec = canonicas.find((c) => c.nome === destinoCanonica)
+
       // Se o analista escolheu criar uma nova cobertura canônica
       if (criandoNovaCanonica && novaCanonicaNome.trim()) {
         const criada = await salvarCoberturaCanonica({
@@ -369,6 +371,7 @@ export default function TabulacaoPage() {
           eventosTipicos: derivarEventosTipicosPadrao(novaCanonicaNome.trim()),
         })
         destinoCanonica = criada.nome
+        canRec = criada
       }
 
       if (!destinoCanonica) {
@@ -382,6 +385,7 @@ export default function TabulacaoPage() {
         seguradoraId: seguradoraIdDoAlias,
         seguradoraNome: seguradoraDoAlias.trim(),
         canonicaNome: destinoCanonica.trim(),
+        coberturaCanonicaId: canRec?.id,
         eventosExcluidos: eventosExcluidosModal,
         observacao: `Mapeado pelo analista na Tabulação C3`,
       })

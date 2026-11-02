@@ -76,6 +76,7 @@ export function PainelEquivalencias({
   const [canNome, setCanNome] = useState('')
   const [canDescricao, setCanDescricao] = useState('')
   const [canRamo, setCanRamo] = useState('Patrimonial')
+  const [canOrigemMatriz, setCanOrigemMatriz] = useState('')
   const [canEventos, setCanEventos] = useState<string[]>([])
   const [novoEventoCan, setNovoEventoCan] = useState('')
   const [salvandoCan, setSalvandoCan] = useState(false)
@@ -137,12 +138,14 @@ export function PainelEquivalencias({
       setCanNome(can.nome)
       setCanDescricao(can.descricao || '')
       setCanRamo(can.ramo || 'Patrimonial')
+      setCanOrigemMatriz(can.origem_matriz || (can.id.startsWith('matriz_') ? can.nome : ''))
       setCanEventos(can.eventos_tipicos || derivarEventosTipicosPadrao(can.nome))
     } else {
       setEditCanonicaId(null)
       setCanNome('')
       setCanDescricao('')
       setCanRamo('Patrimonial')
+      setCanOrigemMatriz('')
       setCanEventos([])
     }
     setNovoEventoCan('')
@@ -159,6 +162,7 @@ export function PainelEquivalencias({
       setSalvandoSin(true)
       const canRec = canonicas.find((c) => c.nome === sinCanonicaNome)
       await salvarSinonimo({
+        id: editSinonimoId || undefined,
         alias: sinAlias.trim(),
         seguradoraNome: sinSeguradora.trim(),
         canonicaNome: sinCanonicaNome.trim(),
@@ -187,6 +191,7 @@ export function PainelEquivalencias({
       await salvarCoberturaCanonica({
         id: editCanonicaId || undefined,
         nome: canNome.trim(),
+        origemMatriz: canOrigemMatriz || undefined,
         descricao: canDescricao.trim(),
         ramo: canRamo.trim(),
         eventosTipicos: canEventos.length > 0 ? canEventos : derivarEventosTipicosPadrao(canNome),

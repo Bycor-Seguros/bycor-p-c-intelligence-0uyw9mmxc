@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T23:31:30.296Z",
+  "generatedAt": "2026-11-02T16:53:10.387Z",
   "collections": [
     {
       "name": "users",
@@ -2345,6 +2345,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "origem_matriz",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_cob_canonicas_nome ON coberturas_canonicas (nome)"]
