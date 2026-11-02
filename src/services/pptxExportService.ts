@@ -290,7 +290,21 @@ ${sldIdListXml.join('\r\n')}
   files.push({
     name: 'ppt/tableStyles.xml',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>`,
+<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}">
+  <a:tblStyle styleId="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}" styleName="Medium Style 2 - Accent 1">
+    <a:wholeTbl>
+      <a:tcTxStyle><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef><a:schemeClr val="tx1"/></a:tcTxStyle>
+      <a:tcStyle><a:tcBorders/><a:fill><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:fill></a:tcStyle>
+    </a:wholeTbl>
+    <a:band1H>
+      <a:tcStyle><a:tcBorders/><a:fill><a:solidFill><a:schemeClr val="bg2"/></a:solidFill></a:fill></a:tcStyle>
+    </a:band1H>
+    <a:firstRow>
+      <a:tcTxStyle b="on"><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef><a:schemeClr val="lt1"/></a:tcTxStyle>
+      <a:tcStyle><a:tcBorders/><a:fill><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:fill></a:tcStyle>
+    </a:firstRow>
+  </a:tblStyle>
+</a:tblStyleLst>`,
   })
 
   // 10. ppt/theme/theme1.xml
@@ -430,6 +444,9 @@ ${sldIdListXml.join('\r\n')}
           <a:solidFill><a:srgbClr val="0F2B46"/></a:solidFill>
           <a:ln w="12700"><a:solidFill><a:srgbClr val="16578B"/></a:solidFill></a:ln>
         </p:spPr>
+        <p:txBody>
+          <a:bodyPr/><a:lstStyle/><a:p/>
+        </p:txBody>
       </p:sp>
       <!-- Tag Bycor -->
       <p:sp>
@@ -491,6 +508,7 @@ ${sldIdListXml.join('\r\n')}
       </p:sp>
     </p:spTree>
   </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`,
   })
 
@@ -671,6 +689,7 @@ ${sldIdListXml.join('\r\n')}
       </p:sp>
     </p:spTree>
   </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`,
   })
 
@@ -886,7 +905,9 @@ ${sldIdListXml.join('\r\n')}
         <a:graphic>
           <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
             <a:tbl>
-              <a:tblPr/>
+              <a:tblPr firstRow="1" bandRow="1">
+                <a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId>
+              </a:tblPr>
               <a:tblGrid>
                 <a:gridCol w="5120640"/>
                 <a:gridCol w="2743200"/>
@@ -899,6 +920,7 @@ ${sldIdListXml.join('\r\n')}
       </p:graphicFrame>
     </p:spTree>
   </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`,
     })
   })
@@ -993,6 +1015,7 @@ ${sldIdListXml.join('\r\n')}
       </p:sp>
     </p:spTree>
   </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`,
   })
 

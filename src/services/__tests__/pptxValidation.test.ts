@@ -1,14 +1,18 @@
 /**
- * Teste unitário e de conformidade do gerador de PPTX OpenXML (pptxExportService).
- * Valida se o pacote binário ZIP gerado contém todos os requisitos necessários
- * para que o Microsoft PowerPoint abra sem avisos de reparo ou recuperação:
+ * Teste unitário e de conformidade estrutural do gerador de PPTX OpenXML (pptxExportService).
+ * Valida com rigor absoluto os requisitos do Microsoft PowerPoint para Mac e PC segundo a ECMA-376:
+ *
  * 1. Arquivo ZIP PKWARE válido (assinatura 0x04034b50, headers STORE, timestamps válidos)
- * 2. [Content_Types].xml presente com todas as extensões e overrides corretos
+ * 2. [Content_Types].xml presente com todas as extensões e overrides canônicos
  * 3. _rels/.rels com officeDocument apontando para ppt/presentation.xml
  * 4. ppt/presentation.xml com p:defaultTextStyle e tamanhos de slide
  * 5. ppt/presProps.xml, ppt/viewProps.xml e ppt/tableStyles.xml presentes
- * 6. ppt/slideMasters/slideMaster1.xml com p:txStyles estruturado (titleStyle, bodyStyle, otherStyle)
- * 7. Todos os XMLs bem formados e válidos
+ * 6. ppt/tableStyles.xml define o estilo padrão com a:tblStyle correspondente ao def="{...}"
+ * 7. ppt/slideMasters/slideMaster1.xml com p:txStyles estruturado (titleStyle, bodyStyle, otherStyle)
+ * 8. Todos os slides possuem <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr> (requisito do PowerPoint Mac / Keynote / iOS)
+ * 9. Tabelas DrawingML (<a:tbl>) possuem <a:tblPr> com <a:tableStyleId> válido referenciando o tableStyles.xml
+ * 10. Todos os shapes (<p:sp>) possuem <p:txBody> com estrutura válida
+ * 11. Todos os XMLs bem formados, com cabeçalho padrão e tags raiz balanceadas
  */
 import { generatePresentationPptx, PptxPresentationData } from '../pptxExportService'
 
@@ -18,7 +22,7 @@ export interface PptxValidationResult {
   partCount: number
 }
 
-// Leitor simples de entradas ZIP em TypeScript/Node para validar o pacote gerado
+// Leitor simples de entradas ZIP em TypeScript sem dependência de módulos de SO
 function unzipEntries(zipBuffer: Uint8Array): Map<string, Uint8Array> {
   const entries = new Map<string, Uint8Array>()
   let pos = 0
@@ -27,10 +31,8 @@ function unzipEntries(zipBuffer: Uint8Array): Map<string, Uint8Array> {
   while (pos + 30 <= zipBuffer.length) {
     const sig = view.getUint32(pos, true)
     if (sig !== 0x04034b50) {
-      // Chegou no diretório central ou fim dos headers locais
       break
     }
-    const compMethod = view.getUint16(pos + 8, true)
     const compSize = view.getUint32(pos + 18, true)
     const nameLen = view.getUint16(pos + 26, true)
     const extraLen = view.getUint16(pos + 28, true)
@@ -149,14 +151,66 @@ export function validatePptxOpenXml(data: PptxPresentationData): PptxValidationR
     }
   }
 
-  // 6. Integridade de tags fechadas em todos os XMLs
+  // 6. Rigor específico para PowerPoint para Mac:
+  // a) Todos os slides devem conter p:clrMapOvr com a:masterClrMapping
+  // b) Tabelas devem ter tableStyleId definido e presente no tableStyles.xml
+  // c) Shapes devem conter p:txBody válido
+  const tableStylesRaw = entries.get('ppt/tableStyles.xml')
+  const tableStylesXml = tableStylesRaw ? decoder.decode(tableStylesRaw) : ''
+
+  if (tableStylesRaw) {
+    if (!tableStylesXml.includes('<a:tblStyle ')) {
+      errors.push('tableStyles.xml não define nenhuma entrada <a:tblStyle>, causando reparo ao renderizar tabelas')
+    }
+  }
+
+  entries.forEach((raw, name) => {
+    if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
+      const slideXml = decoder.decode(raw)
+
+      // Verifica clrMapOvr
+      if (!slideXml.includes('<p:clrMapOvr>')) {
+        errors.push(`Slide ${name} não contém <p:clrMapOvr> (exigido por PowerPoint Mac e Keynote)`)
+      } else if (!slideXml.includes('<a:masterClrMapping/>')) {
+        errors.push(`Slide ${name} contém <p:clrMapOvr> mas não declara <a:masterClrMapping/>`)
+      }
+
+      // Se contém tabela DrawingML, valida integridade da tabela
+      if (slideXml.includes('<a:tbl>')) {
+        if (!slideXml.includes('<a:tableStyleId>')) {
+          errors.push(`Slide ${name} contém <a:tbl> sem <a:tableStyleId> dentro de <a:tblPr>`)
+        } else {
+          const matchStyleId = slideXml.match(/<a:tableStyleId>([^<]+)<\/a:tableStyleId>/)
+          if (matchStyleId && matchStyleId[1]) {
+            const styleId = matchStyleId[1]
+            if (!tableStylesXml.includes(styleId)) {
+              errors.push(
+                `Slide ${name} referencia tableStyleId "${styleId}" inexistente em tableStyles.xml`,
+              )
+            }
+          }
+        }
+      }
+
+      // Valida que todos os shapes possuem p:txBody
+      const spMatches = slideXml.match(/<p:sp>[\s\S]*?<\/p:sp>/g)
+      if (spMatches) {
+        spMatches.forEach((spBlock, spIdx) => {
+          if (!spBlock.includes('<p:txBody>')) {
+            errors.push(`Slide ${name} possui shape #${spIdx + 1} sem elemento <p:txBody>`)
+          }
+        })
+      }
+    }
+  })
+
+  // 7. Integridade de tags fechadas e XML bem-formado em todas as partes
   entries.forEach((raw, name) => {
     if (name.endsWith('.xml') || name.endsWith('.rels')) {
       const xml = decoder.decode(raw).trim()
       if (!xml.startsWith('<?xml')) {
         errors.push(`Arquivo ${name} não começa com declaração XML padrão`)
       }
-      // Checa balanceamento básico de tags raízes
       const rootMatch = xml.match(/<([a-zA-Z0-9:]+)[\s>]/)
       if (rootMatch && rootMatch[1]) {
         const rootTag = rootMatch[1]
