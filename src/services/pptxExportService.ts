@@ -1,6 +1,20 @@
 /**
- * Gerador de apresentações comerciais (.pptx) em formato Microsoft Office OpenXML PresentationML.
- * Produz um pacote ZIP válido com todos os componentes obrigatórios (ContentTypes, Rels, Theme, SlideMaster, SlideLayout, Slides).
+ * Gerador de apresentações comerciais (.pptx) em formato Microsoft Office OpenXML PresentationML rigorosamente compatível.
+ * Produz um pacote ZIP válido com todos os componentes obrigatórios pelo Microsoft PowerPoint para evitar telas de aviso/reparo:
+ * 1. [Content_Types].xml (defaults + overrides canônicos)
+ * 2. _rels/.rels (officeDocument, core-properties, extended-properties)
+ * 3. docProps/core.xml e docProps/app.xml
+ * 4. ppt/presentation.xml (com sldMasterIdLst, sldIdLst, sldSz 16:9, notesSz e defaultTextStyle completo)
+ * 5. ppt/_rels/presentation.xml.rels (slideMaster, theme, slides, presProps, viewProps, tableStyles)
+ * 6. ppt/presProps.xml (Presentation Properties part - p:presentationPr)
+ * 7. ppt/viewProps.xml (View Properties part - p:viewPr com normalViewPr)
+ * 8. ppt/tableStyles.xml (Table Styles part - a:tblStyleLst)
+ * 9. ppt/theme/theme1.xml (DrawingML Theme canônico)
+ * 10. ppt/slideMasters/slideMaster1.xml (com p:txStyles com p:titleStyle, p:bodyStyle e p:otherStyle completos)
+ * 11. ppt/slideMasters/_rels/slideMaster1.xml.rels
+ * 12. ppt/slideLayouts/slideLayout1.xml (Blank layout)
+ * 13. ppt/slideLayouts/_rels/slideLayout1.xml.rels
+ * 14. ppt/slides/slide{N}.xml e ppt/slides/_rels/slide{N}.xml.rels
  */
 import { createZipArchive, SimpleZipFile } from './zipArchiveService'
 import { formatCurrency, formatDate } from '@/lib/formatters'
@@ -44,11 +58,11 @@ function escapeXml(unsafe: string | number | null | undefined): string {
 }
 
 /**
- * Constrói o pacote PPTX completo com 4 slides:
+ * Constrói o pacote PPTX completo com os slides:
  * 1. Capa Institucional Bycor (Apresentação Comercial ao Segurado)
  * 2. Perfil Operacional & Estrutura Financeira da Apólice Recomendada
- * 3. Tabela de Coberturas e Limites Tabulados
- * 4. Parecer Técnico da Corretora & Recomendação de Contratação
+ * 3..N. Tabela de Coberturas e Limites Tabulados (paginados até 7 linhas por slide)
+ * Final. Parecer Técnico da Corretora & Recomendação de Contratação
  */
 export function generatePresentationPptx(data: PptxPresentationData): Uint8Array {
   const files: SimpleZipFile[] = []
@@ -95,6 +109,15 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
       `  <Override PartName="/ppt/slides/slide${s}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
     )
   }
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>',
+  )
+  contentTypesOverrides.push(
+    '  <Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>',
+  )
   contentTypesOverrides.push(
     '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
   )
@@ -183,6 +206,19 @@ export function generatePresentationPptx(data: PptxPresentationData): Uint8Array
       `  <Relationship Id="rId${s + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${s}.xml"/>`,
     )
   }
+  const presPropsRelId = `rId${totalSlides + 3}`
+  const viewPropsRelId = `rId${totalSlides + 4}`
+  const tableStylesRelId = `rId${totalSlides + 5}`
+
+  presRelsList.push(
+    `  <Relationship Id="${presPropsRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>`,
+  )
+  presRelsList.push(
+    `  <Relationship Id="${viewPropsRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>`,
+  )
+  presRelsList.push(
+    `  <Relationship Id="${tableStylesRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`,
+  )
 
   files.push({
     name: 'ppt/_rels/presentation.xml.rels',
@@ -211,10 +247,53 @@ ${sldIdListXml.join('\r\n')}
   </p:sldIdLst>
   <p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>
   <p:notesSz cx="6858000" cy="9144000"/>
+  <p:defaultTextStyle>
+    <a:defPPr>
+      <a:defRPr lang="pt-BR"/>
+    </a:defPPr>
+  </p:defaultTextStyle>
 </p:presentation>`,
   })
 
-  // 7. ppt/theme/theme1.xml
+  // 7. ppt/presProps.xml (Presentation Properties obrigatório para compatibilidade)
+  files.push({
+    name: 'ppt/presProps.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>`,
+  })
+
+  // 8. ppt/viewProps.xml (View Properties com modo Normal e visualização de slide)
+  files.push({
+    name: 'ppt/viewProps.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:normalViewPr>
+    <p:restoredLeft sz="15620"/>
+    <p:restoredTop sz="94660"/>
+  </p:normalViewPr>
+  <p:slideViewPr>
+    <p:cSldViewPr>
+      <p:cViewPr varScale="1">
+        <p:scale>
+          <a:sx n="100" d="100"/>
+          <a:sy n="100" d="100"/>
+        </p:scale>
+        <p:origin x="0" y="0"/>
+      </p:cViewPr>
+      <p:guideLst/>
+    </p:cSldViewPr>
+  </p:slideViewPr>
+</p:viewPr>`,
+  })
+
+  // 9. ppt/tableStyles.xml (Table Styles obrigatório quando há tabelas DrawingML no documento)
+  files.push({
+    name: 'ppt/tableStyles.xml',
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>`,
+  })
+
+  // 10. ppt/theme/theme1.xml
   files.push({
     name: 'ppt/theme/theme1.xml',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -248,7 +327,7 @@ ${sldIdListXml.join('\r\n')}
 </a:theme>`,
   })
 
-  // 8. ppt/slideMasters/slideMaster1.xml
+  // 11. ppt/slideMasters/slideMaster1.xml (com p:txStyles com p:titleStyle, p:bodyStyle e p:otherStyle estruturados)
   files.push({
     name: 'ppt/slideMasters/slideMaster1.xml',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -264,14 +343,32 @@ ${sldIdListXml.join('\r\n')}
     <p:sldLayoutId id="2147483649" r:id="rId1"/>
   </p:sldLayoutIdLst>
   <p:txStyles>
-    <p:titleStyle/>
-    <p:bodyStyle/>
-    <p:otherStyle/>
+    <p:titleStyle>
+      <a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1">
+        <a:defRPr sz="4000" kern="1200">
+          <a:solidFill><a:schemeClr val="tx1"/></a:solidFill>
+          <a:latin typeface="Arial"/>
+        </a:defRPr>
+      </a:lvl1pPr>
+    </p:titleStyle>
+    <p:bodyStyle>
+      <a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1">
+        <a:defRPr sz="1800" kern="1200">
+          <a:solidFill><a:schemeClr val="tx1"/></a:solidFill>
+          <a:latin typeface="Arial"/>
+        </a:defRPr>
+      </a:lvl1pPr>
+    </p:bodyStyle>
+    <p:otherStyle>
+      <a:defPPr>
+        <a:defRPr lang="pt-BR"/>
+      </a:defPPr>
+    </p:otherStyle>
   </p:txStyles>
 </p:sldMaster>`,
   })
 
-  // 9. ppt/slideMasters/_rels/slideMaster1.xml.rels
+  // 12. ppt/slideMasters/_rels/slideMaster1.xml.rels
   files.push({
     name: 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -281,7 +378,7 @@ ${sldIdListXml.join('\r\n')}
 </Relationships>`,
   })
 
-  // 10. ppt/slideLayouts/slideLayout1.xml
+  // 13. ppt/slideLayouts/slideLayout1.xml
   files.push({
     name: 'ppt/slideLayouts/slideLayout1.xml',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -296,7 +393,7 @@ ${sldIdListXml.join('\r\n')}
 </p:sldLayout>`,
   })
 
-  // 11. ppt/slideLayouts/_rels/slideLayout1.xml.rels
+  // 14. ppt/slideLayouts/_rels/slideLayout1.xml.rels
   files.push({
     name: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels',
     content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

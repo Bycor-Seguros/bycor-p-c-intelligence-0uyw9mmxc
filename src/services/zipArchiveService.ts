@@ -54,12 +54,18 @@ export function createZipArchive(files: SimpleZipFile[]): Uint8Array {
     const localHeader = new Uint8Array(30 + nameBytes.length)
     const view = new DataView(localHeader.buffer)
 
+    // Data/hora MS-DOS válida: 2026-01-01 12:00:00 (evita 0/0/0 que alguns descompactadores rejeitam)
+    // Time: 12:00:00 -> (12 << 11) | (0 << 5) | 0 = 0x6000
+    // Date: (2026 - 1980) << 9 | (1 << 5) | 1 = (46 << 9) | 0x20 | 1 = 0x5c21
+    const dosTime = 0x6000
+    const dosDate = 0x5c21
+
     view.setUint32(0, 0x04034b50, true) // Local file header signature
     view.setUint16(4, 20, true) // Version needed to extract (2.0)
     view.setUint16(6, 0x0800, true) // General purpose bit flag (Bit 11: UTF-8 filename)
     view.setUint16(8, 0, true) // Compression method: 0 = STORE
-    view.setUint16(10, 0, true) // File last mod time
-    view.setUint16(12, 0, true) // File last mod date
+    view.setUint16(10, dosTime, true) // File last mod time (MS-DOS)
+    view.setUint16(12, dosDate, true) // File last mod date (MS-DOS)
     view.setUint32(14, crc, true) // CRC-32
     view.setUint32(18, dataBytes.length, true) // Compressed size
     view.setUint32(22, dataBytes.length, true) // Uncompressed size
@@ -90,13 +96,16 @@ export function createZipArchive(files: SimpleZipFile[]): Uint8Array {
     const cdHeader = new Uint8Array(46 + entry.nameBytes.length)
     const view = new DataView(cdHeader.buffer)
 
+    const dosTime = 0x6000
+    const dosDate = 0x5c21
+
     view.setUint32(0, 0x02014b50, true) // Central directory signature
     view.setUint16(4, 20, true) // Version made by
     view.setUint16(6, 20, true) // Version needed to extract
     view.setUint16(8, 0x0800, true) // General purpose bit flag (UTF-8)
     view.setUint16(10, 0, true) // Compression method: 0 = STORE
-    view.setUint16(12, 0, true) // Last mod time
-    view.setUint16(14, 0, true) // Last mod date
+    view.setUint16(12, dosTime, true) // Last mod time (MS-DOS)
+    view.setUint16(14, dosDate, true) // Last mod date (MS-DOS)
     view.setUint32(16, entry.crc, true) // CRC-32
     view.setUint32(20, entry.dataBytes.length, true) // Compressed size
     view.setUint32(24, entry.dataBytes.length, true) // Uncompressed size

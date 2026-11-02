@@ -59,6 +59,34 @@ async function run() {
   })
 
   try {
+    console.log('Executando validação de estrutura do pacote PPTX OpenXML...')
+    const pptxTest = await vite.ssrLoadModule('/src/services/__tests__/pptxValidation.test.ts')
+    const sampleData = {
+      clienteNome: 'Hotel Teste Resort & Spa',
+      razaoSocial: 'Hotel Teste Ltda',
+      cidade: 'Fortaleza',
+      uf: 'CE',
+      areaConstruida: 15400,
+      seguradoraNome: 'Tokio Marine Seguradora — Opção 1 (v1)',
+      premioBruto: 185420.5,
+      lmiLmg: 50000000,
+      recomendacao: 'Proposta altamente recomendada devido à cobertura abrangente.',
+      coberturas: [
+        { nome: 'Incêndio / Raio / Explosão', lmi: 50000000, franquia: 'Não Há' },
+        { nome: 'Vendaval / Furacão / Ciclone', lmi: 5000000, franquia: '10% min R$ 5.000,00' },
+        { nome: 'Danos Elétricos', lmi: 2000000, franquia: '15% min R$ 3.000,00' },
+        { nome: 'Responsabilidade Civil Operações', lmi: 10000000, franquia: 'R$ 2.500,00' },
+      ],
+    }
+    const validation = pptxTest.validatePptxOpenXml(sampleData)
+    if (!validation.passed) {
+      console.error('❌ Falha na validação PPTX OpenXML:', validation.errors)
+      process.exit(1)
+    }
+    console.log(
+      `✅ PPTX OpenXML válido! ${validation.partCount} partes verificadas sem divergências.`,
+    )
+
     const testModule = await vite.ssrLoadModule('/src/services/__tests__/run-golden-tests.ts')
   } catch (err) {
     console.error('Erro ao executar suite de testes:', err)
