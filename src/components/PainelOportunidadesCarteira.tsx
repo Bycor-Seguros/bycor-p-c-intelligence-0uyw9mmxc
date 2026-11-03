@@ -8,6 +8,7 @@ import {
   Percent,
   CalendarClock,
   FileSpreadsheet,
+  Equal,
   CheckCircle2,
   XCircle,
   BookmarkCheck,
@@ -113,6 +114,8 @@ export function PainelOportunidadesCarteira() {
         return <CalendarClock className="w-4 h-4 text-orange-600" />
       case 'sem_estudo_mercado':
         return <FileSpreadsheet className="w-4 h-4 text-teal-600" />
+      case 'vrd_estagnado':
+        return <Equal className="w-4 h-4 text-violet-600" />
       default:
         return <Sparkles className="w-4 h-4 text-blue-600" />
     }
@@ -203,6 +206,9 @@ export function PainelOportunidadesCarteira() {
     ).length,
     sem_estudo_mercado: oportunidades.filter(
       (o) => o.tipo === 'sem_estudo_mercado' && (exibirDescartadas ? true : !o.descartada),
+    ).length,
+    vrd_estagnado: oportunidades.filter(
+      (o) => o.tipo === 'vrd_estagnado' && (exibirDescartadas ? true : !o.descartada),
     ).length,
   }
 
@@ -495,6 +501,19 @@ export function PainelOportunidadesCarteira() {
             <FileSpreadsheet className="w-3.5 h-3.5 text-teal-600" />
             <span>(5) Sem Estudo Recente ({contadores.sem_estudo_mercado})</span>
           </button>
+
+          <button
+            onClick={() => setFiltroTipo('vrd_estagnado')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+              filtroTipo === 'vrd_estagnado'
+                ? 'bg-violet-700 text-white shadow-sm font-bold'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-violet-50'
+            }`}
+            title="VRD (Valor em Risco Declarado) sem alteração de um ano para o outro — deve sempre ser atualizado"
+          >
+            <Equal className="w-3.5 h-3.5 text-violet-600" />
+            <span>(6) VRD Estagnado ({contadores.vrd_estagnado})</span>
+          </button>
         </div>
 
         {/* Toggle para exibir descartadas e filtro visual de vigência (Requisito 5) */}
@@ -683,16 +702,52 @@ export function PainelOportunidadesCarteira() {
                     )}
                   </div>
 
-                  {/* Título do Cartão: Conta / Empreendimento */}
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-gray-500 shrink-0" />
-                    <div className="text-sm font-bold text-gray-900 tracking-tight">
-                      {op.conta_nome || op.item_detectado}
-                    </div>
-                    {op.seguradora && op.seguradora !== 'Múltiplas' && (
-                      <span className="text-xs text-gray-500 font-normal">• {op.seguradora}</span>
-                    )}
-                  </div>
+                  {/* Título do Cartão: nome da EMPRESA/empreendimento em destaque,
+                      com nº da apólice e seguradora explícitos logo abaixo (Requisito do Usuário) */}
+                  {(() => {
+                    const primeiraApolice = op.apolices_afetadas?.[0]
+                    // Mostra o nº real da apólice (nunca id interno de banco)
+                    const numeroApolice = primeiraApolice?.numero && primeiraApolice.numero !== 'Sem número'
+                      ? primeiraApolice.numero
+                      : ''
+                    const apolicesExtras =
+                      (op.apolices_afetadas?.length || 0) > 1 ? (op.apolices_afetadas?.length || 0) - 1 : 0
+                    const seguradoraLabel =
+                      op.seguradora && op.seguradora !== 'Múltiplas'
+                        ? op.seguradora
+                        : primeiraApolice?.seguradora || op.seguradora || ''
+                    const nomeEmpresa = op.conta_nome || op.item_detectado
+
+                    return (
+                      <div className="flex items-start gap-2">
+                        <Building2 className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-gray-900 tracking-tight">
+                            {nomeEmpresa}
+                          </div>
+                          {op.item_detectado && !op.item_detectado.startsWith(nomeEmpresa) && (
+                            <div className="text-[11px] text-gray-500 font-medium truncate">
+                              {op.item_detectado}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-gray-500">
+                            {numeroApolice && (
+                              <span className="font-mono inline-flex items-center gap-1">
+                                <FileText className="w-3 h-3 text-gray-400" />
+                                {numeroApolice}
+                                {apolicesExtras > 0 && (
+                                  <span className="text-gray-400">
+                                    (+{apolicesExtras} apólice{apolicesExtras > 1 ? 's' : ''})
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            {seguradoraLabel && <span>• {seguradoraLabel}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   {/* Justificativa de Negócio */}
                   <p className="text-xs text-gray-700 leading-relaxed max-w-3xl">

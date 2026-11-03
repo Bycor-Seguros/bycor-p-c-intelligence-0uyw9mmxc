@@ -11,6 +11,8 @@
  * 3. Franquias fora do usual do segmento
  * 4. Apólice próxima do vencimento sem movimentação recente
  * 5. Contas sem Estudo de Mercado recente
+ * 6. VRD estagnado: Valor em Risco Declarado idêntico ao da apólice anterior
+ *    da mesma conta/ramo — o VRD deve sempre ser atualizado a cada renovação.
  *
  * As sugestões são VOLÁTEIS e NÃO GRAVAM NADA automaticamente no banco.
  * O analista decide se descarta ou registra manualmente.
@@ -160,6 +162,7 @@ routerAdd('POST', '/backend/v1/analitico/varredura-carteira', (e) => {
         lmga: ap.getFloat('lmga'),
         lmi_incendio_basica: ap.getFloat('lmi_incendio_basica'),
         razao_lmi_vr_dm: ap.getFloat('razao_lmi_vr_dm'),
+       vrd_dm: ap.getFloat('valor_em_risco_dm'),
         premio_total: ap.getFloat('premio_total'),
         apolice_sucessora: ap.getString('apolice_sucessora'),
         tem_rfq_aberto: Boolean(rfqAtivosEmp[empId]),
@@ -175,6 +178,7 @@ CRITÉRIOS E TIPOS DE OPORTUNIDADE A DETECTAR:
 3. "franquias_fora_usual": Franquias elevadas ou P.O.S. abusivas (> ${posMaxPercent}%). Ignorar apólices já substituídas.
 4. "vencimento_sem_movimentacao": Apólices próximas do término (≤ ${diasVencimentoMin} dias) ou vencidas (MÁXIMO 30 dias de atraso — acima de 30 dias nunca listar). Apólices com RFQ aberto (tem_rfq_aberto = true) DEVEM ser detectadas, marcando renovação em andamento.
 5. "sem_estudo_mercado": Empreendimentos com apólices ativas sem Estudo de Mercado estruturado nos últimos 12 meses.
+6. "vrd_estagnado": PONTO DE ATENÇÃO — Valor em Risco Declarado (VRD) da apólice vigente IDÊNTICO ao da apólice anterior da mesma conta/ramo (campo vrd_dm igual de um ano para o outro). O VRD deve sempre ser atualizado a cada renovação; quando ambos os VRDs existem e são iguais, gere o alerta informando o analista. Se NÃO houver VRD do ano anterior para comparar, NÃO gere a oportunidade (sem falso positivo). Justificativa em linguagem de negócio: o VRD não mudou de um ano para o outro e deve sempre ser atualizado.
 Regra de agrupamento: Agrupar por conta/empreendimento — gere 1 item por conta listando as apólices afetadas.
 
 PARÂMETROS DA VARREDURA:
@@ -194,9 +198,10 @@ Gere uma lista de oportunidades comerciais no formato JSON puro estrito (sem mar
   "oportunidades": [
     {
       "id_temp": "op-1",
-      "tipo": "cobertura_abaixo_padrao" | "lmg_lei_15040" | "franquias_fora_usual" | "vencimento_sem_movimentacao" | "sem_estudo_mercado",
+      "tipo": "cobertura_abaixo_padrao" | "lmg_lei_15040" | "franquias_fora_usual" | "vencimento_sem_movimentacao" | "sem_estudo_mercado" | "vrd_estagnado",
       "tipo_rotulo": "<Nome amigável em português>",
       "item_detectado": "<Nome do Empreendimento ou Apólice>",
+     "conta_nome": "<Nome do empreendimento/empresa (conta) — sempre preencher>",
       "apolice_id": "<id da apolice se aplicavel>",
       "empreendimento_id": "<id do empreendimento se aplicavel>",
       "seguradora": "<Nome da seguradora se aplicavel>",
@@ -251,11 +256,18 @@ Gere uma lista de oportunidades comerciais no formato JSON puro estrito (sem mar
       Array.isArray(parsedResult.oportunidades) &&
       parsedResult.oportunidades.length > 0
     ) {
+     // Normalização: garante conta_nome explícito (nome da empresa) em cada cartão
+     const oportunidadesIa = parsedResult.oportunidades.map((op, idx) => ({
+       ...op,
+       id_temp: op.id_temp || `op-ia-${idx}`,
+       conta_nome: op.conta_nome || op.item_detectado || '',
+       apolices_afetadas: Array.isArray(op.apolices_afetadas) ? op.apolices_afetadas : [],
+     }))
       return e.json(200, {
         ok: true,
         origem: 'agente_nativo_analitico',
-        total_oportunidades: parsedResult.oportunidades.length,
-        oportunidades: parsedResult.oportunidades,
+       total_oportunidades: oportunidadesIa.length,
+       oportunidades: oportunidadesIa,
         conversation_id: agentResult ? agentResult.conversation_id : null,
       })
     }
@@ -267,6 +279,32 @@ Gere uma lista de oportunidades comerciais no formato JSON puro estrito (sem mar
 
     // Mapa de itens brutos antes do agrupamento
     const itensBrutos = []
+ 
+   // Regra 6 (VRD estagnado): localizar a apólice ANTERIOR de cada apólice
+   // agrupando por conta/empreendimento + ramo e ordenando pela vigência.
+   const normalizarRamoHook = (ramo) =>
+     String(ramo || '')
+       .toLowerCase()
+       .normalize('NFD')
+       .replace(/[\u0300-\u036f]/g, '')
+       .replace(/[^a-z0-9]+/g, '_')
+       .replace(/^_+|_+$/g, '') || 'geral'
+
+   const gruposRenovacao = {}
+   apolicesList.forEach((ap) => {
+     const chaveGrupo = `${ap.getString('id_empreendimento')}:::${normalizarRamoHook(ap.getString('ramo'))}`
+     const dfStr = ap.getString('data_fim')
+     const dtFim = dfStr ? new Date(dfStr).getTime() : NaN
+     if (!gruposRenovacao[chaveGrupo]) gruposRenovacao[chaveGrupo] = []
+     gruposRenovacao[chaveGrupo].push({ apId: ap.id, dtFim: isNaN(dtFim) ? 0 : dtFim })
+   })
+   const antecessoraPorApolice = {}
+   Object.keys(gruposRenovacao).forEach((k) => {
+     const ordenadas = gruposRenovacao[k].slice().sort((a, b) => a.dtFim - b.dtFim)
+     for (let i = 1; i < ordenadas.length; i++) {
+       antecessoraPorApolice[ordenadas[i].apId] = ordenadas[i - 1].apId
+     }
+   })
 
     apolicesList.forEach((ap) => {
       const empId = ap.getString('id_empreendimento')
@@ -421,8 +459,37 @@ Gere uma lista de oportunidades comerciais no formato JSON puro estrito (sem mar
           temRfqAberto: temRfqAberto,
         })
       }
-    })
 
+     // 6. VRD estagnado (ponto de atenção): o VRD deve sempre ser atualizado a cada renovação.
+     // Compara o VRD da apólice vigente com o da apólice ANTERIOR da mesma conta/ramo.
+     // Sem par comparável (sem anterior ou VRD zerado/ausente), NÃO marca — sem falso positivo.
+     if (!temSucessora) {
+       const vrdAtual = ap.getFloat('valor_em_risco_dm')
+       const idAntecessora = antecessoraPorApolice[apId]
+       const apAntecessora = idAntecessora
+         ? apolicesList.find((x) => x.id === idAntecessora)
+         : null
+       const vrdAnterior = apAntecessora ? apAntecessora.getFloat('valor_em_risco_dm') : 0
+
+       if (vrdAtual > 0 && vrdAnterior > 0 && Math.round(vrdAtual * 100) === Math.round(vrdAnterior * 100)) {
+         const vrdFmt = 'R$ ' + String(Math.round(vrdAtual)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+         itensBrutos.push({
+           tipo: 'vrd_estagnado',
+           tipo_rotulo: 'VRD sem Alteração Ano a Ano',
+           empId: empId,
+           empNome: nomeEmp,
+           seguradora: seguradora,
+           impacto_estimado: 'Médio',
+           justificativa_curta: `O Valor em Risco Declarado (VRD) desta apólice permaneceu em ${vrdFmt}, idêntico ao da apólice anterior — o VRD não mudou de um ano para o outro e deve sempre ser atualizado a cada renovação.`,
+           acao_sugerida:
+             'Revisar o VRD com o cliente e atualizar o Valor em Risco Declarado antes da próxima renovação; se o valor estiver correto, descartar a detecção.',
+           apolice: apoliceItemObj,
+           temRfqAberto: temRfqAberto,
+         })
+       }
+      }
+    })
+ 
     // Agrupa por Tipo + Conta (Requisito 2)
     const grupos = {}
     itensBrutos.forEach((it) => {

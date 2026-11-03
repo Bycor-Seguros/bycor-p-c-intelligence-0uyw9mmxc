@@ -10,6 +10,7 @@ export type TipoOportunidade =
   | 'franquias_fora_usual'
   | 'vencimento_sem_movimentacao'
   | 'sem_estudo_mercado'
+  | 'vrd_estagnado'
 
 export interface LimiaresCalibracao {
   diasVencimento: number // padrão 60 dias
@@ -105,6 +106,13 @@ export const METADADOS_TIPOS: Record<
       'Empreendimento ativo sem Estudo de Mercado comparativo (C4) emitido nos últimos 12 meses.',
     corBadge: 'bg-teal-50 text-teal-700 border-teal-200',
     icone: 'FileSpreadsheet',
+  },
+  vrd_estagnado: {
+    rotulo: 'VRD sem Alteração Ano a Ano',
+    descricao:
+      'Valor em Risco Declarado (VRD) idêntico ao da apólice anterior da mesma conta/ramo — o VRD deve sempre ser atualizado a cada renovação.',
+    corBadge: 'bg-violet-50 text-violet-700 border-violet-200',
+    icone: 'Equal',
   },
 }
 
@@ -232,6 +240,31 @@ export function derivarVigenciaStatusOportunidade(
     status: 'vigente',
     detalhe: 'Vigente',
   }
+}
+
+/**
+ * Regra 6 do painel — VRD Estagnado (ponto de atenção):
+ * O VRD deve SEMPRE ser atualizado a cada renovação. Quando o VRD da apólice
+ * vigente é idêntico ao da apólice anterior da mesma conta/ramo, marca ponto
+ * de atenção. Só marca quando AMBOS os VRDs existem (> 0) — sem falso positivo.
+ */
+export function compararVrdEstagnado(
+  vrdAtual: number | null | undefined,
+  vrdAnterior: number | null | undefined,
+): boolean {
+  if (
+    vrdAtual === null ||
+    vrdAtual === undefined ||
+    vrdAnterior === null ||
+    vrdAnterior === undefined
+  ) {
+    return false
+  }
+  if (!(vrdAtual > 0) || !(vrdAnterior > 0)) {
+    return false
+  }
+  // Compara arredondado em centavos para tolerar ruído de ponto flutuante
+  return Math.round(vrdAtual * 100) === Math.round(vrdAnterior * 100)
 }
 
 /**
@@ -470,6 +503,36 @@ export async function executarVarreduraLocal(
           apoliceInfo: apoliceItemObj,
           temRfqAberto,
         })
+      }
+
+      // 6. VRD estagnado (Regra do analista: o VRD deve sempre ser atualizado)
+      // Compara o VRD da apólice vigente com o da apólice ANTERIOR da mesma conta/ramo
+      // (antecessora imediata da cadeia de sucessão). Sem par comparável, não marca.
+      if (!isSubstituida) {
+        const vrdAtual = typeof ap.valor_em_risco_dm === 'number' ? ap.valor_em_risco_dm : 0
+        const antecessoraId = rel?.antecessora?.id
+        const antecessora = antecessoraId
+          ? apolices.find((a: any) => a.id === antecessoraId)
+          : undefined
+        const vrdAnterior =
+          typeof antecessora?.valor_em_risco_dm === 'number' ? antecessora.valor_em_risco_dm : 0
+
+        if (compararVrdEstagnado(vrdAtual, vrdAnterior)) {
+          const vrdFmt = 'R$ ' + String(Math.round(vrdAtual)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+          rawOportunidades.push({
+            tipo: 'vrd_estagnado',
+            tipo_rotulo: METADADOS_TIPOS.vrd_estagnado.rotulo,
+            empId,
+            empNome,
+            seguradora,
+            impacto_estimado: 'Médio',
+            justificativa_curta: `O Valor em Risco Declarado (VRD) desta apólice permaneceu em ${vrdFmt}, idêntico ao da apólice anterior — o VRD não mudou de um ano para o outro e deve sempre ser atualizado a cada renovação.`,
+            acao_sugerida:
+              'Revisar o VRD com o cliente e atualizar o Valor em Risco Declarado antes da próxima renovação; se o valor estiver correto, descartar a detecção.',
+            apoliceInfo: apoliceItemObj,
+            temRfqAberto,
+          })
+        }
       }
     })
 

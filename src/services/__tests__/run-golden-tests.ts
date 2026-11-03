@@ -17,6 +17,7 @@ import {
 } from '../apoliceReader'
 import { extractAxaDetails } from '../propostaReader'
 import { calcularFluxoPremios, ALIQUOTA_IOF_PADRAO } from '../rfqPropostasService'
+import { compararVrdEstagnado } from '../analiticoCarteiraService'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
@@ -1581,6 +1582,37 @@ export async function runAllSuites() {
       )
     },
   )
+
+  // =========================================================================
+  // SUITE: MOTOR DE OPORTUNIDADES — REGRA 6 (VRD ESTAGNADO)
+  // =========================================================================
+  console.log('SUITE: Motor de Oportunidades — Regra 6 (VRD Estagnado)')
+  runTest('Motor Oportunidades', 'Tabela-verdade da Regra 6 (VRD estagnado)', () => {
+    assertEqual(
+      compararVrdEstagnado(3137400, 3137400),
+      true,
+      'VRD idêntico ao do ano anterior marca a detecção',
+    )
+    assertEqual(
+      compararVrdEstagnado(3137400, 3500000),
+      false,
+      'VRD alterado de um ano para o outro NÃO marca',
+    )
+    assertEqual(compararVrdEstagnado(0, 3137400), false, 'VRD atual ausente (0) não marca')
+    assertEqual(compararVrdEstagnado(3137400, 0), false, 'VRD anterior ausente (0) não marca')
+    assertEqual(compararVrdEstagnado(null, 3137400), false, 'VRD atual nulo não marca')
+    assertEqual(compararVrdEstagnado(3137400, null), false, 'VRD anterior nulo não marca')
+    assertEqual(
+      compararVrdEstagnado(undefined, undefined),
+      false,
+      'Ambos indefinidos não marcam (sem falso positivo)',
+    )
+    assertEqual(
+      compararVrdEstagnado(1000000.005, 1000000.001),
+      true,
+      'Diferença de centavos por ruído de ponto flutuante não gera falso negativo',
+    )
+  })
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO
