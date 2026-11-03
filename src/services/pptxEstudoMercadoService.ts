@@ -945,12 +945,12 @@ export async function generateEstudoMercadoPptx(
           ? formatLmiEstudo(linha.item.lmiSolicitado)
           : String(linha.item.lmiSolicitado || '—')
 
-      // Exibe a descrição COMPLETA da cobertura canônica em vez do nome curto
-      const textoDescricao = linha.item.descricao || linha.item.titulo
+      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
+      const textoNome = linha.item.nome || linha.item.titulo
 
       return [
         {
-          text: `${linha.item.numero}  ${textoDescricao}`,
+          text: `${linha.item.numero}  ${textoNome}`,
           options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
         },
         {
@@ -1053,12 +1053,12 @@ export async function generateEstudoMercadoPptx(
     const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
       const bg = lIdx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
 
-      // Exibe a descrição COMPLETA da cobertura canônica em vez do nome curto
-      const textoDescricao = linha.item.descricao || linha.item.titulo
+      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
+      const textoNome = linha.item.nome || linha.item.titulo
 
       return [
         {
-          text: `${linha.item.numero}  ${textoDescricao}`,
+          text: `${linha.item.numero}  ${textoNome}`,
           options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
         },
         ...colCias.map((c) => {

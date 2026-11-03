@@ -7,7 +7,8 @@
 export interface CoberturaEstudoF1 {
   numero: string // "01" a "42"
   titulo: string // nome curto/título histórico
-  descricao: string // descrição completa da cobertura canônica (decisão do analista)
+  nome?: string // nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
+  descricao?: string // anotação interna da cobertura canônica (não exibida nas grades do Estudo)
   subtitulo?: string
   lmiSolicitado?: number | string // valor em risco solicitado ou string como "Definir proporção"
   ramoPadrao?: 'Patrimonial' | 'Responsabilidade Civil'

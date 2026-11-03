@@ -1459,16 +1459,37 @@ export async function runAllSuites() {
 
       assertEqual(grade.length, 42, 'A grade resolvida deve ter exatamente 42 linhas')
 
-      // Validação da descrição completa da cobertura canônica (campo descricao)
+      // Validação da nomenclatura da Taxonomia (campo nome das canônicas) na grade
       assertEqual(
-        grade[0].item.descricao.includes('Incêndio, Queda de Raio, Explosão'),
-        true,
-        'Item 01 deve conter descrição completa da Básica',
+        grade[0].item.nome,
+        'Básica - Inc, Raio, Expl., Q.Aer.,Fumaça',
+        'Item 01 deve conter a nomenclatura da Taxonomia da Básica',
       )
       assertEqual(
-        grade[4].item.descricao,
-        'Impacto de Veículos Terrestres de Terceiros',
-        'Item 05 (Impacto de Veículos) deve conter descrição completa especificando veículos de terceiros',
+        grade[4].item.nome,
+        'Impacto de Veículos Terrestres',
+        'Item 05 (Impacto de Veículos) deve conter a nomenclatura da Taxonomia',
+      )
+
+      // Validação adicional: quando canonicasC3 possui nome cadastrado, ele é respeitado
+      const gradeComCanonicas = resolverGradeEstudo42({
+        propostas: propostasMock,
+        canonicasC3: [
+          {
+            id: 'can-1',
+            nome: 'Incêndio Básica (Danos Materiais)',
+            descricao: 'Importada da Matriz de Mercado',
+            ramo: 'Patrimonial',
+            eventos_tipicos: ['Incêndio'],
+            ordem: 1,
+          },
+        ],
+        sinonimosC3: [],
+      })
+      assertEqual(
+        gradeComCanonicas[0].item.nome,
+        'Incêndio Básica (Danos Materiais)',
+        'Item 01 deve assumir o campo nome da taxonomia C3 e não a descricao com marcador',
       )
 
       const celulaBasica = grade[0].celulasPorProposta.get('prop-allianz')

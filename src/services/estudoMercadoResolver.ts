@@ -235,24 +235,25 @@ export function resolverGradeEstudo42(params: {
       })
     })
 
-    // Se a taxonomia do C3 tiver descrição personalizada para esta canônica, prioriza
-    const descCanonica =
-      canonicasC3.find(
-        (c) =>
-          cobEstudo.aliasesCanonicos.some(
-            (alias) => alias.toLowerCase() === c.nome.toLowerCase(),
-          ) && Boolean(c.descricao),
-      )?.descricao ||
-      cobEstudo.descricao ||
-      cobEstudo.titulo
+    // Reverter o uso do campo descricao nas grades e exibir no lugar a nomenclatura
+    // da Taxonomia (campo nome da coberturas_canonicas). O campo descricao permanece como anotação interna.
+    const canC3Encontrada = canonicasC3.find((c) =>
+      cobEstudo.aliasesCanonicos.some(
+        (alias) =>
+          normalizarTermoEquivalencia(alias) === normalizarTermoEquivalencia(c.nome) ||
+          alias.toLowerCase() === c.nome.toLowerCase(),
+      ),
+    )
 
-    const itemComDescricao: CoberturaEstudoF1 = {
+    const nomeTaxonomia = canC3Encontrada?.nome || cobEstudo.nome || cobEstudo.titulo
+
+    const itemComNomeTaxonomia: CoberturaEstudoF1 = {
       ...cobEstudo,
-      descricao: descCanonica,
+      nome: nomeTaxonomia,
     }
 
     return {
-      item: itemComDescricao,
+      item: itemComNomeTaxonomia,
       celulasPorProposta,
     }
   })
