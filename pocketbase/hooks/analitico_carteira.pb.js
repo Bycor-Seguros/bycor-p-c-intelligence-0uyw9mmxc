@@ -257,12 +257,16 @@ Gere uma lista de oportunidades comerciais no formato JSON puro estrito (sem mar
       parsedResult.oportunidades.length > 0
     ) {
       // Normalização: garante conta_nome explícito (nome da empresa) em cada cartão
-      const oportunidadesIa = parsedResult.oportunidades.map((op, idx) => ({
-        ...op,
-        id_temp: op.id_temp || `op-ia-${idx}`,
-        conta_nome: op.conta_nome || op.item_detectado || '',
-        apolices_afetadas: Array.isArray(op.apolices_afetadas) ? op.apolices_afetadas : [],
-      }))
+      // Evita object spread (...) que o Goja / transpiler traduz para helper inexistente (__spreadValues)
+      const oportunidadesIa = parsedResult.oportunidades.map((op, idx) => {
+        const itemNormalizado = Object.assign({}, op)
+        itemNormalizado.id_temp = op.id_temp || 'op-ia-' + idx
+        itemNormalizado.conta_nome = op.conta_nome || op.item_detectado || ''
+        itemNormalizado.apolices_afetadas = Array.isArray(op.apolices_afetadas)
+          ? op.apolices_afetadas
+          : []
+        return itemNormalizado
+      })
       return e.json(200, {
         ok: true,
         origem: 'agente_nativo_analitico',
