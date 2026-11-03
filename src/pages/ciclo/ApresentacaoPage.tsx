@@ -15,6 +15,18 @@ import {
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { generatePresentationPptx } from '@/services/pptxExportService'
+import {
+  generateEstudoMercadoPptx,
+  EstudoMercadoEditavelData,
+} from '@/services/pptxEstudoMercadoService'
+import { SecaoEstudoMercado, EstudoMercadoFormState } from '@/components/SecaoEstudoMercado'
+import {
+  listarTaxonomiaCanonicas,
+  listarSinonimos,
+  CoberturaCanonicaRecord,
+  CoberturaSinonimoRecord,
+} from '@/services/equivalenciaCoberturasService'
+import { PropostaInputEstudo } from '@/services/estudoMercadoResolver'
 import { toast } from '@/hooks/use-toast'
 
 interface EmpreendimentoOpt {
@@ -92,6 +104,27 @@ export default function ApresentacaoPage() {
   )
   const [loading, setLoading] = useState(true)
   const [exportingPptx, setExportingPptx] = useState(false)
+  const [exportingEstudoPptx, setExportingEstudoPptx] = useState(false)
+
+  // Equivalências para resolução fiel da taxonomia canônica (C3)
+  const [canonicasC3, setCanonicasC3] = useState<CoberturaCanonicaRecord[]>([])
+  const [sinonimosC3, setSinonimosC3] = useState<CoberturaSinonimoRecord[]>([])
+
+  // Formulário editável do Estudo de Mercado Bycor (Blocos 04 e 11)
+  const [estudoForm, setEstudoForm] = useState<EstudoMercadoFormState>({
+    objetivoTexto:
+      'Estudo de transição, para proteção patrimonial do Condomínio São International Square e BT São Caetano Hotéis Ltda para vigência de 01/11/2026 a 01/11/2027. Comparativo baseado nas características do empreendimento, coberturas da apólice anterior, know-how Bycor (Hotéis e Resorts) e propostas das seguradoras.',
+    objetivoImportanteTexto:
+      'Os valores de LMI (Limite Máximo de Indenização) por cobertura assim como LMGA (Limite Máximo de Garantia Agregada) para coberturas de RC são estimativos e, devem ser avaliados pelo contratante/segurado que é o legítimo conhecedor do valor em risco. O valor das coberturas são de inteira responsabilidade do Segurado. Por conta da transição sugerimos que após a implantação do Blue Tree seja feita reavaliação dos valores para adequar as proteções.',
+    contatoInspecaoNome: 'Resp: Engenharia / Manutenção Predial',
+    contatoInspecaoTel: '(11) 98765-4321',
+    contatoInspecaoEmail: 'manutencao@btsaocaetano.com.br',
+    cosseguradoContratacao: 'BT São Caetano Hotéis Ltda - 68.423.239/0001-08',
+    sugestaoCustosDefesa: 'R$ 100.000,00',
+    observacoesContratacao: 'A seguradora terá prazo de até 25 dias para avaliação do risco',
+    assinaturaCargo: 'Síndico / Responsável Legal',
+    dataApresentacaoTexto: '28/10/2026',
+  })
 
   useEffect(() => {
     const fetchInit = async () => {
@@ -109,6 +142,15 @@ export default function ApresentacaoPage() {
         setEmpreendimentos(emps)
         setPropostas(props)
         if (emps.length > 0) setSelectedEmpId(emps[0].id)
+
+        // Carrega equivalências C3
+        try {
+          const [cans, sins] = await Promise.all([listarTaxonomiaCanonicas(), listarSinonimos()])
+          setCanonicasC3(cans)
+          setSinonimosC3(sins)
+        } catch (eqErr) {
+          console.warn('Aviso: falha ao carregar taxonomia C3:', eqErr)
+        }
         if (props.length > 0) {
           const vencedora = props.find((p: any) => p.status === 'Selecionada')
           setSelectedPropId(vencedora ? vencedora.id : props[0].id)
@@ -168,6 +210,129 @@ export default function ApresentacaoPage() {
 
   const handlePrint = () => {
     window.print()
+  }
+
+  // Prepara lista de propostas ativas comparadas na mesa (todas as cias/opções ativas)
+  const propostasParaEstudo: PropostaInputEstudo[] = React.useMemo(() => {
+    return propostasExibicao.map((p) => {
+      const segNome = p.expand?.seguradora?.nome || 'Seguradora'
+      const opNum = Number(p.opcao || 1)
+      const numParc = Number((p as any).numero_parcelas || 0)
+      const formaPag = (p as any).forma_pagamento || ''
+
+      let parcelamentoTexto = numParc > 0 ? `${numParc}x` : '1x'
+      if (!numParc && formaPag) {
+        const matchParc = formaPag.match(/(\d+)x/i)
+        if (matchParc) parcelamentoTexto = `${matchParc[1]}x`
+      }
+
+      return {
+        id: p.id,
+        seguradoraNome: segNome,
+        opcao: opNum,
+        versao: Number(p.versao || 1),
+        ativa: p.ativa,
+        premioTotalComIof: Number(p.premio_bruto || 0),
+        premioLiquido: Number((p as any).premio_liquido || 0),
+        parcelamentoSemJurosTexto: parcelamentoTexto,
+        numeroParcelasSemJuros: numParc || 1,
+        numeroCoberturas: (p.coberturas || []).length || 42,
+        vrdDm: Number((p as any).vrd_dm || 80000000),
+        vrdLc: Number((p as any).vrd_lc || 15000000),
+        coberturasOriginais: p.coberturas || [],
+      }
+    })
+  }, [propostasExibicao])
+
+  // Exportador do Estudo de Mercado F1 (12 páginas fiéis ao PDF oficial)
+  const handleExportEstudoMercadoPptx = async () => {
+    if (exportingEstudoPptx) return
+    setExportingEstudoPptx(true)
+    try {
+      const emp = selectedEmp
+      const endFormatado = emp
+        ? `${emp.cidade || 'São Caetano do Sul'} - ${emp.uf || 'SP'}`
+        : 'São Paulo - SP'
+
+      const ciasComProposta = Array.from(
+        new Set(propostasParaEstudo.map((p) => p.seguradoraNome.toUpperCase())),
+      )
+
+      const estudoData: EstudoMercadoEditavelData = {
+        empreendimentoNome: emp?.nome_empreendimento || 'Condomínio São International Square',
+        cosseguradoNome: 'BT São Caetano Hotéis Ltda',
+        vigenciaTexto: '01.11.2026 a 01.11. 2027 (365 dias)',
+        versaoTexto: 'Outubro/2026 - V2',
+        enderecoTexto:
+          (emp as any)?.endereco ||
+          'Al. Terracota, 250 • Ceramica • São Caetano do Sul • Cep 09531-190',
+        objetivoTexto: estudoForm.objetivoTexto,
+        objetivoImportanteTexto: estudoForm.objetivoImportanteTexto,
+        cnpj: (emp as any)?.cnpj || '38.594.094/0001-47',
+        cosseguradoCnpj: (emp as any)?.cossegurado_cnpj || '68.423.239/0001-08',
+        tipoSeguro: 'Patrimonial',
+        coberturaResumo: 'Prédio, Conteúdo (MMU/MMP) e Lucros Cessantes (L.Bruto)',
+        statusSeguro: 'NOVO',
+        cnaeAtividade: 'Hotel / Apart-Hotel',
+        construcaoTexto:
+          'Tipo Superior – Alvenaria; 14.013m²; sem Isopainéis; 15 andares + 4 Subsolos; 298 Aptos; Estacionamento Terceirizado Rotativo c/ 250 vagas, 6 Elevadores, Academia, Chiller e Geradores.',
+        protecionaisTexto:
+          'Incêndio: Extintores, Hidrantes, Sprinklers, Detectores e Alarmes de Fumaça, Brigada de Incêndio, SPDA; RTI; C/Manutenção Preventiva das Instalações Elétricas.\nRoubo: recepção disponível 24 horas e serviço de segurança/atendimento contínuo na portaria CFTV, Cofres.',
+        sinistrosTexto: 'Seguro Novo → sem registros de sinistros',
+        vrdPredio: 60000000,
+        vrdMmu: 20000000,
+        vrdMmp: 0,
+        vrdDmTotal: 80000000,
+        vrdLcAnual: 15000000,
+        vrdDmPlusLc: 95000000,
+        ciasApresentaramProposta:
+          ciasComProposta.length > 0
+            ? ciasComProposta
+            : ['ALLIANZ SEGUROS', 'AXA SEGUROS', 'PORTO SEGURO', 'SWISS RE SEGUROS'],
+        ciasEmAnaliseOuNaoApresentaram: [
+          'TOKIO MARINE',
+          'CHUBB SEGUROS (Apólice - Atlântica)',
+          'ZURICH SEGUROS (Cosseguro na Apólice Chubb)',
+        ],
+        propostas: propostasParaEstudo,
+        canonicasC3,
+        sinonimosC3,
+        contatoInspecaoNome: estudoForm.contatoInspecaoNome,
+        contatoInspecaoTel: estudoForm.contatoInspecaoTel,
+        contatoInspecaoEmail: estudoForm.contatoInspecaoEmail,
+        cosseguradoContratacao: estudoForm.cosseguradoContratacao,
+        sugestaoCustosDefesa: estudoForm.sugestaoCustosDefesa,
+        observacoesContratacao: estudoForm.observacoesContratacao,
+        dataApresentacaoTexto: estudoForm.dataApresentacaoTexto,
+        assinaturaCargo: estudoForm.assinaturaCargo,
+      }
+
+      const pptxBytes = await generateEstudoMercadoPptx(estudoData)
+
+      const blob = new Blob([pptxBytes as Uint8Array<ArrayBuffer>], {
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Estudo_de_Mercado_Bycor_${emp?.nome_empreendimento?.replace(/\s+/g, '_') || 'Patrimonial'}.pptx`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      toast({
+        title: 'Estudo de Mercado F1 exportado com sucesso!',
+        description: 'Arquivo PPTX com as 12 páginas em formato 100% editável para PowerPoint.',
+      })
+    } catch (err: any) {
+      console.error('Erro ao gerar Estudo de Mercado PPTX:', err)
+      toast({
+        title: 'Erro ao gerar Estudo de Mercado',
+        description: err?.message || 'Ocorreu uma falha na geração do arquivo PPTX.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportingEstudoPptx(false)
+    }
   }
 
   // Generates a fully valid OpenXML PresentationML (.pptx) file via PptxGenJS
@@ -254,15 +419,37 @@ export default function ApresentacaoPage() {
           </Button>
 
           <Button
+            onClick={handleExportEstudoMercadoPptx}
+            disabled={exportingEstudoPptx}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-200" />
+            <span>
+              {exportingEstudoPptx ? 'Gerando Estudo...' : 'Exportar Estudo de Mercado (PPTX)'}
+            </span>
+          </Button>
+
+          <Button
             onClick={handleExportPptx}
             disabled={exportingPptx}
-            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-9 font-semibold flex items-center gap-1.5"
+            variant="outline"
+            className="border-gray-300 text-gray-700 text-xs h-9 font-medium flex items-center gap-1.5"
           >
-            <Download className="w-3.5 h-3.5 text-blue-300" />
-            <span>{exportingPptx ? 'Gerando PPTX...' : 'Exportar PPTX'}</span>
+            <Download className="w-3.5 h-3.5 text-gray-400" />
+            <span>{exportingPptx ? 'Gerando Minuta...' : 'Minuta Executiva PPTX'}</span>
           </Button>
         </div>
       </div>
+
+      {/* Seção Estudo de Mercado F1 (Campos Editáveis & Pré-visualização) */}
+      <SecaoEstudoMercado
+        formState={estudoForm}
+        onChangeFormState={(field, val) => setEstudoForm((p) => ({ ...p, [field]: val }))}
+        onExportarPptx={handleExportEstudoMercadoPptx}
+        isExporting={exportingEstudoPptx}
+        empreendimentoNome={selectedEmp?.nome_empreendimento || 'Empreendimento Selecionado'}
+        propostasComparadas={propostasParaEstudo}
+      />
 
       {/* Selectors Bar */}
       <div className="bg-white rounded-xl border border-[#E4E9F0] p-4 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 print:hidden">

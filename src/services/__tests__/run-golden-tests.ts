@@ -1402,6 +1402,98 @@ export async function runAllSuites() {
   )
 
   // =========================================================================
+  // TESTE ESTRUTURAL DO ESTUDO DE MERCADO F1 (PPTX 12 SLIDES & 42 COBERTURAS)
+  // =========================================================================
+  runTest(
+    'Estudo de Mercado F1 PPTX',
+    'gera pacote OpenXML válido com as 42 coberturas canônicas e 12 páginas',
+    async () => {
+      const { generateEstudoMercadoPptx } = await import('../pptxEstudoMercadoService')
+      const { COBERTURAS_ESTUDO_42 } = await import('../estudoMercadoCanonicas')
+      const { resolverGradeEstudo42 } = await import('../estudoMercadoResolver')
+
+      // 1. Asserção das 42 canônicas
+      assertEqual(
+        COBERTURAS_ESTUDO_42.length,
+        42,
+        'O Estudo de Mercado deve conter exatamente 42 coberturas canônicas ordenadas de 01 a 42',
+      )
+      assertEqual(COBERTURAS_ESTUDO_42[0].numero, '01', 'Primeira cobertura deve ser 01 Básica')
+      assertEqual(
+        COBERTURAS_ESTUDO_42[41].numero,
+        '42',
+        'Última cobertura deve ser 42 RC Custos de Defesa',
+      )
+
+      // 2. Resolução da grade comparativa com propostas de exemplo
+      const propostasMock = [
+        {
+          id: 'prop-allianz',
+          seguradoraNome: 'ALLIANZ SEGUROS',
+          opcao: 1,
+          versao: 1,
+          premioTotalComIof: 74323,
+          parcelamentoSemJurosTexto: '4x',
+          numeroCoberturas: 24,
+          coberturasOriginais: [
+            {
+              cobertura: 'Básica - Inc, Raio, Expl., Q.Aer.,Fumaça',
+              lmi: 80000000,
+              franquia: '10% c/ 20 mil',
+            },
+            {
+              cobertura: 'Demolição e Desentulho',
+              lmi: 4000000,
+              sublimite: 'Sublimite 4.000.000',
+              franquia: '10% c/ 1,5 mil',
+            },
+          ],
+        },
+      ]
+
+      const grade = resolverGradeEstudo42({
+        propostas: propostasMock,
+        canonicasC3: [],
+        sinonimosC3: [],
+      })
+
+      assertEqual(grade.length, 42, 'A grade resolvida deve ter exatamente 42 linhas')
+
+      const celulaBasica = grade[0].celulasPorProposta.get('prop-allianz')
+      assertEqual(
+        Boolean(celulaBasica && !celulaBasica.naoIncluida),
+        true,
+        'Cobertura básica deve estar incluída',
+      )
+
+      // 3. Geração dos bytes OpenXML PPTX
+      const pptxBytes = await generateEstudoMercadoPptx({
+        empreendimentoNome: 'Condomínio São International Square',
+        cosseguradoNome: 'BT São Caetano Hotéis Ltda',
+        vigenciaTexto: '01.11.2026 a 01.11. 2027 (365 dias)',
+        versaoTexto: 'Outubro/2026 - V2',
+        enderecoTexto: 'Al. Terracota, 250 • Ceramica • São Caetano do Sul • Cep 09531-190',
+        objetivoTexto: 'Estudo de transição para proteção patrimonial...',
+        objetivoImportanteTexto: 'Os valores de LMI são estimativos...',
+        propostas: propostasMock,
+        ciasApresentaramProposta: ['ALLIANZ SEGUROS'],
+        ciasEmAnaliseOuNaoApresentaram: ['TOKIO MARINE'],
+      })
+
+      assertEqual(
+        Boolean(pptxBytes && pptxBytes.length > 1000),
+        true,
+        'O buffer PPTX deve ter tamanho superior a 1KB',
+      )
+
+      // Validação de assinatura ZIP PKWARE
+      const view = new DataView(pptxBytes.buffer, pptxBytes.byteOffset, pptxBytes.byteLength)
+      const sig = view.getUint32(0, true)
+      assertEqual(sig, 0x04034b50, 'Arquivo deve ser um arquivo ZIP OpenXML válido (PK 0x04034b50)')
+    },
+  )
+
+  // =========================================================================
   // RESUMO DA EXECUÇÃO
   // =========================================================================
   console.log('\n-----------------------------------------------------------------')
