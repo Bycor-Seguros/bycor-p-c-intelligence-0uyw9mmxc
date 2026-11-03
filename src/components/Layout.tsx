@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   BookOpen,
   Bot,
+  Sparkles,
   Search,
   Bell,
   LogOut,
@@ -153,7 +154,10 @@ export default function Layout() {
     },
     {
       title: 'INTELIGÊNCIA',
-      items: [{ label: 'Chat IA (Fase 0)', path: '/chat', icon: Bot }],
+      items: [
+        { label: 'Oportunidades Carteira', path: '/', icon: Sparkles },
+        { label: 'Chat IA (Fase 0)', path: '/chat', icon: Bot },
+      ],
     },
   ]
 

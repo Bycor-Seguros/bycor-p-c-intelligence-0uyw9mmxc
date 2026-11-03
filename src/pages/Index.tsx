@@ -24,6 +24,7 @@ import {
   buildMapaSucessao,
   getStatusDerivadoBadgeInfo,
 } from '@/services/apoliceStatusService'
+import { PainelOportunidadesCarteira } from '@/components/PainelOportunidadesCarteira'
 import {
   ResponsiveContainer,
   BarChart,
@@ -362,6 +363,9 @@ export default function DashboardHome() {
           </Button>
         </div>
       </div>
+
+      {/* PAINEL DE OPORTUNIDADES NA CARTEIRA - AGENTE ANALÍTICO (SKIP CLOUD) */}
+      <PainelOportunidadesCarteira />
 
       {/* RENEWAL COUNTDOWN CARDS (4 cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
