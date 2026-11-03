@@ -2,9 +2,26 @@ import { describe, it, expect } from 'vitest'
 import {
   temSublimiteCustosDefesaOuSalvamento,
   derivarVigenciaStatusOportunidade,
+  compararVrdEstagnado,
 } from '../analiticoCarteiraService'
 
 describe('Regras do Painel de Oportunidades (analiticoCarteiraService)', () => {
+  it('compara VRD estagnado ano a ano sem falsos positivos (Regra 6)', () => {
+    // Marca quando ambos são maiores que zero e idênticos
+    expect(compararVrdEstagnado(3137400, 3137400)).toBe(true)
+    expect(compararVrdEstagnado(1000000.005, 1000000.001)).toBe(true)
+
+    // Não marca quando os valores diferem
+    expect(compararVrdEstagnado(3137400, 3500000)).toBe(false)
+    expect(compararVrdEstagnado(5000000, 4800000)).toBe(false)
+
+    // Sem dados anteriores ou atuais: não marca (sem falso positivo)
+    expect(compararVrdEstagnado(0, 3137400)).toBe(false)
+    expect(compararVrdEstagnado(3137400, 0)).toBe(false)
+    expect(compararVrdEstagnado(null, 3137400)).toBe(false)
+    expect(compararVrdEstagnado(3137400, null)).toBe(false)
+    expect(compararVrdEstagnado(undefined, undefined)).toBe(false)
+  })
   it('identifica corretamente apólices com e sem sublimite de Custos de Defesa / Salvamento', () => {
     const mapa = new Map<string, any[]>()
     // Apólice com Custos de Defesa

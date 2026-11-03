@@ -151,9 +151,11 @@ export async function executarVarreduraCarteira(
       const descartadasIds = getIdsDescartadas()
       const registradasIds = getIdsRegistradas()
 
-      // Enriquecimento e agrupamento no frontend caso venha do backend
+      // Enriquecimento e agrupamento no frontend caso venha do backend:
+      // Garante conta_nome preenchido com o nome da empresa
       const ops = (data.oportunidades || []).map((op) => ({
         ...op,
+        conta_nome: op.conta_nome || op.item_detectado || 'Empresa',
         descartada: descartadasIds.has(op.id_temp),
         registrada: registradasIds.has(op.id_temp),
       }))

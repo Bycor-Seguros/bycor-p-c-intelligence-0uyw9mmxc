@@ -702,47 +702,62 @@ export function PainelOportunidadesCarteira() {
                     )}
                   </div>
 
-                  {/* Título do Cartão: nome da EMPRESA/empreendimento em destaque,
-                      com nº da apólice e seguradora explícitos logo abaixo (Requisito do Usuário) */}
+                  {/* Título do Cartão: nome da EMPRESA/empreendimento em destaque nítido e visível,
+                      com nº da apólice e seguradora explícitos logo abaixo (Requisito do Usuário 1) */}
                   {(() => {
                     const primeiraApolice = op.apolices_afetadas?.[0]
                     // Mostra o nº real da apólice (nunca id interno de banco)
-                    const numeroApolice = primeiraApolice?.numero && primeiraApolice.numero !== 'Sem número'
-                      ? primeiraApolice.numero
-                      : ''
+                    const numeroApolice =
+                      primeiraApolice?.numero && primeiraApolice.numero !== 'Sem número'
+                        ? primeiraApolice.numero
+                        : ''
                     const apolicesExtras =
-                      (op.apolices_afetadas?.length || 0) > 1 ? (op.apolices_afetadas?.length || 0) - 1 : 0
+                      (op.apolices_afetadas?.length || 0) > 1
+                        ? (op.apolices_afetadas?.length || 0) - 1
+                        : 0
                     const seguradoraLabel =
                       op.seguradora && op.seguradora !== 'Múltiplas'
                         ? op.seguradora
                         : primeiraApolice?.seguradora || op.seguradora || ''
-                    const nomeEmpresa = op.conta_nome || op.item_detectado
+                    const nomeEmpresa = op.conta_nome || op.item_detectado || 'Empresa'
 
                     return (
-                      <div className="flex items-start gap-2">
-                        <Building2 className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200/60 flex items-center justify-center shrink-0 mt-0.5 text-[#16578B]">
+                          <Building2 className="w-4 h-4" />
+                        </div>
                         <div className="min-w-0">
-                          <div className="text-sm font-bold text-gray-900 tracking-tight">
-                            {nomeEmpresa}
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/50">
+                              Empresa / Conta
+                            </span>
+                            <span className="text-base font-bold text-gray-900 tracking-tight">
+                              {nomeEmpresa}
+                            </span>
                           </div>
                           {op.item_detectado && !op.item_detectado.startsWith(nomeEmpresa) && (
-                            <div className="text-[11px] text-gray-500 font-medium truncate">
+                            <div className="text-[11px] text-gray-500 font-medium truncate mt-0.5">
                               {op.item_detectado}
                             </div>
                           )}
-                          <div className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-gray-500">
+                          <div className="flex flex-wrap items-center gap-x-2 text-xs text-gray-600 mt-1">
                             {numeroApolice && (
-                              <span className="font-mono inline-flex items-center gap-1">
-                                <FileText className="w-3 h-3 text-gray-400" />
-                                {numeroApolice}
+                              <span className="font-mono inline-flex items-center gap-1 font-semibold text-gray-700">
+                                <FileText className="w-3.5 h-3.5 text-gray-400" />
+                                Apólice: {numeroApolice}
                                 {apolicesExtras > 0 && (
-                                  <span className="text-gray-400">
+                                  <span className="text-gray-500 font-normal">
                                     (+{apolicesExtras} apólice{apolicesExtras > 1 ? 's' : ''})
                                   </span>
                                 )}
                               </span>
                             )}
-                            {seguradoraLabel && <span>• {seguradoraLabel}</span>}
+                            {seguradoraLabel && (
+                              <span className="inline-flex items-center gap-1 font-medium text-gray-600">
+                                <span className="text-gray-300">•</span>
+                                Seguradora: {seguradoraLabel}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
