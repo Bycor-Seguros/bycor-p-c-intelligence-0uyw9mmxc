@@ -48,8 +48,34 @@ function parseValorRs(valStr: string | null | undefined): number | null {
  * - "Não Há" -> "Não Há" (mantém)
  * - "05 dias" -> "05 dias" (mantém)
  */
-export function formatFranquiaPadrao(textoRaw: string | null | undefined): string {
-  const original = (textoRaw || '').trim()
+export function formatFranquiaPadrao(textoRaw: string | any): string {
+  let original = ''
+  if (typeof textoRaw === 'string') {
+    original = textoRaw.trim()
+  } else if (typeof textoRaw === 'object' && textoRaw !== null) {
+    const rawVal =
+      textoRaw.textoFormatado ||
+      textoRaw.texto_formatado ||
+      textoRaw.textoOriginal ||
+      textoRaw.texto_original ||
+      textoRaw.descricao ||
+      ''
+    if (rawVal && typeof rawVal === 'string') {
+      original = rawVal.trim()
+    } else if (textoRaw.percentual !== undefined && textoRaw.percentual !== null) {
+      const pct = textoRaw.percentual
+      if (textoRaw.minimo) {
+        original = `${pct}% min R$ ${textoRaw.minimo}`
+      } else {
+        original = `${pct}%`
+      }
+    } else {
+      original = String(textoRaw).trim()
+    }
+  } else {
+    original = String(textoRaw || '').trim()
+  }
+
   if (!original) return 'Não há'
 
   const est = parseFranquiaEstruturada(original)
@@ -68,13 +94,13 @@ export function formatFranquiaPadrao(textoRaw: string | null | undefined): strin
         minimumFractionDigits: est.minimo % 1 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
       }).format(est.minimo)
-      result = `${pct}% min R$ ${minStr}`
+      result = `${pct}% min R$${minStr}`
     } else if (est.maximo !== null && est.maximo !== undefined && !isNaN(est.maximo)) {
       const maxStr = new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: est.maximo % 1 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
       }).format(est.maximo)
-      result = `${pct}% máx R$ ${maxStr}`
+      result = `${pct}% máx R$${maxStr}`
     }
 
     if (est.sufixoAplicacao) {
@@ -189,11 +215,11 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
       base = 'prejuízos indenizáveis'
     }
 
-    // Procura MÍNIMO em R$ (ex: "com mínimo de R$ 1.500,00", "minimo r$ 500,00", "min R$ 2.500,00", "c/ 20 mil", "c/ 1,5 mil")
+    // Procura MÍNIMO em R$ (ex: "com mínimo de R$ 1.500,00", "minimo r$ 500,00", "min R$ 2.500,00", "c/ 20 mil", "c/ 1,5 mil", "com mín. R$ 1.500,00")
     let minimoVal: number | null = null
 
-    // Caso "c/ X mil" ou "min X mil"
-    const matchMil = norm.match(/(?:c\/|com|m[ií]n(?:imo)?(?:\s*de)?)\s*([\d.,]+)\s*mil\b/)
+    // Caso "c/ X mil" ou "min X mil" ou "com mín. X mil"
+    const matchMil = norm.match(/(?:c\/|com|m[ií]n(?:imo|ima)?\.?(?:\s*de)?)\s*([\d.,]+)\s*mil\b/)
     if (matchMil) {
       const numMil = parseValorRs(matchMil[1])
       if (numMil !== null) {
@@ -203,7 +229,7 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
 
     if (minimoVal === null) {
       const matchMin = norm.match(
-        /(?:com\s+)?m[ií]n(?:imo)?(?:\s*de)?(?:\s*r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
+        /(?:com\s+)?m[ií]n(?:imo|ima)?\.?(?:\s*de)?(?:\s*r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
       )
       if (matchMin) {
         minimoVal = parseValorRs(matchMin[1])
@@ -213,7 +239,7 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
     // Procura MÁXIMO em R$ se houver
     let maximoVal: number | null = null
     const matchMax = norm.match(
-      /(?:com\s+)?m[aá]x(?:imo)?\s*(?:de)?\s*(?:r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
+      /(?:com\s+)?m[aá]x(?:imo|ima)?\.?\s*(?:de)?\s*(?:r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
     )
     if (matchMax) {
       maximoVal = parseValorRs(matchMax[1])
@@ -228,17 +254,17 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
     // Formata exibição resumida "X% min R$Y" quando houver mínimo
     let textoFormatado = `${pctVal}%`
     if (minimoVal !== null) {
-      const minStr = minimoVal.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
+      const minStr = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: minimoVal % 1 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
-      })
-      textoFormatado = `${pctVal}% min R$ ${minStr}`
+      }).format(minimoVal)
+      textoFormatado = `${pctVal}% min R$${minStr}`
     } else if (maximoVal !== null) {
-      const maxStr = maximoVal.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
+      const maxStr = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: maximoVal % 1 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
-      })
-      textoFormatado = `${pctVal}% máx R$ ${maxStr}`
+      }).format(maximoVal)
+      textoFormatado = `${pctVal}% máx R$${maxStr}`
     }
 
     return {

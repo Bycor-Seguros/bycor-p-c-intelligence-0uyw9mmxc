@@ -889,21 +889,28 @@ export async function generateEstudoMercadoPptx(
 
   // =========================================================================
   // SLIDE 9: Tabela Comparativa de Coberturas (42 linhas canônicas)
-  // Paginação inteligente: O Estudo real exibe a grade completa das 42 coberturas.
-  // Paginamos em 2 slides (21 + 21 linhas) com cabeçalho repetido e numeração fiel 09/12.
+  // Paginação inteligente: O Estudo exibe a descrição COMPLETA da cobertura canônica
+  // (decisão do analista). Para comportar linhas mais altas sem estourar o slide (h=5.625"),
+  // paginamos em 3 slides de 14 linhas (14 + 14 + 14 = 42).
   // =========================================================================
-  const metadesLinhas = [linhas42.slice(0, 21), linhas42.slice(21, 42)]
+  const CHUNK_SIZE = 14
+  const chunksLinhas: (typeof linhas42)[] = [
+    linhas42.slice(0, CHUNK_SIZE),
+    linhas42.slice(CHUNK_SIZE, CHUNK_SIZE * 2),
+    linhas42.slice(CHUNK_SIZE * 2, 42),
+  ]
 
-  metadesLinhas.forEach((linhasChunk, metadeIdx) => {
+  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
     const sCob = pptx.addSlide()
-    const subNum = metadeIdx === 0 ? '09/12' : '09/12 (cont.)'
+    const subNum =
+      chunkIdx === 0 ? '09/12' : chunkIdx === 1 ? '09/12 (cont. 1/2)' : '09/12 (cont. 2/2)'
     addHeaderBycor(sCob, 'Tabela Comparativa de Coberturas', subNum)
 
     // Cabeçalho
     const headerRow: pptxgen.TableRow = [
       {
         text: 'COBERTURAS',
-        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 7 },
+        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 6.8 },
       },
       {
         text: 'SOLICITADA',
@@ -911,7 +918,7 @@ export async function generateEstudoMercadoPptx(
           bold: true,
           fill: { color: C_NAVY },
           color: C_WHITE,
-          fontSize: 7,
+          fontSize: 6.8,
           align: 'right',
         },
       },
@@ -924,7 +931,7 @@ export async function generateEstudoMercadoPptx(
             bold: true,
             fill: { color: C_NAVY },
             color: C_WHITE,
-            fontSize: 7,
+            fontSize: 6.8,
             align: 'center' as const,
           },
         }
@@ -938,16 +945,19 @@ export async function generateEstudoMercadoPptx(
           ? formatLmiEstudo(linha.item.lmiSolicitado)
           : String(linha.item.lmiSolicitado || '—')
 
+      // Exibe a descrição COMPLETA da cobertura canônica em vez do nome curto
+      const textoDescricao = linha.item.descricao || linha.item.titulo
+
       return [
         {
-          text: `${linha.item.numero}  ${linha.item.titulo}`,
-          options: { bold: true, fontSize: 6.8, color: C_NAVY, fill: { color: bg } },
+          text: `${linha.item.numero}  ${textoDescricao}`,
+          options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
         },
         {
           text: solStr,
           options: {
             bold: true,
-            fontSize: 6.8,
+            fontSize: 6.2,
             color: C_NAVY,
             fill: { color: bg },
             align: 'right' as const,
@@ -962,7 +972,7 @@ export async function generateEstudoMercadoPptx(
           return {
             text: val,
             options: {
-              fontSize: 6.8,
+              fontSize: 6.2,
               color: fontColor,
               fill: { color: bg },
               align: 'center' as const,
@@ -973,12 +983,12 @@ export async function generateEstudoMercadoPptx(
       ]
     })
 
-    // Se for o segundo slide de coberturas, inclui a linha final de Prêmio Bruto (R$)
-    if (metadeIdx === 1) {
+    // Se for o último slide de coberturas (3/3), inclui a linha final de Prêmio Bruto (R$)
+    if (chunkIdx === chunksLinhas.length - 1) {
       dataRows.push([
         {
           text: 'Prêmio Bruto (R$)',
-          options: { bold: true, fill: { color: 'EFF6FF' }, fontSize: 7.5, color: C_NAVY },
+          options: { bold: true, fill: { color: 'EFF6FF' }, fontSize: 7, color: C_NAVY },
         },
         { text: '', options: { fill: { color: 'EFF6FF' } } },
         ...colCias.map((c) => ({
@@ -986,7 +996,7 @@ export async function generateEstudoMercadoPptx(
           options: {
             bold: true,
             fill: { color: 'EFF6FF' },
-            fontSize: 7.5,
+            fontSize: 7,
             color: C_NAVY,
             align: 'center' as const,
           },
@@ -994,33 +1004,36 @@ export async function generateEstudoMercadoPptx(
       ])
     }
 
-    const colWNome = 3.6
-    const colWSol = 1.3
+    // Aumenta a coluna do nome para 4.1 polegadas para acomodar as descrições completas
+    const colWNome = 4.1
+    const colWSol = 1.2
     const colWCiasCob = (8.8 - colWNome - colWSol) / numColCias
 
     sCob.addTable([headerRow, ...dataRows], {
       x: 0.6,
-      y: 1.0,
+      y: 0.95,
       w: 8.8,
       colW: [colWNome, colWSol, ...Array(numColCias).fill(colWCiasCob)],
       border: { pt: 0.5, color: C_BORDER },
-      margin: 0.03,
+      margin: 0.02,
     })
   })
 
   // =========================================================================
   // SLIDE 10: Tabela Comparativa de POS & Franquias (42 linhas canônicas)
-  // Paginamos em 2 slides (21 + 21 linhas) com cabeçalho e asterisco oficial no rodapé
+  // Paginamos também em 3 slides de 14 linhas (14 + 14 + 14 = 42) para
+  // acomodar as descrições completas das coberturas e as franquias no padrão X% min R$Y.
   // =========================================================================
-  metadesLinhas.forEach((linhasChunk, metadeIdx) => {
+  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
     const sPos = pptx.addSlide()
-    const subNum = metadeIdx === 0 ? '10/12' : '10/12 (cont.)'
+    const subNum =
+      chunkIdx === 0 ? '10/12' : chunkIdx === 1 ? '10/12 (cont. 1/2)' : '10/12 (cont. 2/2)'
     addHeaderBycor(sPos, 'Tabela Comparativa de POS & Franquias', subNum)
 
     const headerRow: pptxgen.TableRow = [
       {
         text: 'COBERTURAS',
-        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 7 },
+        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 6.8 },
       },
       ...colCias.map((c) => {
         const numCob = c.numeroCoberturas || c.coberturasOriginais?.length || 42
@@ -1030,7 +1043,7 @@ export async function generateEstudoMercadoPptx(
             bold: true,
             fill: { color: C_NAVY },
             color: C_WHITE,
-            fontSize: 7,
+            fontSize: 6.8,
             align: 'center' as const,
           },
         }
@@ -1040,10 +1053,13 @@ export async function generateEstudoMercadoPptx(
     const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
       const bg = lIdx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
 
+      // Exibe a descrição COMPLETA da cobertura canônica em vez do nome curto
+      const textoDescricao = linha.item.descricao || linha.item.titulo
+
       return [
         {
-          text: `${linha.item.numero}  ${linha.item.titulo}`,
-          options: { bold: true, fontSize: 6.8, color: C_NAVY, fill: { color: bg } },
+          text: `${linha.item.numero}  ${textoDescricao}`,
+          options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
         },
         ...colCias.map((c) => {
           const cell = linha.celulasPorProposta.get(c.id)
@@ -1052,7 +1068,7 @@ export async function generateEstudoMercadoPptx(
           return {
             text: franq,
             options: {
-              fontSize: 6.8,
+              fontSize: 6.2,
               color: isX ? '94A3B8' : C_TEXT,
               fill: { color: bg },
               align: 'center' as const,
@@ -1062,26 +1078,26 @@ export async function generateEstudoMercadoPptx(
       ]
     })
 
-    const colWNomePos = 3.8
+    const colWNomePos = 4.2
     const colWCiasPos = (8.8 - colWNomePos) / numColCias
 
     sPos.addTable([headerRow, ...dataRows], {
       x: 0.6,
-      y: 1.0,
+      y: 0.95,
       w: 8.8,
       colW: [colWNomePos, ...Array(numColCias).fill(colWCiasPos)],
       border: { pt: 0.5, color: C_BORDER },
-      margin: 0.03,
+      margin: 0.02,
     })
 
-    // Rodapé de asterisco obrigatório em ambos os slides de POS
+    // Rodapé de asterisco obrigatório em todos os slides de POS
     sPos.addText('* POS & Franquia por Reclamante, Evento, Veículo, Equipamento.', {
       x: 0.6,
-      y: 5.2,
+      y: 5.25,
       w: 7.5,
-      h: 0.3,
+      h: 0.25,
       fontFace: 'Arial',
-      fontSize: 8,
+      fontSize: 7.5,
       italic: true,
       color: C_MUTED,
     })

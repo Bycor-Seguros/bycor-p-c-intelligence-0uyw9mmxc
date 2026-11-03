@@ -78,11 +78,8 @@ function unzipEntryNames(zipBuffer: Uint8Array): {
   return { names, entries }
 }
 
-export async function validatePptxOpenXml(
-  data: PptxPresentationData,
-): Promise<PptxValidationResult> {
+export function validatePptxBuffer(pptxBytes: Uint8Array): PptxValidationResult {
   const errors: string[] = []
-  const pptxBytes = await generatePresentationPptx(data)
 
   if (!pptxBytes || pptxBytes.length === 0) {
     return { passed: false, errors: ['Buffer PPTX vazio'], partCount: 0, slideCount: 0 }
@@ -119,6 +116,27 @@ export async function validatePptxOpenXml(
   // 3. Conta slides presentes
   const slideParts = names.filter((n) => n.startsWith('ppt/slides/slide') && n.endsWith('.xml'))
 
+  return {
+    passed: errors.length === 0,
+    errors,
+    partCount: names.length,
+    slideCount: slideParts.length,
+  }
+}
+
+export async function validatePptxOpenXml(
+  data: PptxPresentationData,
+): Promise<PptxValidationResult> {
+  const pptxBytes = await generatePresentationPptx(data)
+  const result = validatePptxBuffer(pptxBytes)
+
+  if (!result.passed) {
+    return result
+  }
+
+  const { names } = unzipEntryNames(pptxBytes)
+  const slideParts = names.filter((n) => n.startsWith('ppt/slides/slide') && n.endsWith('.xml'))
+
   // Calcula número de slides esperado baseado nas coberturas paginadas em blocos de 7
   const LINES_PER_SLIDE = 7
   const numCoverageChunks =
@@ -127,6 +145,7 @@ export async function validatePptxOpenXml(
       : 1
   const expectedSlideCount = 2 + numCoverageChunks + 1 // Capa + Perfil + N coberturas + Parecer
 
+  const errors = [...result.errors]
   if (slideParts.length !== expectedSlideCount) {
     errors.push(
       `Número de slides divergente do esperado: esperado ${expectedSlideCount}, encontrado ${slideParts.length}`,

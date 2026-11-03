@@ -6,7 +6,8 @@
 
 export interface CoberturaEstudoF1 {
   numero: string // "01" a "42"
-  titulo: string
+  titulo: string // nome curto/título histórico
+  descricao: string // descrição completa da cobertura canônica (decisão do analista)
   subtitulo?: string
   lmiSolicitado?: number | string // valor em risco solicitado ou string como "Definir proporção"
   ramoPadrao?: 'Patrimonial' | 'Responsabilidade Civil'
@@ -17,6 +18,8 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '01',
     titulo: 'Básica - Inc, Raio, Expl., Q.Aer.,Fumaça',
+    descricao:
+      'Básica - Incêndio, Queda de Raio, Explosão de Qualquer Natureza, Queda de Aeronaves e Fumaça',
     lmiSolicitado: 80000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -30,6 +33,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '02',
     titulo: 'Demolição e Desentulho',
+    descricao: 'Despesas de Demolição, Desentulho e Remoção de Salvados',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Demolição e Desentulho', 'Desentulho'],
@@ -37,6 +41,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '03',
     titulo: 'Derrame Chuveiros Automáticos (SPK)',
+    descricao: 'Derrame Acidental de Chuveiros Automáticos (Sprinklers)',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -50,6 +55,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '04',
     titulo: 'Recomposição de Registros e Docs.',
+    descricao: 'Recomposição de Registros e Documentos',
     lmiSolicitado: 10000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -62,6 +68,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '05',
     titulo: 'Impacto de Veículos Terrestres',
+    descricao: 'Impacto de Veículos Terrestres de Terceiros',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -73,6 +80,8 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '06',
     titulo: 'Perda Pgto Aluguel Dec. Básica (PI 12 m.)',
+    descricao:
+      'Perda ou Pagamento de Aluguel Decorrente da Cobertura Básica (Período Indenitário 12 meses)',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -85,6 +94,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '07',
     titulo: 'Tumultos, Greves e Lockout',
+    descricao: 'Tumultos, Greves, Lockout e Atos Dolosos / Vandalismo',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -97,6 +107,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '08',
     titulo: 'Ruptura Tanques e Tubulações',
+    descricao: 'Vazamento ou Rompimento de Tanques e Tubulações',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -109,6 +120,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '09',
     titulo: 'Danos por Água',
+    descricao: 'Danos Materiais Causados por Água',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Danos por Água', 'Danos por Agua'],
@@ -116,6 +128,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '10',
     titulo: 'Danos Elétricos',
+    descricao: 'Danos Elétricos, Eletrônicos e Curto-Circuito',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Danos Elétricos', 'Danos Eletricos'],
@@ -123,6 +136,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '11',
     titulo: 'Vendaval, Granizo',
+    descricao: 'Vendaval, Furacão, Ciclone, Tornado e Queda de Granizo',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -135,6 +149,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '12',
     titulo: 'Lucros Cessantes – L. Bruto – Básica (PI 12m)',
+    descricao: 'Lucros Cessantes - Lucro Bruto Decorrente de Sinistro da Básica (PI 12 meses)',
     lmiSolicitado: 15000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -147,6 +162,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '13',
     titulo: 'Quebra de Vidros',
+    descricao: 'Quebra Acidental de Vidros, Espelhos e Mármores',
     lmiSolicitado: 300000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -158,6 +174,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '14',
     titulo: 'Anúncios Luminosos',
+    descricao: 'Danos Materiais a Anúncios e Letreiros Luminosos',
     lmiSolicitado: 200000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -169,6 +186,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '15',
     titulo: 'Roubo/Furto Qualif. de Bens',
+    descricao: 'Roubo e Furto Qualificado de Bens do Segurado',
     lmiSolicitado: 500000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -181,6 +199,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '16',
     titulo: 'Roubo Valores Interior Estabel.',
+    descricao: 'Roubo e Furto Qualificado de Valores no Interior do Estabelecimento',
     lmiSolicitado: 10000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -193,6 +212,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '17',
     titulo: 'Roubo Valores em Trânsito',
+    descricao: 'Roubo e Furto Qualificado de Valores em Trânsito em Mãos de Portadores',
     lmiSolicitado: 10000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -204,6 +224,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '18',
     titulo: 'Roubo de Bens de Hóspedes',
+    descricao: 'Roubo e Furto de Bens de Hóspedes em Apartamentos ou Áreas do Hotel',
     lmiSolicitado: 100000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -216,6 +237,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '19',
     titulo: 'Roubo/Furto Valores de Hóspedes',
+    descricao: 'Roubo e Furto Qualificado de Valores de Hóspedes Guardados em Cofre',
     lmiSolicitado: 10000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -228,6 +250,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '20',
     titulo: 'Fidelidade Funcionários',
+    descricao: 'Fidelidade de Empregados e Funcionários (Apropriação Indébita e Fraudes)',
     lmiSolicitado: 100000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -239,6 +262,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '21',
     titulo: 'Alagamento',
+    descricao: 'Alagamento, Inundação e Enchente por Chuva ou Transbordamento de Rios',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Alagamento', 'Alagamento/Inundação', 'Inundação'],
@@ -246,6 +270,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '22',
     titulo: 'Desmoronamento',
+    descricao: 'Desmoronamento Parcial ou Total de Paredes e Estruturas',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Desmoronamento', 'Desmoronamento Total ou Parcial'],
@@ -253,6 +278,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '23',
     titulo: 'Quebra de Máquinas',
+    descricao: 'Quebra Acidental de Máquinas e Equipamentos Estacionários',
     lmiSolicitado: 500000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Quebra de Máquinas', 'Quebra de Maquinas'],
@@ -260,6 +286,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '24',
     titulo: 'Equipamentos Eletrônicos',
+    descricao: 'Equipamentos Eletrônicos com ou sem Danos Elétricos',
     lmiSolicitado: 500000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Equipamentos Eletrônicos', 'Equipamentos Eletronicos'],
@@ -267,6 +294,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '25',
     titulo: 'Equipamentos Estacionários',
+    descricao: 'Equipamentos Estacionários Operacionais (Geradores, Chillers e Motores)',
     lmiSolicitado: 300000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Equipamentos Estacionários', 'Equipamentos Estacionarios'],
@@ -274,6 +302,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '26',
     titulo: 'Equipamentos Móveis',
+    descricao: 'Equipamentos Móveis e Utilitários no Estabelecimento',
     lmiSolicitado: 100000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Equipamentos Móveis', 'Equipamentos Moveis'],
@@ -281,6 +310,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '27',
     titulo: 'Equipamentos Portáteis',
+    descricao: 'Equipamentos Portáteis e de Informática em Operação',
     lmiSolicitado: 50000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Equipamentos Portáteis', 'Equipamentos Portateis'],
@@ -288,6 +318,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '28',
     titulo: 'Equipamentos Arrendados/Cedidos',
+    descricao: 'Equipamentos Arrendados ou Cedidos a Terceiros no Estabelecimento',
     lmiSolicitado: 250000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -299,6 +330,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '29',
     titulo: 'Mercadorias Frigorificadas',
+    descricao: 'Deterioração de Mercadorias em Ambientes Frigorificados por Falta de Energia',
     lmiSolicitado: 50000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -311,6 +343,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '30',
     titulo: 'Honorários Peritos - Danos Materiais',
+    descricao: 'Honorários de Peritos e Assistentes Técnicos em Sinistros Materiais',
     lmiSolicitado: 300000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -322,6 +355,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '31',
     titulo: 'Pequenas Obras de Engenharia',
+    descricao: 'Pequenas Obras de Engenharia, Reformas e Manutenção Predial',
     lmiSolicitado: 500000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -333,6 +367,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '32',
     titulo: 'Terremoto e Tremores de Terra',
+    descricao: 'Terremoto, Maremoto e Tremores de Terra Acidentais',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Terremoto e Tremores de Terra', 'Tremor de Terra e Terremoto', 'Terremoto'],
@@ -340,6 +375,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '33',
     titulo: 'Obras de Arte',
+    descricao: 'Objetos e Obras de Arte em Exposição no Estabelecimento',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: ['Obras de Arte', 'Objetos de Arte'],
@@ -347,6 +383,8 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '34',
     titulo: 'Resp. Civil Hospedagem, Bares e Rest.',
+    descricao:
+      'Responsabilidade Civil Estabelecimentos de Hospedagem, Bares, Restaurantes e Similares',
     lmiSolicitado: 2000000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: [
@@ -360,6 +398,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '35',
     titulo: 'Resp.Civil Empregador',
+    descricao: 'Responsabilidade Civil do Empregador (Acidentes de Trabalho com Empregados)',
     lmiSolicitado: 2000000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: [
@@ -371,6 +410,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '36',
     titulo: 'Resp.Civil Danos Morais',
+    descricao: 'Responsabilidade Civil por Danos Morais Decorrentes de Sinistros Cobertos',
     lmiSolicitado: 500000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: ['Resp.Civil Danos Morais', 'RC Danos Morais', 'Danos Morais'],
@@ -378,6 +418,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '37',
     titulo: 'Resp. Civil Guarda Veic. Compreensiva',
+    descricao: 'Responsabilidade Civil Guarda de Veículos de Terceiros - Compreensiva / Ampla',
     lmiSolicitado: 250000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: [
@@ -391,6 +432,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '38',
     titulo: 'Resp. Civil Condomínio',
+    descricao: 'Responsabilidade Civil Condomínio / Estabelecimento Geral',
     lmiSolicitado: 2000000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: ['Resp. Civil Condomínio', 'RC Condomínio', 'RC Condominio'],
@@ -398,6 +440,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '39',
     titulo: 'Resp. Civil Síndico',
+    descricao: 'Responsabilidade Civil Síndico e Administradores do Condomínio',
     lmiSolicitado: 2000000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: ['Resp. Civil Síndico', 'RC Síndico', 'RC Sindico'],
@@ -405,6 +448,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '40',
     titulo: 'Resp. Civil Portões Automáticos',
+    descricao: 'Responsabilidade Civil Danos a Terceiros por Portões Automáticos e Cancelas',
     lmiSolicitado: 250000,
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: ['Resp. Civil Portões Automáticos', 'RC Portões Automáticos', 'RC Portões'],
@@ -412,6 +456,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '41',
     titulo: 'Desp. Salvam. e Conteção Sinistros',
+    descricao: 'Despesas de Salvamento e Contenção de Sinistros para Redução de Prejuízos',
     lmiSolicitado: 1000000,
     ramoPadrao: 'Patrimonial',
     aliasesCanonicos: [
@@ -424,6 +469,7 @@ export const COBERTURAS_ESTUDO_42: CoberturaEstudoF1[] = [
   {
     numero: '42',
     titulo: 'RC Custos de Defesa',
+    descricao: 'Responsabilidade Civil Custos de Defesa e Honorários Advocatícios (Nova Lei)',
     lmiSolicitado: 'Definir proporção',
     ramoPadrao: 'Responsabilidade Civil',
     aliasesCanonicos: [

@@ -1459,6 +1459,18 @@ export async function runAllSuites() {
 
       assertEqual(grade.length, 42, 'A grade resolvida deve ter exatamente 42 linhas')
 
+      // Validação da descrição completa da cobertura canônica (campo descricao)
+      assertEqual(
+        grade[0].item.descricao.includes('Incêndio, Queda de Raio, Explosão'),
+        true,
+        'Item 01 deve conter descrição completa da Básica',
+      )
+      assertEqual(
+        grade[4].item.descricao,
+        'Impacto de Veículos Terrestres de Terceiros',
+        'Item 05 (Impacto de Veículos) deve conter descrição completa especificando veículos de terceiros',
+      )
+
       const celulaBasica = grade[0].celulasPorProposta.get('prop-allianz')
       assertEqual(
         Boolean(celulaBasica && !celulaBasica.naoIncluida),
@@ -1470,13 +1482,27 @@ export async function runAllSuites() {
       const { formatFranquiaEstudo } = await import('../estudoMercadoResolver')
       assertEqual(
         formatFranquiaEstudo('10% com mínimo de R$ 920,00'),
-        '10% min R$ 920',
+        '10% min R$920',
         'Franquia percentual normalizada como X% min R$Y',
       )
       assertEqual(
         formatFranquiaEstudo('10% c/ 20 mil'),
-        '10% min R$ 20.000',
+        '10% min R$20.000',
         'Franquia percentual com abreviação mil normalizada como X% min R$Y',
+      )
+      // Validação do caso concreto Allianz (objeto com textoFormatado e string com 'com mín.')
+      assertEqual(
+        formatFranquiaEstudo({
+          textoFormatado: '10% com mín. R$ 1.500,00',
+          textoOriginal: '10% com mín. R$ 1.500,00',
+        }),
+        '10% min R$1.500',
+        'Franquia da Allianz em objeto com textoFormatado normalizada no padrão X% min R$Y',
+      )
+      assertEqual(
+        formatFranquiaEstudo('10% com mín. R$ 1.500,00'),
+        '10% min R$1.500',
+        'Franquia da Allianz em string normalizada no padrão X% min R$Y',
       )
       assertEqual(
         formatFranquiaEstudo('R$ 1.000,00'),
@@ -1518,6 +1544,20 @@ export async function runAllSuites() {
       const view = new DataView(pptxBytes.buffer, pptxBytes.byteOffset, pptxBytes.byteLength)
       const sig = view.getUint32(0, true)
       assertEqual(sig, 0x04034b50, 'Arquivo deve ser um arquivo ZIP OpenXML válido (PK 0x04034b50)')
+
+      // 5. Validação estrutural do PPTX do Estudo via validatePptxBuffer
+      const { validatePptxBuffer } = await import('./pptxValidation.test')
+      const validation = validatePptxBuffer(pptxBytes)
+      assertEqual(
+        validation.passed,
+        true,
+        'PPTX do Estudo deve ser estruturalmente válido sem erros OpenXML',
+      )
+      assertEqual(
+        validation.errors.length,
+        0,
+        'PPTX do Estudo não deve ter erros de estrutura OpenXML',
+      )
     },
   )
 

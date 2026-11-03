@@ -61,13 +61,21 @@ export function formatFranquiaEstudo(rawFranquia: any): string {
   let rawStr = ''
   if (typeof rawFranquia === 'string') {
     rawStr = rawFranquia.trim()
-  } else if (typeof rawFranquia === 'object') {
-    if (rawFranquia.textoFormatado) return String(rawFranquia.textoFormatado).trim()
-    if (rawFranquia.texto_formatado) return String(rawFranquia.texto_formatado).trim()
-    if (rawFranquia.textoOriginal) rawStr = String(rawFranquia.textoOriginal).trim()
+  } else if (typeof rawFranquia === 'object' && rawFranquia !== null) {
+    // Atenção: nunca retornar textoFormatado/textoOriginal CRU.
+    // Toda entrada (string ou objeto) DEVE passar sempre por formatFranquiaPadrao.
+    // Extrai o conteúdo em ordem de prioridade para ser normalizado:
+    if (rawFranquia.textoFormatado) rawStr = String(rawFranquia.textoFormatado).trim()
+    else if (rawFranquia.texto_formatado) rawStr = String(rawFranquia.texto_formatado).trim()
+    else if (rawFranquia.textoOriginal) rawStr = String(rawFranquia.textoOriginal).trim()
     else if (rawFranquia.texto_original) rawStr = String(rawFranquia.texto_original).trim()
     else if (rawFranquia.descricao) rawStr = String(rawFranquia.descricao).trim()
-    else rawStr = String(rawFranquia)
+    else if (rawFranquia.percentual !== undefined && rawFranquia.percentual !== null) {
+      const pct = rawFranquia.percentual
+      rawStr = rawFranquia.minimo ? `${pct}% min R$ ${rawFranquia.minimo}` : `${pct}%`
+    } else {
+      rawStr = String(rawFranquia).trim()
+    }
   } else {
     rawStr = String(rawFranquia).trim()
   }
@@ -75,7 +83,7 @@ export function formatFranquiaEstudo(rawFranquia: any): string {
   if (!rawStr || rawStr === '-' || rawStr === '--') return 'Não há'
   if (rawStr.toLowerCase() === 'não há' || rawStr.toLowerCase() === 'nao ha') return 'Não há'
 
-  // Padronização: franquias percentuais normalizadas como "X% min R$Y";
+  // Padronização: franquias percentuais normalizadas como "X% min R$Y" (ex.: "10% min R$1.500");
   // demais (valor fixo, dias, "Não Há") permanecem na nomenclatura original
   return formatFranquiaPadrao(rawStr)
 }
@@ -227,8 +235,24 @@ export function resolverGradeEstudo42(params: {
       })
     })
 
+    // Se a taxonomia do C3 tiver descrição personalizada para esta canônica, prioriza
+    const descCanonica =
+      canonicasC3.find(
+        (c) =>
+          cobEstudo.aliasesCanonicos.some(
+            (alias) => alias.toLowerCase() === c.nome.toLowerCase(),
+          ) && Boolean(c.descricao),
+      )?.descricao ||
+      cobEstudo.descricao ||
+      cobEstudo.titulo
+
+    const itemComDescricao: CoberturaEstudoF1 = {
+      ...cobEstudo,
+      descricao: descCanonica,
+    }
+
     return {
-      item: cobEstudo,
+      item: itemComDescricao,
       celulasPorProposta,
     }
   })
