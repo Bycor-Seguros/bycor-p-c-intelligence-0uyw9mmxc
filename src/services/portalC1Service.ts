@@ -17,7 +17,7 @@
  * 5. Apenas leitura em `notas_base`: nada grava automaticamente sem decisão do analista.
  */
 
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import { normalizarRamoParaSucessao } from '@/services/apoliceStatusService'
 
 export type TipoPortaEntrada = 'conta_nova' | 'renovacao'
@@ -240,17 +240,17 @@ export function selecionarApoliceAntecessora(
   // a antecessora é a apólice com data_fim <= dataReferencia ou com data_fim imediatamente anterior.
   const refMs = dataReferenciaVigencia ? parseDataTimestamp(dataReferenciaVigencia) : Infinity
 
-  // Ordena por data_fim decrescente (mais recente primeiro)
+  // Ordena por dataFim decrescente (mais recente primeiro)
   const ordenadas = [...candidatas].sort((a, b) => {
-    const tA = parseDataTimestamp(a.data_fim || a.dataInicio)
-    const tB = parseDataTimestamp(b.data_fim || b.dataInicio)
+    const tA = parseDataTimestamp(a.dataFim || a.dataInicio)
+    const tB = parseDataTimestamp(b.dataFim || b.dataInicio)
     return tB - tA
   })
 
   // 1. Tenta a apólice com fim anterior ou igual à referência
   if (refMs !== Infinity) {
     const antesRef = ordenadas.find((a) => {
-      const fimMs = parseDataTimestamp(a.data_fim)
+      const fimMs = parseDataTimestamp(a.dataFim)
       return fimMs <= refMs
     })
     if (antesRef) return antesRef

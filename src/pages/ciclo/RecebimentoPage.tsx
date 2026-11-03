@@ -50,6 +50,8 @@ import {
 } from '@/components/ui/dialog'
 import { formatDate, formatCurrency } from '@/lib/formatters'
 import { ApoliceUploadModal } from '@/components/ApoliceUploadModal'
+import { ModalPortalDuploC1 } from '@/components/ModalPortalDuploC1'
+import { TipoPortaEntrada } from '@/services/portalC1Service'
 
 interface DocumentRecord {
   id: string
@@ -97,6 +99,10 @@ export default function RecebimentoPage() {
   const [confirmClearInput, setConfirmClearInput] = useState('')
   const [clearing, setClearing] = useState(false)
   const [clearResult, setClearResult] = useState<ClearDatabaseResult | null>(null)
+
+  // Portal Duplo C1: Diálogo explícito Conta Nova × Renovação
+  const [portalDuploOpen, setPortalDuploOpen] = useState(false)
+  const [ultimoTipoPorta, setUltimoTipoPorta] = useState<TipoPortaEntrada | null>(null)
 
   const isAdmin =
     user?.role === 'admin' ||
@@ -314,6 +320,15 @@ export default function RecebimentoPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* BOTÃO NOVO PROCESSO: PORTAL DUPLO C1 (CONTA NOVA × RENOVAÇÃO) */}
+          <Button
+            onClick={() => setPortalDuploOpen(true)}
+            className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-bold h-10 px-4 shadow-sm flex items-center gap-2 border border-[#0F2B46]"
+          >
+            <Plus className="w-4 h-4 text-emerald-400" />
+            <span>Iniciar Novo Processo (Portal Duplo)</span>
+          </Button>
+
           {/* BOTÃO LEITOR DE CARTÃO DE RISCO */}
           <Button
             onClick={() => {
@@ -323,10 +338,11 @@ export default function RecebimentoPage() {
               setRiskCardSummary(null)
               setRiskCardModalOpen(true)
             }}
-            className="bg-[#16578B] hover:bg-[#12456e] text-white text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+            variant="outline"
+            className="border-[#16578B] text-[#16578B] hover:bg-blue-50/60 text-xs font-semibold h-10 px-3.5 shadow-sm flex items-center gap-2"
           >
-            <ShieldCheck className="w-4 h-4 text-blue-200" />
-            <span>Enviar Cartão de Risco (XLSX)</span>
+            <ShieldCheck className="w-4 h-4 text-[#16578B]" />
+            <span>Cartão de Risco (XLSX)</span>
           </Button>
 
           <Button
@@ -336,10 +352,10 @@ export default function RecebimentoPage() {
               setImportModalOpen(true)
             }}
             variant="outline"
-            className="border-[#0F2B46] text-[#0F2B46] hover:bg-blue-50/50 text-xs font-semibold h-10 px-4 shadow-sm flex items-center gap-2"
+            className="border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium h-10 px-3.5 shadow-sm flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Importar Base Hotéis e Resorts (XLSX)</span>
+            <span>Base Hotéis (XLSX)</span>
           </Button>
 
           {/* BOTÃO LEITOR DE APÓLICE EMITIDA (PDF) */}
@@ -1795,6 +1811,29 @@ export default function RecebimentoPage() {
         open={apoliceModalOpen}
         onOpenChange={setApoliceModalOpen}
         onSuccess={() => {
+          fetchDocuments()
+        }}
+      />
+
+      {/* MODAL: Portal Duplo de Entrada C1 (Conta Nova × Renovação) */}
+      <ModalPortalDuploC1
+        open={portalDuploOpen}
+        onOpenChange={setPortalDuploOpen}
+        onSelectContaNova={() => {
+          // Conta Nova: abre o leitor de Cartão de Risco ou direciona para prospecção
+          setRiskCardFile(null)
+          setParsedRiskCard(null)
+          setRiskCardMatch(null)
+          setRiskCardSummary(null)
+          setRiskCardModalOpen(true)
+        }}
+        onSelectRenovacaoComCartao={async (file, _contaId) => {
+          // Renovação com upload de Cartão de Risco do ano anterior: passa arquivo para o leitor existente
+          setRiskCardModalOpen(true)
+          await handleSelectRiskCardFile(file)
+        }}
+        onProcessoIniciado={(tipoPorta, _contaId) => {
+          setUltimoTipoPorta(tipoPorta)
           fetchDocuments()
         }}
       />
