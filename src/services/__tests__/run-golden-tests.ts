@@ -1536,4 +1536,5 @@ export async function runAllSuites() {
 }
 
 // Execução automática auto-invocada
+// Execução do suite de testes de ouro (Golden Tests)
 void runAllSuites()
