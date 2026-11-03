@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-03T18:06:17.307Z",
+  "generatedAt": "2026-11-03T19:15:34.000Z",
   "collections": [
     {
       "name": "users",
@@ -723,6 +723,12 @@
           "required": false,
           "system": false,
           "collectionRef": "apolices"
+        },
+        {
+          "name": "tipo_porta",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1326,6 +1332,12 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tipo_porta",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_rfq_status ON rfq (status)"]
@@ -1732,6 +1744,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tipo_porta",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_docs_tipo ON documentos (tipo)"]
