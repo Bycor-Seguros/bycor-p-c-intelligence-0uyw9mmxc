@@ -1466,7 +1466,35 @@ export async function runAllSuites() {
         'Cobertura básica deve estar incluída',
       )
 
-      // 3. Geração dos bytes OpenXML PPTX
+      // 3. Validação da Padronização de POS & Franquias ("X% min R$Y" vs valor fixo/dias/Não há)
+      const { formatFranquiaEstudo } = await import('../estudoMercadoResolver')
+      assertEqual(
+        formatFranquiaEstudo('10% com mínimo de R$ 920,00'),
+        '10% min R$ 920',
+        'Franquia percentual normalizada como X% min R$Y',
+      )
+      assertEqual(
+        formatFranquiaEstudo('10% c/ 20 mil'),
+        '10% min R$ 20.000',
+        'Franquia percentual com abreviação mil normalizada como X% min R$Y',
+      )
+      assertEqual(
+        formatFranquiaEstudo('R$ 1.000,00'),
+        'R$ 1.000,00',
+        'Franquia em valor fixo permanece na nomenclatura original',
+      )
+      assertEqual(
+        formatFranquiaEstudo('05 dias'),
+        '05 dias',
+        'Franquia em dias permanece na nomenclatura original',
+      )
+      assertEqual(
+        formatFranquiaEstudo('Não Há'),
+        'Não há',
+        'Franquia Não Há normalizada com capitalização limpa',
+      )
+
+      // 4. Geração dos bytes OpenXML PPTX com logo Bycor embarcada
       const pptxBytes = await generateEstudoMercadoPptx({
         empreendimentoNome: 'Condomínio São International Square',
         cosseguradoNome: 'BT São Caetano Hotéis Ltda',

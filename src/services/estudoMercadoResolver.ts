@@ -5,6 +5,7 @@ import {
   CoberturaCanonicaRecord,
   CoberturaSinonimoRecord,
 } from './equivalenciaCoberturasService'
+import { formatFranquiaPadrao } from './franquiaNormalizer'
 
 export interface PropostaInputEstudo {
   id: string
@@ -56,18 +57,27 @@ export function formatLmiEstudo(lmi: number | null | undefined): string {
  */
 export function formatFranquiaEstudo(rawFranquia: any): string {
   if (!rawFranquia) return 'Não há'
+
+  let rawStr = ''
   if (typeof rawFranquia === 'string') {
-    const trimmed = rawFranquia.trim()
-    if (!trimmed || trimmed === '-' || trimmed === '--') return 'Não há'
-    if (trimmed.toLowerCase() === 'não há' || trimmed.toLowerCase() === 'nao ha') return 'Não há'
-    return trimmed
+    rawStr = rawFranquia.trim()
+  } else if (typeof rawFranquia === 'object') {
+    if (rawFranquia.textoFormatado) return String(rawFranquia.textoFormatado).trim()
+    if (rawFranquia.texto_formatado) return String(rawFranquia.texto_formatado).trim()
+    if (rawFranquia.textoOriginal) rawStr = String(rawFranquia.textoOriginal).trim()
+    else if (rawFranquia.texto_original) rawStr = String(rawFranquia.texto_original).trim()
+    else if (rawFranquia.descricao) rawStr = String(rawFranquia.descricao).trim()
+    else rawStr = String(rawFranquia)
+  } else {
+    rawStr = String(rawFranquia).trim()
   }
-  if (typeof rawFranquia === 'object') {
-    // Se for objeto com texto_original
-    if (rawFranquia.texto_original) return String(rawFranquia.texto_original).trim()
-    if (rawFranquia.descricao) return String(rawFranquia.descricao).trim()
-  }
-  return String(rawFranquia)
+
+  if (!rawStr || rawStr === '-' || rawStr === '--') return 'Não há'
+  if (rawStr.toLowerCase() === 'não há' || rawStr.toLowerCase() === 'nao ha') return 'Não há'
+
+  // Padronização: franquias percentuais normalizadas como "X% min R$Y";
+  // demais (valor fixo, dias, "Não Há") permanecem na nomenclatura original
+  return formatFranquiaPadrao(rawStr)
 }
 
 /**

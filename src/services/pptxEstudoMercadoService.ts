@@ -11,6 +11,7 @@ import {
   formatLmiEstudo,
 } from './estudoMercadoResolver'
 import { CoberturaCanonicaRecord, CoberturaSinonimoRecord } from './equivalenciaCoberturasService'
+import { LOGO_BYCOR_PATH } from '@/assets/logoBycorBase64'
 
 export interface EstudoMercadoEditavelData {
   // Dados Gerais do Cabeçalho / Capa
@@ -74,24 +75,24 @@ const C_WHITE = 'FFFFFF'
 const C_GREEN = '15803D'
 
 function addHeaderBycor(slide: pptxgen.Slide, titulo: string, numeroPagina: string) {
-  // Logo / Nome superior
+  // Título da página
   slide.addText([{ text: titulo, options: { fontSize: 22, bold: true, color: C_NAVY } }], {
     x: 0.6,
     y: 0.4,
-    w: 7.5,
+    w: 7.2,
     h: 0.6,
     fontFace: 'Arial',
     margin: 0,
   })
 
-  // Tag Bycor superior direita
-  slide.addText(
-    [
-      { text: 'BYCOR\n', options: { fontSize: 13, bold: true, color: '15803D' } },
-      { text: 'SEGUROS', options: { fontSize: 7, bold: true, color: C_NAVY } },
-    ],
-    { x: 8.4, y: 0.35, w: 1.2, h: 0.6, fontFace: 'Arial', align: 'right', margin: 0 },
-  )
+  // Logo oficial da Bycor no canto superior direito (embutida como asset do pacote PPTX)
+  slide.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 8.85,
+    y: 0.28,
+    w: 0.55,
+    h: 0.72,
+  })
 
   // Rodapé número de página "NN/12"
   slide.addText(numeroPagina, {
@@ -140,16 +141,25 @@ export async function generateEstudoMercadoPptx(
     line: { color: C_NAVY },
   })
 
+  // Logo oficial Bycor em destaque na capa
+  s1.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 0.6,
+    y: 0.7,
+    w: 1.1,
+    h: 1.45,
+  })
+
   s1.addText(
     [
-      { text: 'BYCOR\n', options: { fontSize: 32, bold: true, color: '10B981' } },
+      { text: 'BYCOR\n', options: { fontSize: 30, bold: true, color: '10B981' } },
       { text: 'P&C INTELLIGENCE\n\n', options: { fontSize: 13, bold: true, color: '93C5FD' } },
       {
         text: 'Estudo Técnico de Mercado\nColocação & Transferência de Risco',
         options: { fontSize: 11, color: 'E2E8F0' },
       },
     ],
-    { x: 0.6, y: 1.8, w: 3.4, h: 2.5, fontFace: 'Arial', align: 'left' },
+    { x: 0.6, y: 2.3, w: 3.4, h: 2.5, fontFace: 'Arial', align: 'left' },
   )
 
   // Lado direito: Título principal, Empreendimento e Vigência
@@ -1202,14 +1212,14 @@ export async function generateEstudoMercadoPptx(
     h: 5.625,
   })
 
-  // Tag Bycor superior direita
-  s12.addText(
-    [
-      { text: 'BYCOR\n', options: { fontSize: 18, bold: true, color: '15803D' } },
-      { text: 'SEGUROS', options: { fontSize: 9, bold: true, color: C_NAVY } },
-    ],
-    { x: 8.4, y: 0.4, w: 1.2, h: 0.6, fontFace: 'Arial', align: 'right', margin: 0 },
-  )
+  // Logo Bycor superior direita no encerramento
+  s12.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 8.8,
+    y: 0.35,
+    w: 0.65,
+    h: 0.85,
+  })
 
   // Bloco central: Obrigado e Mensagem institucional
   s12.addText(

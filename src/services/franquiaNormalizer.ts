@@ -37,6 +37,59 @@ function parseValorRs(valStr: string | null | undefined): number | null {
 /**
  * Converte string crua de Franquia / POS em componentes estruturados normalizados
  */
+/**
+ * Converte string crua ou valor de franquia percentual no formato padronizado "X% min R$Y".
+ * Se não for percentual ou se não tiver percentual identificável, mantém a nomenclatura original.
+ * Ex.:
+ * - "10% com mínimo de R$ 920,00" -> "10% min R$ 920,00"
+ * - "10% min R$ 920" -> "10% min R$ 920,00"
+ * - "10% c/ 20 mil" -> "10% min R$ 20.000,00"
+ * - "R$ 1.000,00" -> "R$ 1.000,00" (mantém)
+ * - "Não Há" -> "Não Há" (mantém)
+ * - "05 dias" -> "05 dias" (mantém)
+ */
+export function formatFranquiaPadrao(textoRaw: string | null | undefined): string {
+  const original = (textoRaw || '').trim()
+  if (!original) return 'Não há'
+
+  const est = parseFranquiaEstruturada(original)
+
+  if (est.tipo === 'nao_ha') {
+    return 'Não há'
+  }
+
+  // Franquia com percentual (tipo percentual ou mista com percentual)
+  if (est.percentual !== null && est.percentual !== undefined && !isNaN(est.percentual)) {
+    const pct = est.percentual
+    let result = `${pct}%`
+
+    if (est.minimo !== null && est.minimo !== undefined && !isNaN(est.minimo)) {
+      const minStr = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: est.minimo % 1 === 0 ? 0 : 2,
+        maximumFractionDigits: 2,
+      }).format(est.minimo)
+      result = `${pct}% min R$ ${minStr}`
+    } else if (est.maximo !== null && est.maximo !== undefined && !isNaN(est.maximo)) {
+      const maxStr = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: est.maximo % 1 === 0 ? 0 : 2,
+        maximumFractionDigits: 2,
+      }).format(est.maximo)
+      result = `${pct}% máx R$ ${maxStr}`
+    }
+
+    if (est.sufixoAplicacao) {
+      result = `${result} ${est.sufixoAplicacao}`.trim()
+    }
+    if (est.condicao) {
+      result = `${result} ${est.condicao}`.trim()
+    }
+    return result
+  }
+
+  // Demais tipos (valor fixo, dias, mista sem percentual, não há) -> nomenclatura original
+  return original
+}
+
 export function parseFranquiaEstruturada(textoRaw: string | null | undefined): FranquiaEstruturada {
   const original = (textoRaw || '').trim()
 
@@ -136,13 +189,25 @@ export function parseFranquiaEstruturada(textoRaw: string | null | undefined): F
       base = 'prejuízos indenizáveis'
     }
 
-    // Procura MÍNIMO em R$ (ex: "com mínimo de R$ 1.500,00", "minimo r$ 500,00", "min R$ 2.500,00")
+    // Procura MÍNIMO em R$ (ex: "com mínimo de R$ 1.500,00", "minimo r$ 500,00", "min R$ 2.500,00", "c/ 20 mil", "c/ 1,5 mil")
     let minimoVal: number | null = null
-    const matchMin = norm.match(
-      /(?:com\s+)?m[ií]n(?:imo)?(?:\s*de)?(?:\s*r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
-    )
-    if (matchMin) {
-      minimoVal = parseValorRs(matchMin[1])
+
+    // Caso "c/ X mil" ou "min X mil"
+    const matchMil = norm.match(/(?:c\/|com|m[ií]n(?:imo)?(?:\s*de)?)\s*([\d.,]+)\s*mil\b/)
+    if (matchMil) {
+      const numMil = parseValorRs(matchMil[1])
+      if (numMil !== null) {
+        minimoVal = numMil * 1000
+      }
+    }
+
+    if (minimoVal === null) {
+      const matchMin = norm.match(
+        /(?:com\s+)?m[ií]n(?:imo)?(?:\s*de)?(?:\s*r\$)?\s*([\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]{1,3}(?:\.[\d]{3})+|\d+)/,
+      )
+      if (matchMin) {
+        minimoVal = parseValorRs(matchMin[1])
+      }
     }
 
     // Procura MÁXIMO em R$ se houver

@@ -5,6 +5,7 @@
  */
 import pptxgen from 'pptxgenjs'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { LOGO_BYCOR_PATH } from '@/assets/logoBycorBase64'
 
 export interface PptxCoverageItem {
   nome: string
@@ -65,11 +66,20 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
     rectRadius: 0.15,
   })
 
+  // Logo oficial da Bycor no canto superior direito do card
+  slide1.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 7.8,
+    y: 0.9,
+    w: 0.9,
+    h: 1.18,
+  })
+
   // Tag superior Bycor
   slide1.addText('BYCOR CONSULTORIA E CORRETORA DE SEGUROS', {
     x: 1.2,
     y: 1.0,
-    w: 7.6,
+    w: 6.4,
     h: 0.4,
     fontFace: 'Arial',
     fontSize: 11,
@@ -136,13 +146,22 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
   slide2.addText('1. Perfil Operacional & Estrutura Recomendada', {
     x: 0.6,
     y: 0.4,
-    w: 8.8,
+    w: 7.8,
     h: 0.5,
     fontFace: 'Arial',
     fontSize: 18,
     bold: true,
     color: BRAND_NAVY,
     margin: 0,
+  })
+
+  // Marca discreta da Bycor no topo direito
+  slide2.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 8.85,
+    y: 0.28,
+    w: 0.55,
+    h: 0.72,
   })
 
   // Card superior: Dados Operacionais do Cliente
@@ -355,13 +374,22 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
     slideCoverage.addText(slideTitle, {
       x: 0.6,
       y: 0.4,
-      w: 8.8,
+      w: 7.8,
       h: 0.5,
       fontFace: 'Arial',
       fontSize: 18,
       bold: true,
       color: BRAND_NAVY,
       margin: 0,
+    })
+
+    // Marca discreta da Bycor no topo direito
+    slideCoverage.addImage({
+      path: LOGO_BYCOR_PATH,
+      x: 8.85,
+      y: 0.28,
+      w: 0.55,
+      h: 0.72,
     })
 
     // Cabeçalho da tabela com 3 colunas padrão
@@ -502,13 +530,22 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
   slideFinal.addText('3. Parecer Técnico & Recomendação da Corretora', {
     x: 0.6,
     y: 0.4,
-    w: 8.8,
+    w: 7.8,
     h: 0.5,
     fontFace: 'Arial',
     fontSize: 18,
     bold: true,
     color: BRAND_NAVY,
     margin: 0,
+  })
+
+  // Marca discreta da Bycor no topo direito
+  slideFinal.addImage({
+    path: LOGO_BYCOR_PATH,
+    x: 8.85,
+    y: 0.28,
+    w: 0.55,
+    h: 0.72,
   })
 
   // Card do Parecer
