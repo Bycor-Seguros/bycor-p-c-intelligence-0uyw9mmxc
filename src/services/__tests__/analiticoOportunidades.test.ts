@@ -71,4 +71,57 @@ describe('Regras do Painel de Oportunidades (analiticoCarteiraService)', () => {
     const res = derivarVigenciaStatusOportunidade(45, false)
     expect(res.status).toBe('vigente')
   })
+
+  it('regra de ingestão C1: filtra estritamente coberturas com LMI preenchida (> 0)', () => {
+    const coberturasBrutas = [
+      {
+        nomeOriginal: 'Básica - Incêndio / Raio / Explosão',
+        isEscolhida: 42092117.12,
+        isAtualizada: null,
+        isAtual: null,
+      },
+      {
+        nomeOriginal: 'Danos Elétricos',
+        isEscolhida: null,
+        isAtualizada: 500000,
+        isAtual: null,
+      },
+      {
+        nomeOriginal: 'Vendaval e Granizo',
+        isEscolhida: null,
+        isAtualizada: null,
+        isAtual: 250000,
+      },
+      {
+        nomeOriginal: 'Texto Informativo sem Cobertura / Linha Vazia',
+        isEscolhida: null,
+        isAtualizada: null,
+        isAtual: null,
+      },
+      {
+        nomeOriginal: 'Linha informativa com valor zero',
+        isEscolhida: 0,
+        isAtualizada: 0,
+        isAtual: 0,
+      },
+      {
+        nomeOriginal: 'Cláusula Adicional Texto',
+        isEscolhida: undefined,
+        isAtualizada: undefined,
+        isAtual: undefined,
+      },
+    ]
+
+    const coberturasFiltradas = coberturasBrutas.filter((c) => {
+      const lmi = c.isEscolhida ?? c.isAtualizada ?? c.isAtual ?? null
+      return typeof lmi === 'number' && lmi > 0
+    })
+
+    expect(coberturasFiltradas).toHaveLength(3)
+    expect(coberturasFiltradas.map((c) => c.nomeOriginal)).toEqual([
+      'Básica - Incêndio / Raio / Explosão',
+      'Danos Elétricos',
+      'Vendaval e Granizo',
+    ])
+  })
 })

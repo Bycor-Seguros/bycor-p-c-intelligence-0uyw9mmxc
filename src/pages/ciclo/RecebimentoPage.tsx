@@ -192,8 +192,23 @@ export default function RecebimentoPage() {
     try {
       setSavingRiskCard(true)
       setRiskCardSaveProgress('Iniciando gravação...')
+
+      // REGRA GLOBAL DE INGESTÃO (C1):
+      // Importar SOMENTE as coberturas com LMI preenchida (> 0).
+      // Linhas puramente informativas ou sem LMI definida ficam de fora do processo.
+      // O filtro ocorre aqui na confirmação/ingestão, preservando os parsers intocados.
+      const coberturasComLmi = parsedRiskCard.coberturas.filter((c) => {
+        const lmi = c.isEscolhida ?? c.isAtualizada ?? c.isAtual ?? null
+        return typeof lmi === 'number' && lmi > 0
+      })
+
+      const cardParaIngestao: RiskCardData = {
+        ...parsedRiskCard,
+        coberturas: coberturasComLmi,
+      }
+
       const res = await saveRiskCardToDatabase(
-        parsedRiskCard,
+        cardParaIngestao,
         riskCardMatch,
         riskCardFile,
         user?.email || 'admin@bycor.com.br',
@@ -834,7 +849,13 @@ export default function RecebimentoPage() {
                 >
                   <span>
                     Detalhamento Completo das Coberturas e Sinistros (
-                    {parsedRiskCard.coberturas.length} coberturas mapeadas)
+                    {
+                      parsedRiskCard.coberturas.filter((c) => {
+                        const v = c.isEscolhida ?? c.isAtualizada ?? c.isAtual ?? null
+                        return typeof v === 'number' && v > 0
+                      }).length
+                    }{' '}
+                    com LMI de {parsedRiskCard.coberturas.length} no arquivo)
                   </span>
                   {showRiskCardDetails ? (
                     <ChevronUp className="w-4 h-4 text-gray-500" />
@@ -867,12 +888,20 @@ export default function RecebimentoPage() {
                     )}
 
                     <div className="space-y-1">
-                      <div className="font-semibold text-gray-800">
-                        Coberturas e Valores Solicitados:
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-gray-800">
+                          Coberturas com LMI Preenchida (serão importadas no processo):
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          Linhas sem LMI são ignoradas
+                        </span>
                       </div>
                       <div className="divide-y divide-gray-100 border rounded">
                         {parsedRiskCard.coberturas
-                          .filter((c) => c.isAtual || c.isAtualizada || c.isEscolhida)
+                          .filter((c) => {
+                            const v = c.isEscolhida ?? c.isAtualizada ?? c.isAtual ?? null
+                            return typeof v === 'number' && v > 0
+                          })
                           .map((c, idx) => (
                             <div
                               key={idx}
