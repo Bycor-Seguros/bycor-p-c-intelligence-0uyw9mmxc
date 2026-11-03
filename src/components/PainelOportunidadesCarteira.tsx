@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   TipoOportunidade,
+  VigenciaStatus,
+  ApoliceItemOportunidade,
   OportunidadeComercial,
   LimiaresCalibracao,
   LIMIARES_DEFAULT,
@@ -29,12 +31,14 @@ import {
   descartarOportunidade,
   registrarOportunidadeManualmente,
 } from '@/services/analiticoCarteiraService'
+import { Cpu, Bot, Building2, FileText, AlertTriangle, Clock } from 'lucide-react'
 
 export function PainelOportunidadesCarteira() {
   const [loading, setLoading] = useState(false)
   const [oportunidades, setOportunidades] = useState<OportunidadeComercial[]>([])
   const [origemVarredura, setOrigemVarredura] = useState<string>('')
   const [filtroTipo, setFiltroTipo] = useState<TipoOportunidade | 'todos'>('todos')
+  const [filtroVigencia, setFiltroVigencia] = useState<VigenciaStatus | 'todas'>('todas')
   const [exibirDescartadas, setExibirDescartadas] = useState(false)
   const [mostrarCalibracao, setMostrarCalibracao] = useState(false)
   const [limiares, setLimiares] = useState<LimiaresCalibracao>(LIMIARES_DEFAULT)
@@ -114,10 +118,71 @@ export function PainelOportunidadesCarteira() {
     }
   }
 
+  // Render do badge colorido de vigência (Requisito 5)
+  // verde: vigente | âmbar/vermelho: vencida até 30 dias | azul: renovação em andamento
+  const renderBadgeVigencia = (
+    status: VigenciaStatus,
+    diasRestantes: number | null,
+    detalhe?: string,
+  ) => {
+    switch (status) {
+      case 'em_renovacao':
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200"
+            title="Procedimento de renovação em andamento com RFQ aberto no ciclo"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+            <span>Renovação em Andamento</span>
+          </span>
+        )
+      case 'vencida_recente': {
+        const dias = diasRestantes !== null ? Math.abs(diasRestantes) : 0
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300"
+            title={detalhe || `Vencida há ${dias} dias (tolerância máx 30 dias)`}
+          >
+            <AlertTriangle className="w-3 h-3 text-amber-700" />
+            <span>Vencida há {dias}d (≤30d)</span>
+          </span>
+        )
+      }
+      case 'vigente':
+      default:
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"
+            title={detalhe || 'Apólice vigente com cobertura ativa'}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+            <span>
+              {diasRestantes !== null && diasRestantes >= 0
+                ? `Vigente (${diasRestantes}d)`
+                : 'Vigente'}
+            </span>
+          </span>
+        )
+    }
+  }
+
   // Filtragem da lista
   const oportunidadesFiltradas = oportunidades.filter((op) => {
     if (!exibirDescartadas && op.descartada) return false
     if (filtroTipo !== 'todos' && op.tipo !== filtroTipo) return false
+
+    // Filtro por vigência (Requisito 5)
+    if (filtroVigencia !== 'todas') {
+      const apolices = op.apolices_afetadas || []
+      if (apolices.length === 0) {
+        if (filtroVigencia === 'em_renovacao' && !op.em_renovacao) return false
+        if (filtroVigencia !== 'em_renovacao') return false
+      } else {
+        const temComStatus = apolices.some((a) => a.vigenciaStatus === filtroVigencia)
+        if (!temComStatus) return false
+      }
+    }
+
     return true
   })
 
@@ -154,13 +219,28 @@ export function PainelOportunidadesCarteira() {
               <h2 className="text-sm font-bold text-gray-900 tracking-tight">
                 Detecção de Oportunidades na Carteira
               </h2>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-[#0F2B46] border border-blue-200">
-                Agente Analítico Nativo (Skip Cloud)
-              </span>
+              {/* Indicador Visível da Origem da Varredura (Requisito 3) */}
+              {origemVarredura === 'agente_nativo_analitico' ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-sm"
+                  title="Varredura processada pelo Agente Analítico Nativo (Skip Cloud)"
+                >
+                  <Bot className="w-3 h-3 text-purple-700" />
+                  <span>Origem: Agente IA (Skip Cloud)</span>
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 shadow-sm"
+                  title="Varredura processada pelo Motor de Regras Determinístico Bycor"
+                >
+                  <Cpu className="w-3 h-3 text-blue-700" />
+                  <span>Origem: Regra Determinística (Bycor Engine)</span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-gray-600 mt-0.5 max-w-2xl">
-              Varredura assistida pela IA que cruza apólices, propostas, sinistros e cadastros do
-              segmento Hotéis & Resorts para apontar oportunidades comerciais imediatas.
+              Varredura que cruza apólices, propostas, coberturas e prazos de Hotéis & Resorts para
+              apontar oportunidades comerciais estruturadas por conta.
             </p>
           </div>
         </div>
@@ -417,8 +497,58 @@ export function PainelOportunidadesCarteira() {
           </button>
         </div>
 
-        {/* Toggle para exibir descartadas e aviso do pacto de gravação voluntária */}
-        <div className="flex items-center gap-3">
+        {/* Toggle para exibir descartadas e filtro visual de vigência (Requisito 5) */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5 text-xs">
+            <span className="px-2 text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1">
+              <Clock className="w-3 h-3 text-gray-400" />
+              Vigência:
+            </span>
+            <button
+              onClick={() => setFiltroVigencia('todas')}
+              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                filtroVigencia === 'todas'
+                  ? 'bg-gray-800 text-white font-bold'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Todas
+            </button>
+            <button
+              onClick={() => setFiltroVigencia('vigente')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                filtroVigencia === 'vigente'
+                  ? 'bg-emerald-700 text-white font-bold'
+                  : 'text-emerald-700 hover:bg-emerald-50'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Vigentes
+            </button>
+            <button
+              onClick={() => setFiltroVigencia('em_renovacao')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                filtroVigencia === 'em_renovacao'
+                  ? 'bg-blue-700 text-white font-bold'
+                  : 'text-blue-700 hover:bg-blue-50'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              Em Renovação
+            </button>
+            <button
+              onClick={() => setFiltroVigencia('vencida_recente')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                filtroVigencia === 'vencida_recente'
+                  ? 'bg-amber-700 text-white font-bold'
+                  : 'text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />
+              Vencidas (≤30d)
+            </button>
+          </div>
+
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -432,7 +562,7 @@ export function PainelOportunidadesCarteira() {
       </div>
 
       {/* Aviso importante de pacto do usuário: Nada grava automaticamente */}
-      <div className="px-5 py-2.5 bg-blue-50/40 border-b border-blue-100 flex items-center justify-between text-[11px] text-blue-900">
+      <div className="px-5 py-2.5 bg-blue-50/40 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-blue-900">
         <div className="flex items-center gap-2">
           <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           <span>
@@ -441,9 +571,18 @@ export function PainelOportunidadesCarteira() {
             <strong>Registrar Manualmente</strong> cada item para acompanhamento com a equipe.
           </span>
         </div>
-        <span className="text-[10px] text-blue-700 uppercase font-semibold">
-          Fonte: {origemVarredura.replace(/_/g, ' ')}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-500">Origem da Varredura:</span>
+          {origemVarredura === 'agente_nativo_analitico' ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+              <Bot className="w-3 h-3 text-purple-600" /> Agente IA (Skip Cloud)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+              <Cpu className="w-3 h-3 text-blue-600" /> Regra Determinística
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Lista de Oportunidades */}
@@ -491,16 +630,16 @@ export function PainelOportunidadesCarteira() {
             return (
               <div
                 key={op.id_temp}
-                className={`p-4 sm:p-5 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                className={`p-4 sm:p-5 transition-colors flex flex-col sm:flex-row items-start justify-between gap-4 ${
                   op.descartada
                     ? 'bg-gray-50/70 opacity-60'
                     : op.registrada
                       ? 'bg-emerald-50/40 border-l-4 border-emerald-500'
-                      : 'hover:bg-blue-50/30'
+                      : 'hover:bg-blue-50/20'
                 }`}
               >
-                {/* Dados da Oportunidade */}
-                <div className="space-y-1.5 flex-1 min-w-0">
+                {/* Dados da Oportunidade Agrupada por Conta (Requisitos 2, 4 e 5) */}
+                <div className="space-y-2.5 flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${meta.corBadge}`}
@@ -510,7 +649,7 @@ export function PainelOportunidadesCarteira() {
                     </span>
 
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.2 rounded ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                         op.impacto_estimado === 'Alto'
                           ? 'bg-red-100 text-red-800'
                           : op.impacto_estimado === 'Médio'
@@ -520,6 +659,14 @@ export function PainelOportunidadesCarteira() {
                     >
                       Impacto {op.impacto_estimado}
                     </span>
+
+                    {/* Etiqueta Visível: Renovação em Andamento (Requisito 4) */}
+                    {op.em_renovacao && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                        <span>Renovação em Andamento (RFQ Aberto)</span>
+                      </span>
+                    )}
 
                     {op.registrada && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
@@ -536,13 +683,63 @@ export function PainelOportunidadesCarteira() {
                     )}
                   </div>
 
-                  <div className="text-sm font-bold text-gray-900 tracking-tight">
-                    {op.item_detectado}
+                  {/* Título do Cartão: Conta / Empreendimento */}
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-gray-500 shrink-0" />
+                    <div className="text-sm font-bold text-gray-900 tracking-tight">
+                      {op.conta_nome || op.item_detectado}
+                    </div>
+                    {op.seguradora && op.seguradora !== 'Múltiplas' && (
+                      <span className="text-xs text-gray-500 font-normal">• {op.seguradora}</span>
+                    )}
                   </div>
 
+                  {/* Justificativa de Negócio */}
                   <p className="text-xs text-gray-700 leading-relaxed max-w-3xl">
                     {op.justificativa_curta}
                   </p>
+
+                  {/* Lista de Apólices Afetadas no Cartão Único da Conta (Requisitos 2 e 5) */}
+                  {op.apolices_afetadas && op.apolices_afetadas.length > 0 && (
+                    <div className="mt-2 p-2.5 bg-slate-50/90 rounded-lg border border-slate-200/80 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-gray-600 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-gray-500" />
+                          Apólices Afetadas nesta Conta ({op.apolices_afetadas.length}):
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-normal">
+                          Situação de Vigência
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        {op.apolices_afetadas.map((apItem) => (
+                          <div
+                            key={apItem.id}
+                            className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 bg-white rounded border border-gray-100 text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-semibold text-gray-900">{apItem.ramo}</span>
+                              <span className="text-gray-500 font-mono text-[11px]">
+                                Nº {apItem.numero}
+                              </span>
+                              <span className="text-gray-400 text-[11px]">
+                                • {apItem.seguradora}
+                              </span>
+                            </div>
+
+                            <div className="shrink-0">
+                              {renderBadgeVigencia(
+                                apItem.vigenciaStatus,
+                                apItem.diasRestantes,
+                                apItem.detalheStatus,
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="text-[11px] text-[#16578B] font-medium flex items-center gap-1 pt-0.5">
                     <strong>Ação sugerida:</strong> {op.acao_sugerida}
