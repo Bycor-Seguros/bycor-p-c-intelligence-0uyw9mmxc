@@ -78,13 +78,13 @@ async function run() {
         { nome: 'Responsabilidade Civil Operações', lmi: 10000000, franquia: 'R$ 2.500,00' },
       ],
     }
-    const validation = pptxTest.validatePptxOpenXml(sampleData)
+    const validation = await pptxTest.validatePptxOpenXml(sampleData)
     if (!validation.passed) {
       console.error('❌ Falha na validação PPTX OpenXML:', validation.errors)
       process.exit(1)
     }
     console.log(
-      `✅ PPTX OpenXML válido! ${validation.partCount} partes verificadas sem divergências.`,
+      `✅ PPTX OpenXML válido via PptxGenJS! ${validation.slideCount} slides e ${validation.partCount} partes verificadas sem divergências.`,
     )
 
     const testModule = await vite.ssrLoadModule('/src/services/__tests__/run-golden-tests.ts')

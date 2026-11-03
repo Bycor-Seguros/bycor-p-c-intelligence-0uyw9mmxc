@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { generatePresentationPptx } from '@/services/pptxExportService'
+import { toast } from '@/hooks/use-toast'
 
 interface EmpreendimentoOpt {
   id: string
@@ -90,6 +91,7 @@ export default function ApresentacaoPage() {
     'Recomendamos a contratação da proposta selecionada devido ao equilíbrio ótimo entre Limite Máximo de Indenização (LMI), franquias compatíveis com o histórico operacional do hotel e prêmio competitivo de mercado.',
   )
   const [loading, setLoading] = useState(true)
+  const [exportingPptx, setExportingPptx] = useState(false)
 
   useEffect(() => {
     const fetchInit = async () => {
@@ -168,42 +170,60 @@ export default function ApresentacaoPage() {
     window.print()
   }
 
-  // Generates a fully valid OpenXML PresentationML (.pptx) file
-  const handleExportPptx = () => {
-    const coberturas = (selectedProp?.coberturas || []).map((c: any) => ({
-      nome: getCoverageName(c),
-      lmi: getCoverageLmi(c),
-      franquia: getCoverageFranquia(c),
-    }))
+  // Generates a fully valid OpenXML PresentationML (.pptx) file via PptxGenJS
+  const handleExportPptx = async () => {
+    if (exportingPptx) return
+    setExportingPptx(true)
+    try {
+      const coberturas = (selectedProp?.coberturas || []).map((c: any) => ({
+        nome: getCoverageName(c),
+        lmi: getCoverageLmi(c),
+        franquia: getCoverageFranquia(c),
+      }))
 
-    const opNum = Number(selectedProp?.opcao || 1)
-    const vNum = Number(selectedProp?.versao || 1)
-    const segNomeComOpcaoEVersao = selectedProp?.expand?.seguradora?.nome
-      ? `${selectedProp.expand.seguradora.nome} — Opção ${opNum} (v${vNum})`
-      : 'Seguradora Selecionada'
+      const opNum = Number(selectedProp?.opcao || 1)
+      const vNum = Number(selectedProp?.versao || 1)
+      const segNomeComOpcaoEVersao = selectedProp?.expand?.seguradora?.nome
+        ? `${selectedProp.expand.seguradora.nome} — Opção ${opNum} (v${vNum})`
+        : 'Seguradora Selecionada'
 
-    const pptxBytes = generatePresentationPptx({
-      clienteNome: selectedEmp?.nome_empreendimento || 'Cliente Corporativo',
-      razaoSocial: selectedEmp?.razao_social,
-      cidade: selectedEmp?.cidade,
-      uf: selectedEmp?.uf,
-      areaConstruida: selectedEmp?.area_construida_m2,
-      seguradoraNome: segNomeComOpcaoEVersao,
-      premioBruto: selectedProp?.premio_bruto || 0,
-      lmiLmg: selectedProp?.lmi_lmg || 0,
-      recomendacao,
-      coberturas,
-    })
+      const pptxBytes = await generatePresentationPptx({
+        clienteNome: selectedEmp?.nome_empreendimento || 'Cliente Corporativo',
+        razaoSocial: selectedEmp?.razao_social,
+        cidade: selectedEmp?.cidade,
+        uf: selectedEmp?.uf,
+        areaConstruida: selectedEmp?.area_construida_m2,
+        seguradoraNome: segNomeComOpcaoEVersao,
+        premioBruto: selectedProp?.premio_bruto || 0,
+        lmiLmg: selectedProp?.lmi_lmg || 0,
+        recomendacao,
+        coberturas,
+      })
 
-    const blob = new Blob([pptxBytes as Uint8Array<ArrayBuffer>], {
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `Bycor_Apresentacao_${selectedEmp?.nome_empreendimento?.replace(/\s+/g, '_') || 'Proposta'}.pptx`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+      const blob = new Blob([pptxBytes as Uint8Array<ArrayBuffer>], {
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Bycor_Apresentacao_${selectedEmp?.nome_empreendimento?.replace(/\s+/g, '_') || 'Proposta'}.pptx`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      toast({
+        title: 'Apresentação PPTX gerada com sucesso',
+        description: 'Arquivo compatível com Microsoft PowerPoint (Mac/Windows).',
+      })
+    } catch (err: any) {
+      console.error('Erro ao gerar PPTX:', err)
+      toast({
+        title: 'Erro ao gerar apresentação PPTX',
+        description: err?.message || 'Ocorreu uma falha na geração do arquivo. Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportingPptx(false)
+    }
   }
 
   return (
@@ -235,10 +255,11 @@ export default function ApresentacaoPage() {
 
           <Button
             onClick={handleExportPptx}
+            disabled={exportingPptx}
             className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs h-9 font-semibold flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5 text-blue-300" />
-            <span>Exportar PPTX</span>
+            <span>{exportingPptx ? 'Gerando PPTX...' : 'Exportar PPTX'}</span>
           </Button>
         </div>
       </div>
