@@ -49,6 +49,8 @@ import {
   AlertaDescobertaEvento,
   derivarEventosTipicosPadrao,
   normalizarTermoEquivalencia,
+  solicitarSugestaoEquivalenciaIa,
+  SugestaoEquivalenciaIaResult,
 } from '@/services/equivalenciaCoberturasService'
 
 interface PropostaCoverageItem {
@@ -135,6 +137,13 @@ export default function TabulacaoPage() {
   const [eventosExcluidosModal, setEventosExcluidosModal] = useState<string[]>([])
   const [novoEventoExcluidoModal, setNovoEventoExcluidoModal] = useState('')
   const [salvandoMapeamento, setSalvandoMapeamento] = useState(false)
+
+  // Assistente de IA de Equivalência (Conhecimento de Mercado)
+  // Estado por chave única (alias + seguradora)
+  const [sugestoesIa, setSugestoesIa] = useState<Record<string, SugestaoEquivalenciaIaResult>>({})
+  const [carregandoIa, setCarregandoIa] = useState<Record<string, boolean>>({})
+  const [errosIa, setErrosIa] = useState<Record<string, string>>({})
+  const [aceitandoIa, setAceitandoIa] = useState<Record<string, boolean>>({})
 
   // Edit Coberturas modal manual
   const [editingProp, setEditingProp] = useState<PropostaRecord | null>(null)
@@ -345,8 +354,109 @@ export default function TabulacaoPage() {
     }
   }
 
+  // Invoca o agente nativo Skip Cloud de Conhecimento de Mercado para sugerir equivalência
+  const handleSugerirComIa = async (alias: string, segNome: string, segId?: string) => {
+    const chave = `${alias}___${segNome}`
+    try {
+      setCarregandoIa((prev) => ({ ...prev, [chave]: true }))
+      setErrosIa((prev) => {
+        const copy = { ...prev }
+        delete copy[chave]
+        return copy
+      })
+
+      const sugestao = await solicitarSugestaoEquivalenciaIa({
+        textoOriginal: alias,
+        seguradoraNome: segNome,
+        seguradoraId: segId,
+      })
+
+      setSugestoesIa((prev) => ({ ...prev, [chave]: sugestao }))
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || 'Erro ao consultar agente de IA'
+      setErrosIa((prev) => ({ ...prev, [chave]: msg }))
+    } finally {
+      setCarregandoIa((prev) => ({ ...prev, [chave]: false }))
+    }
+  }
+
+  // Aceitar sugestão da IA: grava pelo fluxo existente de alias/sinônimo da cia
+  // Nada grava automático sem decisão explícita do analista
+  const handleAceitarSugestaoIa = async (alias: string, segNome: string, segId?: string) => {
+    const chave = `${alias}___${segNome}`
+    const sugestao = sugestoesIa[chave]
+    if (!sugestao || !sugestao.canonica_sugerida) return
+
+    try {
+      setAceitandoIa((prev) => ({ ...prev, [chave]: true }))
+
+      // Encontra a canônica correspondente na taxonomia
+      let canRec = canonicas.find(
+        (c) =>
+          normalizarTermoEquivalencia(c.nome) ===
+          normalizarTermoEquivalencia(sugestao.canonica_sugerida),
+      )
+
+      // Se a canônica não existir exatamente, cria ou seleciona a mais próxima
+      if (!canRec) {
+        canRec = await salvarCoberturaCanonica({
+          nome: sugestao.canonica_sugerida.trim(),
+          descricao: `Criada a partir de sugestão de IA para "${alias}" (${segNome})`,
+          eventosTipicos:
+            sugestao.eventos_identificados && sugestao.eventos_identificados.length > 0
+              ? sugestao.eventos_identificados
+              : derivarEventosTipicosPadrao(sugestao.canonica_sugerida),
+        })
+      }
+
+      // Grava o sinônimo da cia pelo fluxo existente de persistência permanente
+      await salvarSinonimo({
+        alias: alias.trim(),
+        seguradoraId: segId,
+        seguradoraNome: segNome.trim(),
+        canonicaNome: canRec.nome,
+        coberturaCanonicaId: canRec.id,
+        eventosExcluidos: sugestao.eventos_excluidos_recomendados || [],
+        observacao: `Aceito via IA Conhecimento de Mercado (${sugestao.grau_confianca}): ${sugestao.justificativa_curta}`,
+      })
+
+      // Limpa a sugestão após aceitar e atualiza os sinônimos
+      setSugestoesIa((prev) => {
+        const copy = { ...prev }
+        delete copy[chave]
+        return copy
+      })
+
+      await fetchEquivalencias()
+    } catch (err: unknown) {
+      alert('Erro ao aceitar sugestão da IA: ' + ((err as Error)?.message || String(err)))
+    } finally {
+      setAceitandoIa((prev) => ({ ...prev, [chave]: false }))
+    }
+  }
+
+  // Rejeitar sugestão da IA: descarta o card da tela sem gravar nada
+  const handleRejeitarSugestaoIa = (alias: string, segNome: string) => {
+    const chave = `${alias}___${segNome}`
+    setSugestoesIa((prev) => {
+      const copy = { ...prev }
+      delete copy[chave]
+      return copy
+    })
+    setErrosIa((prev) => {
+      const copy = { ...prev }
+      delete copy[chave]
+      return copy
+    })
+  }
+
   // Abrir modal de mapeamento para cobertura não mapeada ou para ajustar mapeamento
-  const abrirModalMapearCobertura = (alias: string, segNome: string, segId?: string) => {
+  const abrirModalMapearCobertura = (
+    alias: string,
+    segNome: string,
+    segId?: string,
+    canonicaSugeridaInicial?: string,
+  ) => {
     setAliasParaMapear(alias)
     setSeguradoraDoAlias(segNome)
     setSeguradoraIdDoAlias(segId)
@@ -355,9 +465,18 @@ export default function TabulacaoPage() {
     setEventosExcluidosModal([])
     setNovoEventoExcluidoModal('')
 
-    // Tenta pré-selecionar a canônica mais próxima
-    const primeiraCanonica = canonicas[0]?.nome || ''
-    setCanonicaEscolhida(primeiraCanonica)
+    // Se houver canônica sugerida inicial (ex: do botão Trocar da IA), usa ela
+    if (canonicaSugeridaInicial) {
+      const match = canonicas.find(
+        (c) =>
+          normalizarTermoEquivalencia(c.nome) ===
+          normalizarTermoEquivalencia(canonicaSugeridaInicial),
+      )
+      setCanonicaEscolhida(match ? match.nome : canonicaSugeridaInicial)
+    } else {
+      const primeiraCanonica = canonicas[0]?.nome || ''
+      setCanonicaEscolhida(primeiraCanonica)
+    }
     setModalMapeamentoAberto(true)
   }
 
@@ -1092,21 +1211,56 @@ export default function TabulacaoPage() {
 
                                     {/* Badge de Match com Canônica */}
                                     {covMatch.matchType === 'nao_mapeada' ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          abrirModalMapearCobertura(
-                                            covMatch.nomeOriginal,
-                                            pe.seguradoraNome,
-                                            pe.seguradoraId,
-                                          )
-                                        }
-                                        title="Clique para mapear esta cobertura para a taxonomia canônica Bycor"
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 transition-colors animate-pulse"
-                                      >
-                                        <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
-                                        <span>Não mapeada (clique)</span>
-                                      </button>
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            abrirModalMapearCobertura(
+                                              covMatch.nomeOriginal,
+                                              pe.seguradoraNome,
+                                              pe.seguradoraId,
+                                            )
+                                          }
+                                          title="Clique para mapear manualmente esta cobertura para a taxonomia canônica Bycor"
+                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 transition-colors"
+                                        >
+                                          <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
+                                          <span>Não mapeada</span>
+                                        </button>
+
+                                        {/* Botão Sugerir com IA (Agente Conhecimento de Mercado) */}
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            carregandoIa[
+                                              `${covMatch.nomeOriginal}___${pe.seguradoraNome}`
+                                            ]
+                                          }
+                                          onClick={() =>
+                                            handleSugerirComIa(
+                                              covMatch.nomeOriginal,
+                                              pe.seguradoraNome,
+                                              pe.seguradoraId,
+                                            )
+                                          }
+                                          title="Consultar o Agente de Conhecimento de Mercado (Skip Cloud) para sugerir a cobertura canônica"
+                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-50 shadow-sm"
+                                        >
+                                          {carregandoIa[
+                                            `${covMatch.nomeOriginal}___${pe.seguradoraNome}`
+                                          ] ? (
+                                            <>
+                                              <Loader2 className="w-2.5 h-2.5 animate-spin text-indigo-600" />
+                                              <span>Analisando...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
+                                              <span>Sugerir com IA</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
                                     ) : covMatch.matchType === 'sinonimo_cia' ? (
                                       <span
                                         className="inline-flex items-center gap-1 px-1 py-0.2 rounded text-[9.5px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
@@ -1143,6 +1297,153 @@ export default function TabulacaoPage() {
                                       {covMatch.nomeOriginal}
                                     </strong>
                                   </div>
+
+                                  {/* PAINEL INLINE DA SUGESTÃO DE IA (CONHECIMENTO DE MERCADO) */}
+                                  {(() => {
+                                    const chaveIa = `${covMatch.nomeOriginal}___${pe.seguradoraNome}`
+                                    const sugestao = sugestoesIa[chaveIa]
+                                    const erro = errosIa[chaveIa]
+                                    const aceitando = aceitandoIa[chaveIa]
+
+                                    if (erro) {
+                                      return (
+                                        <div className="p-2 rounded bg-red-50 border border-red-200 text-red-900 text-[10px] space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <span className="font-bold flex items-center gap-1 text-red-700">
+                                              <AlertTriangle className="w-3 h-3 text-red-600" />
+                                              Falha na sugestão da IA
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleRejeitarSugestaoIa(
+                                                  covMatch.nomeOriginal,
+                                                  pe.seguradoraNome,
+                                                )
+                                              }
+                                              className="text-gray-400 hover:text-gray-700"
+                                            >
+                                              &times;
+                                            </button>
+                                          </div>
+                                          <p className="text-[9.5px] leading-tight text-red-800">
+                                            {erro}
+                                          </p>
+                                        </div>
+                                      )
+                                    }
+
+                                    if (!sugestao) return null
+
+                                    const confiancaColor =
+                                      sugestao.grau_confianca === 'Alta'
+                                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                        : sugestao.grau_confianca === 'Media'
+                                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                          : 'bg-rose-100 text-rose-900 border-rose-300'
+
+                                    return (
+                                      <div className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-50/90 to-blue-50/90 border border-indigo-200 text-gray-900 text-[10.5px] space-y-2 shadow-sm animate-fade-in">
+                                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                                          <span className="font-bold text-indigo-950 flex items-center gap-1 text-[11px]">
+                                            <Sparkles className="w-3 h-3 text-indigo-600" />
+                                            Sugestão Conhecimento de Mercado
+                                          </span>
+                                          <span
+                                            className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${confiancaColor}`}
+                                          >
+                                            Confiança: {sugestao.grau_confianca}
+                                          </span>
+                                        </div>
+
+                                        <div className="bg-white/90 p-1.5 rounded border border-indigo-100 space-y-0.5">
+                                          <div className="text-[9.5px] text-indigo-700 font-semibold uppercase tracking-wider">
+                                            Canônica Sugerida:
+                                          </div>
+                                          <div className="font-bold text-gray-900 text-[11px] leading-tight">
+                                            {sugestao.canonica_sugerida}
+                                          </div>
+                                        </div>
+
+                                        <div className="text-[10px] text-gray-700 leading-tight">
+                                          <span className="font-semibold text-gray-900">
+                                            Justificativa:
+                                          </span>{' '}
+                                          {sugestao.justificativa_curta}
+                                        </div>
+
+                                        {sugestao.eventos_excluidos_recomendados &&
+                                          sugestao.eventos_excluidos_recomendados.length > 0 && (
+                                            <div className="text-[9.5px] text-amber-900 bg-amber-50/80 p-1 rounded border border-amber-200">
+                                              <span className="font-semibold">
+                                                Exceção sugerida:
+                                              </span>{' '}
+                                              {sugestao.eventos_excluidos_recomendados.join(', ')}
+                                            </div>
+                                          )}
+
+                                        <div className="pt-1 flex items-center gap-1.5 border-t border-indigo-100 flex-wrap">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={aceitando}
+                                            onClick={() =>
+                                              handleAceitarSugestaoIa(
+                                                covMatch.nomeOriginal,
+                                                pe.seguradoraNome,
+                                                pe.seguradoraId,
+                                              )
+                                            }
+                                            className="h-6 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2"
+                                          >
+                                            {aceitando ? (
+                                              <>
+                                                <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />
+                                                Gravando...
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Check className="w-2.5 h-2.5 mr-1" />
+                                                Aceitar
+                                              </>
+                                            )}
+                                          </Button>
+
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() =>
+                                              abrirModalMapearCobertura(
+                                                covMatch.nomeOriginal,
+                                                pe.seguradoraNome,
+                                                pe.seguradoraId,
+                                                sugestao.canonica_sugerida,
+                                              )
+                                            }
+                                            className="h-6 text-[10px] border-indigo-200 text-indigo-900 hover:bg-indigo-100 px-2"
+                                          >
+                                            Trocar manual
+                                          </Button>
+
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                              handleRejeitarSugestaoIa(
+                                                covMatch.nomeOriginal,
+                                                pe.seguradoraNome,
+                                              )
+                                            }
+                                            className="h-6 text-[10px] text-gray-500 hover:text-gray-800 px-1.5"
+                                          >
+                                            Rejeitar
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
 
                                   {/* Franquia */}
                                   {covMatch.franquia && (

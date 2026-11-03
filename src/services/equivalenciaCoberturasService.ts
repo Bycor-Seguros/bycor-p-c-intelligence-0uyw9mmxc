@@ -43,6 +43,55 @@ export interface CoverageMatchResult {
   realocacoes: RealocacaoEventoItem[]
 }
 
+export interface SugestaoEquivalenciaIaResult {
+  ok: boolean
+  texto_original: string
+  seguradora_nome: string
+  canonica_sugerida: string
+  grau_confianca: 'Alta' | 'Media' | 'Baixa'
+  justificativa_curta: string
+  eventos_identificados?: string[]
+  eventos_excluidos_recomendados?: string[]
+  conversation_id?: string
+  message_id?: string
+  error?: string
+}
+
+/**
+ * Consulta o Agente Nativo de Conhecimento de Mercado (Skip Cloud) para sugerir
+ * a cobertura canônica mais apropriada para um texto não pareado.
+ *
+ * Envia o texto original da cobertura, o nome e ID da seguradora, e o backend injeta
+ * as nomenclaturas canônicas (campo nome), o contexto de Hotéis & Resorts e as
+ * equivalências já aceitas daquela cia.
+ */
+export async function solicitarSugestaoEquivalenciaIa(params: {
+  textoOriginal: string
+  seguradoraNome: string
+  seguradoraId?: string
+}): Promise<SugestaoEquivalenciaIaResult> {
+  const url = `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/conhecimento-mercado/sugerir-equivalencia`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(pb.authStore.token ? { Authorization: pb.authStore.token } : {}),
+    },
+    body: JSON.stringify({
+      texto_original: params.textoOriginal,
+      seguradora_nome: params.seguradoraNome,
+      seguradora_id: params.seguradoraId,
+    }),
+  })
+
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(payload?.error || `Falha na requisição ao agente (${res.status})`)
+  }
+
+  return payload as SugestaoEquivalenciaIaResult
+}
+
 /**
  * Normaliza string para indexação e casamento de termos (alias, nome de cobertura)
  */
