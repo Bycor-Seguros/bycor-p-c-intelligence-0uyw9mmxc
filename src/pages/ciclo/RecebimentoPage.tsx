@@ -112,6 +112,27 @@ export default function RecebimentoPage() {
   // Apolice PDF Upload Modal state
   const [apoliceModalOpen, setApoliceModalOpen] = useState(false)
 
+  // Delete document
+  const [docToDelete, setDocToDelete] = useState<DocumentRecord | null>(null)
+  const [deletingDoc, setDeletingDoc] = useState(false)
+
+  // Duplicadas detectadas no Cartão de Risco do Garden Bauru (apólices vinculadas a uploads repetidos)
+  const [c1DedupOpen, setC1DedupOpen] = useState(false)
+  const [c1DedupLoading, setC1DedupLoading] = useState(false)
+  const [c1DedupApolices, setC1DedupApolices] = useState<
+    Array<{
+      apolice: {
+        id: string
+        numero_apolice: string
+        vigencia_inicio?: string
+        vigencia_fim?: string
+      }
+      totalDuplicadas: number
+      grupos: Array<{ nome: string; lmi: number; count: number; idsParaRemover: string[] }>
+    }>
+  >([])
+  const [c1CheckingDuplicates, setC1CheckingDuplicates] = useState(false)
+
   // Manual upload state
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [manualTipo, setManualTipo] = useState('Base de Apólices')
@@ -267,6 +288,132 @@ export default function RecebimentoPage() {
     }
   }
 
+  const handleConfirmDeleteDoc = async () => {
+    if (!docToDelete) return
+    try {
+      setDeletingDoc(true)
+      // O PocketBase apaga o arquivo físico vinculado automaticamente ao deletar o registro da collection
+      await pb.collection('documentos').delete(docToDelete.id)
+      setDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id))
+      setDocToDelete(null)
+    } catch (err: unknown) {
+      alert('Erro ao excluir documento: ' + (err as Error).message)
+    } finally {
+      setDeletingDoc(false)
+    }
+  }
+
+  // Carregar diagnóstico de duplicadas nas apólices do Garden Bauru
+  const handleCheckC1Duplicates = async () => {
+    try {
+      setC1CheckingDuplicates(true)
+      // Buscar empreendimento Garden Bauru
+      const emps = await pb.collection('empreendimentos').getFullList({
+        filter: "nome_empreendimento ~ 'GARDEN' || nome_empreendimento ~ 'BAURU'",
+      })
+      const empIds = emps.map((e) => e.id)
+
+      // Buscar apólices vinculadas
+      let filterApolices = "numero_apolice ~ '02852' || segurado_na_apolice ~ 'GARDEN'"
+      if (empIds.length > 0) {
+        filterApolices += ` || ${empIds.map((id) => `id_empreendimento = '${id}'`).join(' || ')}`
+      }
+
+      const apols = await pb.collection('apolices').getFullList({
+        filter: filterApolices,
+      })
+
+      const resultados: Array<{
+        apolice: {
+          id: string
+          numero_apolice: string
+          vigencia_inicio?: string
+          vigencia_fim?: string
+        }
+        totalDuplicadas: number
+        grupos: Array<{ nome: string; lmi: number; count: number; idsParaRemover: string[] }>
+      }> = []
+
+      for (const ap of apols) {
+        const cobs = await pb.collection('coberturas').getFullList({
+          filter: `id_apolice = '${ap.id}'`,
+        })
+
+        const map = new Map<string, Array<{ id: string; nome: string; lmi: number }>>()
+        for (const c of cobs) {
+          const key = `${(c.nome_cobertura || '').trim().toLowerCase()}|${Number(c.lmi_rs || 0)}`
+          const arr = map.get(key) || []
+          arr.push({ id: c.id, nome: c.nome_cobertura, lmi: Number(c.lmi_rs || 0) })
+          map.set(key, arr)
+        }
+
+        const grupos: Array<{
+          nome: string
+          lmi: number
+          count: number
+          idsParaRemover: string[]
+        }> = []
+        let total = 0
+
+        map.forEach((items) => {
+          if (items.length > 1) {
+            const idsParaRemover = items.slice(1).map((x) => x.id)
+            total += idsParaRemover.length
+            grupos.push({
+              nome: items[0].nome,
+              lmi: items[0].lmi,
+              count: items.length,
+              idsParaRemover,
+            })
+          }
+        })
+
+        if (total > 0) {
+          resultados.push({
+            apolice: {
+              id: ap.id,
+              numero_apolice: ap.numero_apolice,
+              vigencia_inicio: ap.vigencia_inicio,
+              vigencia_fim: ap.vigencia_fim,
+            },
+            totalDuplicadas: total,
+            grupos,
+          })
+        }
+      }
+
+      setC1DedupApolices(resultados)
+      setC1DedupOpen(true)
+    } catch (err: unknown) {
+      alert('Erro ao verificar duplicadas do Garden Bauru: ' + (err as Error).message)
+    } finally {
+      setC1CheckingDuplicates(false)
+    }
+  }
+
+  // Confirmar remoção de duplicadas pelo modal da C1
+  const handleConfirmRemoveC1Duplicates = async () => {
+    try {
+      setC1DedupLoading(true)
+      let removidosCount = 0
+      for (const item of c1DedupApolices) {
+        for (const grp of item.grupos) {
+          for (const idToDel of grp.idsParaRemover) {
+            await pb.collection('coberturas').delete(idToDel)
+            removidosCount++
+          }
+        }
+      }
+      alert(`Sucesso! ${removidosCount} cobertura(s) duplicada(s) foram removidas com segurança.`)
+      setC1DedupOpen(false)
+      setC1DedupApolices([])
+    } catch (err: unknown) {
+      alert('Erro ao remover coberturas duplicadas: ' + (err as Error).message)
+    } finally {
+      setC1DedupLoading(false)
+    }
+  }
+
   const handleClearDatabase = async () => {
     if (confirmClearInput.trim().toUpperCase() !== 'LIMPAR') {
       alert('Digite LIMPAR para confirmar a exclusão.')
@@ -371,6 +518,22 @@ export default function RecebimentoPage() {
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span>Base Hotéis (XLSX)</span>
+          </Button>
+
+          {/* BOTÃO VERIFICAR DUPLICADAS GARDEN BAURU */}
+          <Button
+            onClick={handleCheckC1Duplicates}
+            disabled={c1CheckingDuplicates}
+            variant="outline"
+            className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 text-xs font-semibold h-10 px-3.5 shadow-sm flex items-center gap-2"
+            title="Verificar coberturas duplicadas geradas por uploads repetidos de Cartão de Risco"
+          >
+            {c1CheckingDuplicates ? (
+              <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            )}
+            <span>Verificar Duplicadas Garden Bauru</span>
           </Button>
 
           {/* BOTÃO LEITOR DE APÓLICE EMITIDA (PDF) */}
@@ -579,6 +742,14 @@ export default function RecebimentoPage() {
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setDocToDelete(doc)}
+                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded transition-colors"
+                            title="Excluir documento"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1843,6 +2014,180 @@ export default function RecebimentoPage() {
           fetchDocuments()
         }}
       />
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE DOCUMENTO */}
+      <Dialog open={Boolean(docToDelete)} onOpenChange={(open) => !open && setDocToDelete(null)}>
+        <DialogContent className="max-w-md animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              <span>Confirmar Exclusão de Documento</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Tem certeza que deseja excluir permanentemente este documento? O registro e o arquivo
+              físico serão apagados da base de dados.
+            </DialogDescription>
+          </DialogHeader>
+
+          {docToDelete && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1 text-xs">
+              <div>
+                <span className="font-semibold text-gray-700">Arquivo / Ref:</span>{' '}
+                <span className="text-gray-900 font-mono break-all">{docToDelete.arquivo}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-gray-700">Tipo:</span>{' '}
+                <span className="text-gray-900">{docToDelete.tipo}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-gray-700">Data:</span>{' '}
+                <span className="text-gray-900">{formatDate(docToDelete.data)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={deletingDoc}
+              onClick={() => setDocToDelete(null)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={deletingDoc}
+              onClick={handleConfirmDeleteDoc}
+              className="text-xs bg-red-600 hover:bg-red-700 font-semibold flex items-center gap-1.5"
+            >
+              {deletingDoc ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Excluindo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Documento</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: DIAGNÓSTICO E REMOÇÃO DE COBERTURAS DUPLICADAS DO GARDEN BAURU */}
+      <Dialog open={c1DedupOpen} onOpenChange={setC1DedupOpen}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <span>Coberturas Duplicadas — Renovação Garden Bauru</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Diagnóstico de coberturas com mesmo nome e LMI geradas por múltiplos uploads de Cartão
+              de Risco na conta.
+            </DialogDescription>
+          </DialogHeader>
+
+          {c1DedupApolices.length === 0 ? (
+            <div className="p-6 text-center text-xs text-gray-600 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+              <p className="font-semibold text-emerald-800">
+                Nenhuma cobertura duplicada encontrada!
+              </p>
+              <p className="text-emerald-700 text-[11px] mt-1">
+                Todas as apólices do Garden Bauru estão com suas listas de coberturas limpas e sem
+                duplicidade.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+                <p className="font-semibold">
+                  Foram encontradas apólices com linhas repetidas de cobertura:
+                </p>
+                <p className="text-[11px] text-amber-700">
+                  Ao confirmar, o sistema preservará 1 ocorrência de cada cobertura e apagará com
+                  segurança os registros excedentes duplicados.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {c1DedupApolices.map((item) => (
+                  <div
+                    key={item.apolice.id}
+                    className="border border-gray-200 rounded-lg p-3 bg-white space-y-2"
+                  >
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="font-semibold text-xs text-gray-900">
+                        Apólice: {item.apolice.numero_apolice}
+                        {item.apolice.vigencia_inicio && (
+                          <span className="font-normal text-gray-500 ml-2">
+                            ({formatDate(item.apolice.vigencia_inicio)} a{' '}
+                            {formatDate(item.apolice.vigencia_fim)})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold">
+                        {item.totalDuplicadas} duplicada(s)
+                      </span>
+                    </div>
+
+                    <div className="max-h-40 overflow-y-auto divide-y text-[11px]">
+                      {item.grupos.map((grp, gIdx) => (
+                        <div key={gIdx} className="py-1.5 flex items-center justify-between">
+                          <span className="text-gray-800">{grp.nome}</span>
+                          <span className="text-gray-500 font-mono">
+                            {formatCurrency(grp.lmi)} ({grp.count}x → manter 1)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={c1DedupLoading}
+                  onClick={() => setC1DedupOpen(false)}
+                  className="text-xs"
+                >
+                  Fechar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={c1DedupLoading}
+                  onClick={handleConfirmRemoveC1Duplicates}
+                  className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center gap-1.5"
+                >
+                  {c1DedupLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Removendo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remover Todas as Coberturas Duplicadas</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL: Portal Duplo de Entrada C1 (Conta Nova × Renovação) */}
       <ModalPortalDuploC1

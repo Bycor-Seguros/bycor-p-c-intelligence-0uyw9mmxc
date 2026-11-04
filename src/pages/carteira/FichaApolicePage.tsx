@@ -161,6 +161,12 @@ export default function FichaApolicePage() {
   const [inlinePremio, setInlinePremio] = useState<string>('')
   const [savingCobInline, setSavingCobInline] = useState(false)
 
+  // Exclusão de cobertura individual e remoção de duplicadas em lote
+  const [cobToDelete, setCobToDelete] = useState<CoberturaItem | null>(null)
+  const [deletingCob, setDeletingCob] = useState(false)
+  const [dedupDialogOpen, setDedupDialogOpen] = useState(false)
+  const [removingDuplicates, setRemovingDuplicates] = useState(false)
+
   // Renovation cycle modal
   const [renovacaoModalOpen, setRenovacaoModalOpen] = useState(false)
 
@@ -294,6 +300,25 @@ export default function FichaApolicePage() {
     }
   }
 
+  // Estado para exclusão com diálogo de confirmação
+  const [docToDelete, setDocToDelete] = useState<DocumentoItem | null>(null)
+  const [deletingDoc, setDeletingDoc] = useState(false)
+
+  // Confirmar e excluir documento e arquivo vinculado
+  const handleConfirmDeleteDocumento = async () => {
+    if (!docToDelete) return
+    try {
+      setDeletingDoc(true)
+      await pb.collection('documentos').delete(docToDelete.id)
+      setDocumentos((prev) => prev.filter((d) => d.id !== docToDelete.id))
+      setDocToDelete(null)
+    } catch (err: unknown) {
+      alert('Erro ao excluir documento: ' + (err as Error).message)
+    } finally {
+      setDeletingDoc(false)
+    }
+  }
+
   // Delete history row
   const handleDeleteHistorico = async (histId: string) => {
     if (!confirm('Deseja excluir este registro de histórico?')) return
@@ -302,6 +327,76 @@ export default function FichaApolicePage() {
       fetchApoliceFull()
     } catch (err: unknown) {
       alert('Erro ao excluir: ' + (err as Error).message)
+    }
+  }
+
+  // Identificar duplicadas em coberturas
+  const getDuplicateCoverageGroups = () => {
+    const groups = new Map<string, CoberturaItem[]>()
+    for (const cob of coberturas) {
+      const key = `${(cob.nome_cobertura || '').trim().toLowerCase()}|${Number(cob.lmi_rs || 0)}`
+      const list = groups.get(key) || []
+      list.push(cob)
+      groups.set(key, list)
+    }
+    const duplicateList: Array<{ key: string; name: string; lmi: number; items: CoberturaItem[] }> =
+      []
+    groups.forEach((items, key) => {
+      if (items.length > 1) {
+        duplicateList.push({
+          key,
+          name: items[0].nome_cobertura,
+          lmi: items[0].lmi_rs,
+          items,
+        })
+      }
+    })
+    return duplicateList
+  }
+
+  const duplicateGroups = getDuplicateCoverageGroups()
+  const totalDuplicateRecordsToRemove = duplicateGroups.reduce(
+    (acc, grp) => acc + (grp.items.length - 1),
+    0,
+  )
+
+  // Confirmar exclusão de cobertura individual
+  const handleConfirmDeleteCobertura = async () => {
+    if (!cobToDelete) return
+    try {
+      setDeletingCob(true)
+      await pb.collection('coberturas').delete(cobToDelete.id)
+      setCoberturas((prev) => prev.filter((c) => c.id !== cobToDelete.id))
+      setCobToDelete(null)
+    } catch (err: unknown) {
+      alert('Erro ao excluir cobertura: ' + (err as Error).message)
+    } finally {
+      setDeletingCob(false)
+    }
+  }
+
+  // Remover todas as duplicadas da apólice mantendo a primeira ocorrência
+  const handleConfirmRemoveDuplicates = async () => {
+    try {
+      setRemovingDuplicates(true)
+      const idsToDelete: string[] = []
+      duplicateGroups.forEach((grp) => {
+        // Mantém grp.items[0], apaga o restante
+        for (let i = 1; i < grp.items.length; i++) {
+          idsToDelete.push(grp.items[i].id)
+        }
+      })
+
+      for (const idToDel of idsToDelete) {
+        await pb.collection('coberturas').delete(idToDel)
+      }
+
+      setCoberturas((prev) => prev.filter((c) => !idsToDelete.includes(c.id)))
+      setDedupDialogOpen(false)
+    } catch (err: unknown) {
+      alert('Erro ao remover coberturas duplicadas: ' + (err as Error).message)
+    } finally {
+      setRemovingDuplicates(false)
     }
   }
 
@@ -859,18 +954,31 @@ export default function FichaApolicePage() {
                         <td className="py-2.5 px-3 text-gray-500">{doc.versao}</td>
                         <td className="py-2.5 px-3 text-gray-500">{formatDate(doc.data)}</td>
                         <td className="py-2.5 px-3 text-right">
-                          {fileUrl ? (
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#16578B] hover:underline font-semibold"
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {fileUrl ? (
+                              <a
+                                href={fileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#16578B] hover:underline font-semibold"
+                              >
+                                Baixar
+                              </a>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDocToDelete(doc)}
+                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Excluir documento"
                             >
-                              Baixar
-                            </a>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="sr-only">Excluir documento</span>
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -997,12 +1105,48 @@ export default function FichaApolicePage() {
       {/* 4. COBERTURAS AGRUPADAS */}
       {activeTab === 'coberturas' && (
         <div className="bg-white rounded-xl border border-[#E4E9F0] p-6 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">Itens de Cobertura Contratados</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Classificados de acordo com o vocabulário controlado de 48 categorias normalizadas.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Itens de Cobertura Contratados</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Classificados de acordo com o vocabulário controlado de 48 categorias normalizadas (
+                {coberturas.length} itens).
+              </p>
+            </div>
+            {totalDuplicateRecordsToRemove > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDedupDialogOpen(true)}
+                className="text-xs font-semibold border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <span>Remover {totalDuplicateRecordsToRemove} Cobertura(s) Duplicada(s)</span>
+              </Button>
+            )}
           </div>
+
+          {totalDuplicateRecordsToRemove > 0 && (
+            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg flex items-center justify-between gap-3 text-xs text-amber-800">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  Foram detectadas <strong>{totalDuplicateRecordsToRemove} linhas repetidas</strong>{' '}
+                  com mesmo nome e LMI nesta apólice (geralmente geradas por uploads sucessivos de
+                  Cartão de Risco).
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setDedupDialogOpen(true)}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 shrink-0 font-semibold"
+              >
+                Limpar Duplicadas
+              </Button>
+            </div>
+          )}
 
           {coberturas.length === 0 ? (
             <div className="p-8 text-center text-xs text-gray-400 border border-dashed rounded-lg">
@@ -1091,14 +1235,24 @@ export default function FichaApolicePage() {
                               </button>
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditCob(cob)}
-                              className="p-1 text-gray-400 hover:text-[#16578B] hover:bg-blue-50 rounded transition-colors"
-                              title="Editar Franquia e Prêmio"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditCob(cob)}
+                                className="p-1 text-gray-400 hover:text-[#16578B] hover:bg-blue-50 rounded transition-colors"
+                                title="Editar Franquia e Prêmio"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCobToDelete(cob)}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Excluir cobertura"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -1255,6 +1409,209 @@ export default function FichaApolicePage() {
                 Iniciar Novo RFQ (C2)
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE DOCUMENTO */}
+      <Dialog open={Boolean(docToDelete)} onOpenChange={(open) => !open && setDocToDelete(null)}>
+        <DialogContent className="max-w-md animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <span>Confirmar Exclusão de Documento</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Esta ação removerá permanentemente o registro na coleção de documentos e o arquivo
+              anexado no sistema Bycor.
+            </DialogDescription>
+          </DialogHeader>
+
+          {docToDelete && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1.5 text-xs">
+              <div>
+                <span className="font-semibold text-gray-700">Tipo:</span>{' '}
+                <span className="text-gray-900">{docToDelete.tipo}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-gray-700">Arquivo:</span>{' '}
+                <span className="text-gray-900 font-mono text-[11px] break-all">
+                  {docToDelete.arquivo || docToDelete.versao || 'Documento referencial'}
+                </span>
+              </div>
+              {docToDelete.versao && (
+                <div>
+                  <span className="font-semibold text-gray-700">Versão/Identificador:</span>{' '}
+                  <span className="text-gray-900">{docToDelete.versao}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={deletingDoc}
+              onClick={() => setDocToDelete(null)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={deletingDoc}
+              onClick={handleConfirmDeleteDocumento}
+              className="text-xs bg-red-600 hover:bg-red-700 font-semibold flex items-center gap-1.5"
+            >
+              {deletingDoc ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Excluindo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Documento</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE COBERTURA INDIVIDUAL */}
+      <Dialog open={Boolean(cobToDelete)} onOpenChange={(open) => !open && setCobToDelete(null)}>
+        <DialogContent className="max-w-md animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              <span>Confirmar Exclusão de Cobertura</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Deseja remover esta cobertura da apólice? Esta ação é definitiva no banco de dados.
+            </DialogDescription>
+          </DialogHeader>
+
+          {cobToDelete && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1 text-xs">
+              <div>
+                <span className="font-semibold text-gray-700">Cobertura:</span>{' '}
+                <span className="text-gray-900 font-medium">{cobToDelete.nome_cobertura}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-gray-700">Categoria:</span>{' '}
+                <span className="text-gray-900">{cobToDelete.categoria_normalizada}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-gray-700">LMI:</span>{' '}
+                <span className="text-gray-900 font-bold">
+                  {formatCurrency(cobToDelete.lmi_rs)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={deletingCob}
+              onClick={() => setCobToDelete(null)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={deletingCob}
+              onClick={handleConfirmDeleteCobertura}
+              className="text-xs bg-red-600 hover:bg-red-700 font-semibold flex items-center gap-1.5"
+            >
+              {deletingCob ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Excluindo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Cobertura</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: CONFIRMAÇÃO DE DEDUPLICAÇÃO DE COBERTURAS */}
+      <Dialog open={dedupDialogOpen} onOpenChange={setDedupDialogOpen}>
+        <DialogContent className="max-w-lg animate-scale-in">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <span>Remover Coberturas Duplicadas</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              O sistema identificou {totalDuplicateRecordsToRemove} registro(s) excedente(s) com
+              mesmo nome e LMI. Uma via de cada cobertura será preservada e as cópias repetidas
+              serão excluídas permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-60 overflow-y-auto divide-y border rounded-lg p-2 bg-gray-50 text-xs">
+            {duplicateGroups.map((grp) => (
+              <div key={grp.key} className="py-2 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">{grp.name}</div>
+                  <div className="text-[11px] text-gray-500">
+                    LMI: {formatCurrency(grp.lmi)} • {grp.items.length} ocorrências encontradas
+                  </div>
+                </div>
+                <span className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 font-medium">
+                  -{grp.items.length - 1} duplicada(s)
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={removingDuplicates}
+              onClick={() => setDedupDialogOpen(false)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={removingDuplicates}
+              onClick={handleConfirmRemoveDuplicates}
+              className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold flex items-center gap-1.5"
+            >
+              {removingDuplicates ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Removendo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirmar Remoção de Duplicadas</span>
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
