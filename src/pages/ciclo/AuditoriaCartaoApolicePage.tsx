@@ -33,7 +33,15 @@ import {
   AuditoriaRodadaRecord,
   ItemAuditoriaComparativo,
   toggleItemRessalvaC5,
+  encontrarLmiApoliceCorrespondente,
+  CorrespondenciaApoliceLmi,
 } from '@/services/auditoriaCartaoApoliceService'
+import {
+  listarTaxonomiaCanonicas,
+  listarSinonimos,
+  CoberturaCanonicaRecord,
+  CoberturaSinonimoRecord,
+} from '@/services/equivalenciaCoberturasService'
 
 export default function AuditoriaCartaoApolicePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -50,6 +58,8 @@ export default function AuditoriaCartaoApolicePage() {
   const [tabAtiva, setTabAtiva] = useState<
     'coberturas' | 'vrd' | 'identificacao' | 'premios' | 'sinistros'
   >('coberturas')
+  const [canonicas, setCanonicas] = useState<CoberturaCanonicaRecord[]>([])
+  const [sinonimos, setSinonimos] = useState<CoberturaSinonimoRecord[]>([])
 
   const fetchRodadas = async () => {
     try {
@@ -92,6 +102,14 @@ export default function AuditoriaCartaoApolicePage() {
 
   useEffect(() => {
     fetchRodadas()
+    // Carrega taxonomia canônica e sinônimos para suporte em tempo real ao leitor de equivalência
+    Promise.all([
+      listarTaxonomiaCanonicas().catch(() => []),
+      listarSinonimos().catch(() => []),
+    ]).then(([canList, sinList]) => {
+      setCanonicas(canList)
+      setSinonimos(sinList)
+    })
   }, [])
 
   // Lista única de empreendimentos para o filtro
@@ -637,6 +655,7 @@ export default function AuditoriaCartaoApolicePage() {
                                   <th className="py-2.5 px-3">Categoria Solicitada</th>
                                   <th className="py-2.5 px-3">Nome Original no Cartão</th>
                                   <th className="py-2.5 px-3 text-right">LMI Solicitada</th>
+                                  <th className="py-2.5 px-3 text-right">LMI na Apólice</th>
                                   <th className="py-2.5 px-3">Status na Apólice</th>
                                   <th className="py-2.5 px-3 text-center w-28">Candidato C5</th>
                                 </tr>
@@ -644,52 +663,148 @@ export default function AuditoriaCartaoApolicePage() {
                               <tbody className="divide-y divide-amber-100">
                                 {snap.coberturas.soNoCartao.length === 0 ? (
                                   <tr>
-                                    <td colSpan={5} className="py-3 text-center text-gray-400">
+                                    <td colSpan={6} className="py-3 text-center text-gray-400">
                                       Nenhuma cobertura exclusiva do Cartão de Risco.
                                     </td>
                                   </tr>
                                 ) : (
-                                  snap.coberturas.soNoCartao.map((item) => (
-                                    <tr key={item.id} className="hover:bg-amber-50/60">
-                                      <td className="py-2.5 px-3 font-semibold text-gray-900">
-                                        {item.categoriaNormalizada}
-                                      </td>
-                                      <td className="py-2.5 px-3 text-gray-700">
-                                        {item.nomeCartao}
-                                      </td>
-                                      <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-900">
-                                        {item.lmiCartao !== null
-                                          ? formatCurrency(item.lmiCartao)
-                                          : '—'}
-                                      </td>
-                                      <td className="py-2.5 px-3 text-red-600 font-semibold text-[11px]">
-                                        Não contratada na Apólice
-                                      </td>
-                                      <td className="py-2.5 px-3 text-center">
-                                        <button
-                                          type="button"
-                                          disabled={togglingRessalva === item.id}
-                                          onClick={() =>
-                                            handleToggleRessalva(item.id, item.candidatoRessalvaC5)
-                                          }
-                                          className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
-                                            item.candidatoRessalvaC5
-                                              ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
-                                              : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
-                                          }`}
-                                        >
-                                          {togglingRessalva === item.id ? (
-                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                  snap.coberturas.soNoCartao.map((item) => {
+                                    // Resolve a correspondência: se gravada no snapshot, utiliza;
+                                    // caso contrário, calcula dinamicamente contra as coberturas da apólice presentes no snapshot
+                                    let correspondencia: CorrespondenciaApoliceLmi | null = null
+
+                                    if (
+                                      item.correspondenciaEncontrada !== undefined ||
+                                      item.lmiApoliceCorrespondente !== undefined
+                                    ) {
+                                      const temCorr = Boolean(
+                                        item.correspondenciaEncontrada ||
+                                        item.lmiApoliceCorrespondente !== null,
+                                      )
+                                      correspondencia = {
+                                        temCorrespondencia: temCorr,
+                                        lmiApolice: item.lmiApoliceCorrespondente ?? null,
+                                        lmiTexto:
+                                          item.lmiApoliceCorrespondente !== null &&
+                                          item.lmiApoliceCorrespondente !== undefined
+                                            ? formatCurrency(item.lmiApoliceCorrespondente)
+                                            : temCorr
+                                              ? 'R$ 0,00'
+                                              : 'sem correspondência',
+                                        nomeApolice: item.nomeApoliceCorrespondente,
+                                        franquiaApolice: item.franquiaApoliceCorrespondente,
+                                        detalhe: item.motivoCorrespondencia,
+                                      }
+                                    } else {
+                                      // Fallback dinâmico para rodadas geradas antes
+                                      const candidatos = [
+                                        ...snap.coberturas.casadas.map((c) => ({
+                                          nomeApolice: c.nomeApolice,
+                                          categoriaNormalizada: c.categoriaNormalizada,
+                                          lmiApolice: c.lmiApolice,
+                                          franquiaApolice: c.franquiaApolice,
+                                        })),
+                                        ...snap.coberturas.soNaApolice.map((c) => ({
+                                          nomeApolice: c.nomeApolice,
+                                          categoriaNormalizada: c.categoriaNormalizada,
+                                          lmiApolice: c.lmiApolice,
+                                          franquiaApolice: c.franquiaApolice,
+                                        })),
+                                      ]
+
+                                      correspondencia = encontrarLmiApoliceCorrespondente(
+                                        {
+                                          nomeCartao: item.nomeCartao,
+                                          categoriaNormalizada: item.categoriaNormalizada,
+                                          lmiCartao: item.lmiCartao,
+                                        },
+                                        candidatos,
+                                        {
+                                          seguradora: snap.identificacao?.apolice?.seguradora,
+                                          canonicas,
+                                          sinonimos,
+                                        },
+                                      )
+                                    }
+
+                                    return (
+                                      <tr key={item.id} className="hover:bg-amber-50/60">
+                                        <td className="py-2.5 px-3 font-semibold text-gray-900">
+                                          {item.categoriaNormalizada}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-gray-700">
+                                          {item.nomeCartao}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-900">
+                                          {item.lmiCartao !== null
+                                            ? formatCurrency(item.lmiCartao)
+                                            : '—'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono">
+                                          {correspondencia.temCorrespondencia ? (
+                                            <div className="flex flex-col items-end">
+                                              <span className="font-bold text-[#16578B]">
+                                                {correspondencia.lmiApolice !== null
+                                                  ? formatCurrency(correspondencia.lmiApolice)
+                                                  : 'R$ 0,00'}
+                                              </span>
+                                              {correspondencia.nomeApolice && (
+                                                <span
+                                                  className="text-[10px] text-gray-500 max-w-[140px] truncate"
+                                                  title={`Equivalente na Apólice: ${correspondencia.nomeApolice}${correspondencia.detalhe ? ` (${correspondencia.detalhe})` : ''}`}
+                                                >
+                                                  ({correspondencia.nomeApolice})
+                                                </span>
+                                              )}
+                                            </div>
                                           ) : (
-                                            <Tag className="w-3 h-3" />
+                                            <span
+                                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-500 italic"
+                                              title="Nenhuma cobertura equivalente identificada na apólice pelo leitor de equivalência"
+                                            >
+                                              sem correspondência
+                                            </span>
                                           )}
-                                          <span>
-                                            {item.candidatoRessalvaC5 ? 'Ressalva C5' : 'Marcar'}
-                                          </span>
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))
+                                        </td>
+                                        <td className="py-2.5 px-3 text-red-600 font-semibold text-[11px]">
+                                          <div className="flex flex-col">
+                                            <span>Não contratada na Apólice</span>
+                                            {correspondencia.temCorrespondencia && (
+                                              <span className="text-[10px] text-emerald-700 font-normal mt-0.5">
+                                                Possível falso positivo de nomenclatura
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center">
+                                          <button
+                                            type="button"
+                                            disabled={togglingRessalva === item.id}
+                                            onClick={() =>
+                                              handleToggleRessalva(
+                                                item.id,
+                                                item.candidatoRessalvaC5,
+                                              )
+                                            }
+                                            className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
+                                              item.candidatoRessalvaC5
+                                                ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
+                                                : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+                                            }`}
+                                          >
+                                            {togglingRessalva === item.id ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <Tag className="w-3 h-3" />
+                                            )}
+                                            <span>
+                                              {item.candidatoRessalvaC5 ? 'Ressalva C5' : 'Marcar'}
+                                            </span>
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })
                                 )}
                               </tbody>
                             </table>

@@ -1,7 +1,21 @@
 import pb from '@/lib/pocketbase/client'
 import { CATEGORIAS_48, formatCurrency } from '@/lib/formatters'
 import { matchCanonicalCategory, RiskCardData } from '@/services/riskCardReader'
-import { compararFranquiasEstruturadas } from '@/services/franquiaNormalizer'
+import {
+  compararFranquiasEstruturadas,
+  parseFranquiaEstruturada,
+  formatFranquiaPadrao,
+} from '@/services/franquiaNormalizer'
+import {
+  casarCoberturaComCanonica,
+  derivarEventosTipicosPadrao,
+  eventosSaoEquivalentes,
+  normalizarTermoEquivalencia,
+  calcularSimilaridadeTexto,
+  CoberturaCanonicaRecord,
+  CoberturaSinonimoRecord,
+  CoverageMatchResult,
+} from '@/services/equivalenciaCoberturasService'
 
 export interface ItemAuditoriaComparativo {
   id: string
@@ -18,6 +32,167 @@ export interface ItemAuditoriaComparativo {
   divergente: boolean
   candidatoRessalvaC5: boolean
   motivoDivergencia?: string
+  lmiApoliceCorrespondente?: number | null
+  nomeApoliceCorrespondente?: string
+  franquiaApoliceCorrespondente?: string
+  correspondenciaEncontrada?: boolean
+  motivoCorrespondencia?: string
+}
+
+export interface CorrespondenciaApoliceLmi {
+  temCorrespondencia: boolean
+  lmiApolice: number | null
+  lmiTexto: string
+  nomeApolice?: string
+  franquiaApolice?: string
+  detalhe?: string
+  tipoEquivalencia?: 'sinonimo' | 'canonica' | 'evento' | 'similaridade'
+}
+
+/**
+ * Encontra correspondência da cobertura do cartão com a cobertura da apólice
+ * reaproveitando o leitor de equivalência existente (sinônimos, canônicas,
+ * comparação estruturada por eventos típicos e similaridade semântica).
+ */
+export function encontrarLmiApoliceCorrespondente(
+  itemCartao: {
+    nomeCartao?: string
+    categoriaNormalizada?: string
+    lmiCartao?: number | null
+  },
+  candidatosApolice: Array<{
+    nomeApolice?: string
+    nome_cobertura?: string
+    categoriaNormalizada?: string
+    categoria_normalizada?: string
+    lmiApolice?: number | null
+    lmi_rs?: number | null
+    franquiaApolice?: string
+    franquia_pos?: string
+  }>,
+  options?: {
+    seguradora?: string
+    canonicas?: CoberturaCanonicaRecord[]
+    sinonimos?: CoberturaSinonimoRecord[]
+  },
+): CorrespondenciaApoliceLmi {
+  const nomeCartao = itemCartao.nomeCartao?.trim() || itemCartao.categoriaNormalizada?.trim() || ''
+  if (!nomeCartao || candidatosApolice.length === 0) {
+    return { temCorrespondencia: false, lmiApolice: null, lmiTexto: 'sem correspondência' }
+  }
+
+  const canonicas = options?.canonicas || []
+  const sinonimos = options?.sinonimos || []
+  const seguradora = options?.seguradora || ''
+
+  // 1. Match Canônico / Sinônimo usando o leitor de equivalência
+  let matchCartao: CoverageMatchResult | null = null
+  if (canonicas.length > 0 || sinonimos.length > 0) {
+    matchCartao = casarCoberturaComCanonica(nomeCartao, seguradora, canonicas, sinonimos)
+  }
+
+  // Eventos derivados da cobertura do cartão (preservando comparação por evento)
+  const eventosCartao = matchCartao?.eventosEfetivos?.length
+    ? matchCartao.eventosEfetivos
+    : derivarEventosTipicosPadrao(nomeCartao)
+
+  let melhorCandidato: (typeof candidatosApolice)[0] | null = null
+  let melhorScore = 0
+  let tipoEquiv: 'sinonimo' | 'canonica' | 'evento' | 'similaridade' = 'similaridade'
+  let detalhe = ''
+
+  for (const cand of candidatosApolice) {
+    const nomeAp = (
+      cand.nomeApolice ||
+      cand.nome_cobertura ||
+      cand.categoriaNormalizada ||
+      cand.categoria_normalizada ||
+      ''
+    ).trim()
+    if (!nomeAp) continue
+
+    // (A) Match por Sinônimo / Canônica
+    if (canonicas.length > 0 || sinonimos.length > 0) {
+      const matchAp = casarCoberturaComCanonica(nomeAp, seguradora, canonicas, sinonimos)
+      if (
+        matchCartao &&
+        matchCartao.matchType !== 'nao_mapeada' &&
+        matchAp.matchType !== 'nao_mapeada'
+      ) {
+        if (
+          (matchCartao.canonicaId && matchCartao.canonicaId === matchAp.canonicaId) ||
+          normalizarTermoEquivalencia(matchCartao.canonica) ===
+            normalizarTermoEquivalencia(matchAp.canonica)
+        ) {
+          melhorCandidato = cand
+          tipoEquiv = matchCartao.matchType.startsWith('sinonimo') ? 'sinonimo' : 'canonica'
+          detalhe = `Equivalência por taxonomia canônica: ${matchCartao.canonica}`
+          break
+        }
+      }
+    }
+
+    // (B) Comparação por EVENTOS estruturados (comparar por evento, pacotes de eventos)
+    const eventosAp = derivarEventosTipicosPadrao(nomeAp)
+    if (eventosCartao.length > 0 && eventosAp.length > 0) {
+      let eventosCasados = 0
+      for (const evC of eventosCartao) {
+        if (eventosAp.some((evA) => eventosSaoEquivalentes(evC, evA))) {
+          eventosCasados++
+        }
+      }
+      const scoreEventos = eventosCasados / Math.max(eventosCartao.length, eventosAp.length)
+      if (scoreEventos >= 0.4 && scoreEventos > melhorScore) {
+        melhorScore = scoreEventos
+        melhorCandidato = cand
+        tipoEquiv = 'evento'
+        detalhe = `Correspondência por eventos estruturados (${Math.round(scoreEventos * 100)}% de eventos comuns)`
+      }
+    }
+
+    // (C) Match por similaridade textual semântica
+    const scoreTexto = calcularSimilaridadeTexto(nomeCartao, nomeAp)
+    if (scoreTexto >= 0.65 && scoreTexto > melhorScore) {
+      melhorScore = scoreTexto
+      melhorCandidato = cand
+      tipoEquiv = 'similaridade'
+      detalhe = `Correspondência por similaridade de nomenclatura (${Math.round(scoreTexto * 100)}%)`
+    }
+  }
+
+  if (melhorCandidato) {
+    const lmi =
+      typeof melhorCandidato.lmiApolice === 'number'
+        ? melhorCandidato.lmiApolice
+        : typeof melhorCandidato.lmi_rs === 'number'
+          ? melhorCandidato.lmi_rs
+          : null
+
+    const nome =
+      melhorCandidato.nomeApolice ||
+      melhorCandidato.nome_cobertura ||
+      melhorCandidato.categoriaNormalizada
+    const franquiaCrua = melhorCandidato.franquiaApolice || melhorCandidato.franquia_pos || ''
+    const franquiaFormatada = franquiaCrua
+      ? formatFranquiaPadrao(parseFranquiaEstruturada(franquiaCrua))
+      : ''
+
+    return {
+      temCorrespondencia: true,
+      lmiApolice: lmi,
+      lmiTexto: lmi !== null ? formatCurrency(lmi) : 'R$ 0,00',
+      nomeApolice: nome,
+      franquiaApolice: franquiaFormatada || franquiaCrua,
+      detalhe,
+      tipoEquivalencia: tipoEquiv,
+    }
+  }
+
+  return {
+    temCorrespondencia: false,
+    lmiApolice: null,
+    lmiTexto: 'sem correspondência',
+  }
 }
 
 export interface RubricaVrdItem {
@@ -147,6 +322,8 @@ export function buildAuditoriaSnapshot(
     produtoCartao?: string
     ramoCanonicaCartao?: string
     ressalvasIniciais?: string[]
+    canonicas?: CoberturaCanonicaRecord[]
+    sinonimos?: CoberturaSinonimoRecord[]
   },
 ): SnapshotComparativoAuditoria {
   const apolice = apoliceRecord || {}
@@ -377,6 +554,24 @@ export function buildAuditoriaSnapshot(
           })
         } else if (ci && !ai) {
           const itemId = `item_socartao_${itemCounter}_${cat.replace(/[^a-zA-Z0-9]/g, '_')}`
+          const correspondencia = encontrarLmiApoliceCorrespondente(
+            {
+              nomeCartao: ci.nomeOriginal,
+              categoriaNormalizada: cat,
+              lmiCartao: ci.lmi,
+            },
+            apCobItems.map((a) => ({
+              nomeApolice: a.nomeOriginal,
+              categoriaNormalizada: a.categoriaNormalizada,
+              lmiApolice: a.lmi,
+              franquiaApolice: a.franquia,
+            })),
+            {
+              seguradora: String(apolice.seguradora || ''),
+              canonicas: options?.canonicas,
+              sinonimos: options?.sinonimos,
+            },
+          )
           soNoCartao.push({
             id: itemId,
             categoriaNormalizada: cat,
@@ -392,6 +587,13 @@ export function buildAuditoriaSnapshot(
             candidatoRessalvaC5: ressalvasSet.has(itemId) || Boolean(ci.lmi && ci.lmi > 0),
             motivoDivergencia:
               'Cobertura solicitada no Cartão de Risco não consta na Apólice emitida.',
+            lmiApoliceCorrespondente: correspondencia.temCorrespondencia
+              ? correspondencia.lmiApolice
+              : null,
+            nomeApoliceCorrespondente: correspondencia.nomeApolice,
+            franquiaApoliceCorrespondente: correspondencia.franquiaApolice,
+            correspondenciaEncontrada: correspondencia.temCorrespondencia,
+            motivoCorrespondencia: correspondencia.detalhe,
           })
         } else if (!ci && ai) {
           const itemId = `item_soapolice_${itemCounter}_${cat.replace(/[^a-zA-Z0-9]/g, '_')}`
@@ -417,6 +619,24 @@ export function buildAuditoriaSnapshot(
       for (const ci of cItems) {
         itemCounter++
         const itemId = `item_socartao_${itemCounter}_${cat.replace(/[^a-zA-Z0-9]/g, '_')}`
+        const correspondencia = encontrarLmiApoliceCorrespondente(
+          {
+            nomeCartao: ci.nomeOriginal,
+            categoriaNormalizada: cat,
+            lmiCartao: ci.lmi,
+          },
+          apCobItems.map((a) => ({
+            nomeApolice: a.nomeOriginal,
+            categoriaNormalizada: a.categoriaNormalizada,
+            lmiApolice: a.lmi,
+            franquiaApolice: a.franquia,
+          })),
+          {
+            seguradora: String(apolice.seguradora || ''),
+            canonicas: options?.canonicas,
+            sinonimos: options?.sinonimos,
+          },
+        )
         soNoCartao.push({
           id: itemId,
           categoriaNormalizada: cat,
@@ -432,6 +652,13 @@ export function buildAuditoriaSnapshot(
           candidatoRessalvaC5: ressalvasSet.has(itemId) || Boolean(ci.lmi && ci.lmi > 0),
           motivoDivergencia:
             'Cobertura solicitada no Cartão de Risco não consta na Apólice emitida.',
+          lmiApoliceCorrespondente: correspondencia.temCorrespondencia
+            ? correspondencia.lmiApolice
+            : null,
+          nomeApoliceCorrespondente: correspondencia.nomeApolice,
+          franquiaApoliceCorrespondente: correspondencia.franquiaApolice,
+          correspondenciaEncontrada: correspondencia.temCorrespondencia,
+          motivoCorrespondencia: correspondencia.detalhe,
         })
       }
     } else if (aItems.length > 0) {
