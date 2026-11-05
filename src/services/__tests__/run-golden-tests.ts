@@ -21,6 +21,24 @@ import { compararVrdEstagnado } from '../analiticoCarteiraService'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
+/**
+ * Acesso defensivo ao `process` do Node SEM depender dos tipos de Node
+ * (@types/node não está disponível no tsconfig do app). Em runtime de Node o
+ * global `process` existe em `globalThis`; no navegador/SSR é undefined.
+ */
+type NodeProcessGlobal = {
+  versions?: { node?: string }
+  env?: Record<string, string | undefined>
+  exitCode?: number
+}
+
+function getNodeProcessGlobal(): NodeProcessGlobal | undefined {
+  if (typeof globalThis === 'undefined') return undefined
+  const candidate = (globalThis as Record<string, unknown>).process
+  if (!candidate || typeof candidate !== 'object') return undefined
+  return candidate as NodeProcessGlobal
+}
+
 export interface TestResult {
   name: string
   suite: string
@@ -1650,13 +1668,9 @@ export async function runAllSuites() {
     `Total de testes: ${results.length} | Aprovados: ${passedCount} | Pendentes: ${pendingCount} | Falhas: ${failedCount}`,
   )
   console.log('-----------------------------------------------------------------\n')
-  if (
-    typeof process !== 'undefined' &&
-    process.versions &&
-    process.versions.node &&
-    failedCount > 0
-  ) {
-    process.exitCode = 1
+  const nodeProc = getNodeProcessGlobal()
+  if (nodeProc?.versions?.node && failedCount > 0) {
+    nodeProc.exitCode = 1
   }
 }
 
@@ -1664,12 +1678,6 @@ export async function runAllSuites() {
 // Execução do suite de testes de ouro (Golden Tests) — quando importado pelo harness Node
 // (scripts/run-tests.js via BYCOR_HARNESS=1), o script chama runAllSuites() explicitamente
 // após a validação PPTX para poder aplicar exitCode conforme o resultado.
-if (
-  typeof process === 'undefined' ||
-  !process.versions ||
-  !process.versions.node ||
-  process.env?.BYCOR_HARNESS !== '1'
-) {
+if (getNodeProcessGlobal()?.env?.BYCOR_HARNESS !== '1') {
   void runAllSuites()
 }
-export { runAllSuites }
