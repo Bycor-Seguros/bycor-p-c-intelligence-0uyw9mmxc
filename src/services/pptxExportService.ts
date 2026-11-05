@@ -5,7 +5,7 @@
  */
 import pptxgen from 'pptxgenjs'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { LOGO_BYCOR_PATH } from '@/assets/logoBycorBase64'
+import { LOGO_BYCOR_PATH, isLogoMediaAvailable } from '@/assets/logoBycorBase64'
 
 export interface PptxCoverageItem {
   nome: string
@@ -41,7 +41,37 @@ const BRAND_TEXT_DARK = '1E293B'
  * 3..N. Resumo de Coberturas Incluídas (paginadas em blocos de 7 linhas)
  * Final. Parecer Técnico da Corretora & Assinaturas de Aceite
  */
-export async function generatePresentationPptx(data: PptxPresentationData): Promise<Uint8Array> {
+export interface GeneratePptxOptions {
+  /** Incluir a mídia do logotipo Bycor (desativado no fallback do harness Node sem mídia em disco) */
+  includeLogo?: boolean
+}
+
+export async function generatePresentationPptx(
+  data: PptxPresentationData,
+  options: GeneratePptxOptions = {},
+): Promise<Uint8Array> {
+  const { includeLogo = true } = options
+  // Mídia indisponível (Node sem acesso ao disco): omitir o logo em vez de abortar.
+  const logoUsavel = includeLogo && isLogoMediaAvailable()
+  const logoImage = logoUsavel
+    ? {
+        path: LOGO_BYCOR_PATH,
+        x: 7.8,
+        y: 0.9,
+        w: 0.9,
+        h: 1.18,
+      }
+    : null
+  const logoMarcaDiscreta = logoUsavel
+    ? {
+        path: LOGO_BYCOR_PATH,
+        x: 8.85,
+        y: 0.28,
+        w: 0.55,
+        h: 0.72,
+      }
+    : null
+
   const pptx = new pptxgen()
 
   // Layout Widescreen 16:9 (10" x 5.625")
@@ -67,13 +97,9 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
   })
 
   // Logo oficial da Bycor no canto superior direito do card
-  slide1.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 7.8,
-    y: 0.9,
-    w: 0.9,
-    h: 1.18,
-  })
+  if (logoImage) {
+    slide1.addImage(logoImage)
+  }
 
   // Tag superior Bycor
   slide1.addText('BYCOR CONSULTORIA E CORRETORA DE SEGUROS', {
@@ -156,13 +182,9 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
   })
 
   // Marca discreta da Bycor no topo direito
-  slide2.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 8.85,
-    y: 0.28,
-    w: 0.55,
-    h: 0.72,
-  })
+  if (logoMarcaDiscreta) {
+    slide2.addImage(logoMarcaDiscreta)
+  }
 
   // Card superior: Dados Operacionais do Cliente
   slide2.addShape(pptx.ShapeType.roundRect, {
@@ -384,13 +406,9 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
     })
 
     // Marca discreta da Bycor no topo direito
-    slideCoverage.addImage({
-      path: LOGO_BYCOR_PATH,
-      x: 8.85,
-      y: 0.28,
-      w: 0.55,
-      h: 0.72,
-    })
+    if (logoMarcaDiscreta) {
+      slideCoverage.addImage(logoMarcaDiscreta)
+    }
 
     // Cabeçalho da tabela com 3 colunas padrão
     const tableRows: pptxgen.TableRow[] = [
@@ -540,13 +558,9 @@ export async function generatePresentationPptx(data: PptxPresentationData): Prom
   })
 
   // Marca discreta da Bycor no topo direito
-  slideFinal.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 8.85,
-    y: 0.28,
-    w: 0.55,
-    h: 0.72,
-  })
+  if (logoMarcaDiscreta) {
+    slideFinal.addImage(logoMarcaDiscreta)
+  }
 
   // Card do Parecer
   slideFinal.addShape(pptx.ShapeType.roundRect, {

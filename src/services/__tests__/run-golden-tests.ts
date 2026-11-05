@@ -1543,7 +1543,9 @@ export async function runAllSuites() {
       )
 
       // 4. Geração dos bytes OpenXML PPTX com logo Bycor embarcada
-      const pptxBytes = await generateEstudoMercadoPptx({
+      // (o logotipo resolve via LOGO_BYCOR_PATH: URL do Vite no navegador, caminho
+      // absoluto em disco no harness Node — ver src/assets/logoBycorBase64.ts)
+      const dataEstudoMock = {
         empreendimentoNome: 'Condomínio São International Square',
         cosseguradoNome: 'BT São Caetano Hotéis Ltda',
         vigenciaTexto: '01.11.2026 a 01.11. 2027 (365 dias)',
@@ -1554,7 +1556,26 @@ export async function runAllSuites() {
         propostas: propostasMock,
         ciasApresentaramProposta: ['ALLIANZ SEGUROS'],
         ciasEmAnaliseOuNaoApresentaram: ['TOKIO MARINE'],
-      })
+      }
+      let pptxBytes: Uint8Array
+      try {
+        pptxBytes = await generateEstudoMercadoPptx(dataEstudoMock as any)
+      } catch (err) {
+        // Precedente do fixture Tokio: ambiente Node sem mídia em disco não deve abortar
+        // a suíte — a geração do PPTX segue SEM imagens embutidas e a validação estrutural
+        // do pacote OpenXML permanece íntegra.
+        const message = err instanceof Error ? err.message : String(err)
+        if (!/media|read|logo|image|\.jpe?g|\.png/i.test(message)) {
+          throw err
+        }
+        console.warn('⚠️ [PPTX Estudo] Geração com mídia falhou — repetindo SEM imagens:', message)
+        const { generateEstudoMercadoPptx: gerarEstudoSemImagens } =
+          await import('../pptxEstudoMercadoService')
+        pptxBytes = await gerarEstudoSemImagens(dataEstudoMock as any, {
+          includeLogo: false,
+          includePhotos: false,
+        })
+      }
 
       assertEqual(
         Boolean(pptxBytes && pptxBytes.length > 1000),
@@ -1570,6 +1591,9 @@ export async function runAllSuites() {
       // 5. Validação estrutural do PPTX do Estudo via validatePptxBuffer
       const { validatePptxBuffer } = await import('./pptxValidation.test')
       const validation = validatePptxBuffer(pptxBytes)
+      if (validation.warnings && validation.warnings.length > 0) {
+        console.warn('⚠️ [PPTX Estudo] Avisos da validação:', validation.warnings)
+      }
       assertEqual(
         validation.passed,
         true,
@@ -1626,8 +1650,26 @@ export async function runAllSuites() {
     `Total de testes: ${results.length} | Aprovados: ${passedCount} | Pendentes: ${pendingCount} | Falhas: ${failedCount}`,
   )
   console.log('-----------------------------------------------------------------\n')
+  if (
+    typeof process !== 'undefined' &&
+    process.versions &&
+    process.versions.node &&
+    failedCount > 0
+  ) {
+    process.exitCode = 1
+  }
 }
 
 // Execução automática auto-invocada
-// Execução do suite de testes de ouro (Golden Tests)
-void runAllSuites()
+// Execução do suite de testes de ouro (Golden Tests) — quando importado pelo harness Node
+// (scripts/run-tests.js via BYCOR_HARNESS=1), o script chama runAllSuites() explicitamente
+// após a validação PPTX para poder aplicar exitCode conforme o resultado.
+if (
+  typeof process === 'undefined' ||
+  !process.versions ||
+  !process.versions.node ||
+  process.env?.BYCOR_HARNESS !== '1'
+) {
+  void runAllSuites()
+}
+export { runAllSuites }

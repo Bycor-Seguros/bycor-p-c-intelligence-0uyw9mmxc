@@ -11,7 +11,7 @@ import {
   formatLmiEstudo,
 } from './estudoMercadoResolver'
 import { CoberturaCanonicaRecord, CoberturaSinonimoRecord } from './equivalenciaCoberturasService'
-import { LOGO_BYCOR_PATH } from '@/assets/logoBycorBase64'
+import { LOGO_BYCOR_PATH, isLogoMediaAvailable } from '@/assets/logoBycorBase64'
 
 export interface EstudoMercadoEditavelData {
   // Dados Gerais do Cabeçalho / Capa
@@ -74,7 +74,12 @@ const C_TEXT = '1E293B'
 const C_WHITE = 'FFFFFF'
 const C_GREEN = '15803D'
 
-function addHeaderBycor(slide: pptxgen.Slide, titulo: string, numeroPagina: string) {
+function addHeaderBycor(
+  slide: pptxgen.Slide,
+  titulo: string,
+  numeroPagina: string,
+  logo: { path: string; x: number; y: number; w: number; h: number } | null,
+) {
   // Título da página
   slide.addText([{ text: titulo, options: { fontSize: 22, bold: true, color: C_NAVY } }], {
     x: 0.6,
@@ -86,13 +91,9 @@ function addHeaderBycor(slide: pptxgen.Slide, titulo: string, numeroPagina: stri
   })
 
   // Logo oficial da Bycor no canto superior direito (embutida como asset do pacote PPTX)
-  slide.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 8.85,
-    y: 0.28,
-    w: 0.55,
-    h: 0.72,
-  })
+  if (logo) {
+    slide.addImage(logo)
+  }
 
   // Rodapé número de página "NN/12"
   slide.addText(numeroPagina, {
@@ -110,9 +111,51 @@ function addHeaderBycor(slide: pptxgen.Slide, titulo: string, numeroPagina: stri
 /**
  * Gera os bytes PPTX de alta fidelidade ao PDF de 12 páginas do Estudo de Mercado.
  */
+export interface GenerateEstudoPptxOptions {
+  /** Incluir a mídia do logotipo Bycor (desativado no fallback do harness Node sem mídia em disco) */
+  includeLogo?: boolean
+  /** Incluir os placeholders de foto via URL remota (desativado no fallback do harness Node sem rede) */
+  includePhotos?: boolean
+}
+
 export async function generateEstudoMercadoPptx(
   data: EstudoMercadoEditavelData,
+  options: GenerateEstudoPptxOptions = {},
 ): Promise<Uint8Array> {
+  const { includeLogo = true, includePhotos = true } = options
+
+  // Mídia indisponível (Node sem acesso ao disco): omitir logos em vez de abortar.
+  const logoUsavel = includeLogo && isLogoMediaAvailable()
+
+  // Logos do header/capa/encerramento: omitidos no Node sem mídia em disco
+  const logoHeader = logoUsavel
+    ? {
+        path: LOGO_BYCOR_PATH,
+        x: 8.85,
+        y: 0.28,
+        w: 0.55,
+        h: 0.72,
+      }
+    : null
+  const logoCapa = logoUsavel
+    ? {
+        path: LOGO_BYCOR_PATH,
+        x: 0.6,
+        y: 0.7,
+        w: 1.1,
+        h: 1.45,
+      }
+    : null
+  const logoEncerramento = logoUsavel
+    ? {
+        path: LOGO_BYCOR_PATH,
+        x: 8.8,
+        y: 0.35,
+        w: 0.65,
+        h: 0.85,
+      }
+    : null
+
   const pptx = new pptxgen()
   pptx.layout = 'LAYOUT_16x9' // 10" x 5.625"
   pptx.author = 'Bycor P&C Intelligence'
@@ -142,13 +185,9 @@ export async function generateEstudoMercadoPptx(
   })
 
   // Logo oficial Bycor em destaque na capa
-  s1.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 0.6,
-    y: 0.7,
-    w: 1.1,
-    h: 1.45,
-  })
+  if (logoCapa) {
+    s1.addImage(logoCapa)
+  }
 
   s1.addText(
     [
@@ -211,7 +250,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 2: Institucional BYCOR (Fixo)
   // =========================================================================
   const s2 = pptx.addSlide()
-  addHeaderBycor(s2, 'Somos a BYCOR Seguros', '02/12')
+  addHeaderBycor(s2, 'Somos a BYCOR Seguros', '02/12', logoHeader)
 
   s2.addText(
     'A BYCOR Consultoria e Corretora de Seguros é especialista na transferência de riscos por meio de apólices de seguro, atuando com foco na proteção customizada de negócios e devidamente registrada na SUSEP.',
@@ -302,7 +341,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 3: Conteúdo do Estudo (Índice)
   // =========================================================================
   const s3 = pptx.addSlide()
-  addHeaderBycor(s3, 'Conteúdo do Estudo', '03/12')
+  addHeaderBycor(s3, 'Conteúdo do Estudo', '03/12', logoHeader)
 
   s3.addText(
     `Este estudo apresenta as cotações das Seguradoras para o Seguro Patrimonial do ${data.empreendimentoNome}${data.cosseguradoNome ? ' e do novo ' + data.cosseguradoNome : ''}, estruturado em seis blocos temáticos:`,
@@ -387,7 +426,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 4: Objetivo do Estudo (Editável pelo Analista)
   // =========================================================================
   const s4 = pptx.addSlide()
-  addHeaderBycor(s4, 'Objetivo do Estudo', '04/12')
+  addHeaderBycor(s4, 'Objetivo do Estudo', '04/12', logoHeader)
 
   // Card do texto do objetivo
   s4.addShape(pptx.ShapeType.roundRect, {
@@ -430,22 +469,24 @@ export async function generateEstudoMercadoPptx(
     'https://img.usecurling.com/p/600/400?q=hotel+suite&color=blue',
   ]
 
-  fotoPlaceholders.forEach((url, i) => {
-    const ix = 0.6 + i * (imgW + imgGap)
-    s4.addImage({
-      path: url,
-      x: ix,
-      y: imgY,
-      w: imgW,
-      h: imgH,
+  if (includePhotos) {
+    fotoPlaceholders.forEach((url, i) => {
+      const ix = 0.6 + i * (imgW + imgGap)
+      s4.addImage({
+        path: url,
+        x: ix,
+        y: imgY,
+        w: imgW,
+        h: imgH,
+      })
     })
-  })
+  }
 
   // =========================================================================
   // SLIDE 5: Dados do Segurado e do Risco
   // =========================================================================
   const s5 = pptx.addSlide()
-  addHeaderBycor(s5, 'Dados do Segurado e do Risco', '05/12')
+  addHeaderBycor(s5, 'Dados do Segurado e do Risco', '05/12', logoHeader)
 
   // Tabela esquerda: Dados cadastrais e operacionais do risco
   const rowsCadastrais: pptxgen.TableRow[] = [
@@ -587,7 +628,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 6: Marco Regulatório Nova Lei de Seguros 15.040/2024 (Fixo)
   // =========================================================================
   const s6 = pptx.addSlide()
-  addHeaderBycor(s6, 'Informações', '06/12')
+  addHeaderBycor(s6, 'Informações', '06/12', logoHeader)
 
   s6.addText('Marco Regulatório Nova Lei de Seguros 15.040/2024 em vigor a partir de 11/12/2025', {
     x: 0.6,
@@ -654,7 +695,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 7: Seguradoras Consultadas
   // =========================================================================
   const s7 = pptx.addSlide()
-  addHeaderBycor(s7, 'Seguradoras Consultadas', '07/12')
+  addHeaderBycor(s7, 'Seguradoras Consultadas', '07/12', logoHeader)
 
   // Card Cias que apresentaram Propostas
   s7.addShape(pptx.ShapeType.roundRect, {
@@ -721,19 +762,21 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Foto de fachada corporativa à direita
-  s7.addImage({
-    path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+headquarters&color=blue',
-    x: 5.9,
-    y: 1.1,
-    w: 3.5,
-    h: 4.0,
-  })
+  if (includePhotos) {
+    s7.addImage({
+      path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+headquarters&color=blue',
+      x: 5.9,
+      y: 1.1,
+      w: 3.5,
+      h: 4.0,
+    })
+  }
 
   // =========================================================================
   // SLIDE 8: Prêmios
   // =========================================================================
   const s8 = pptx.addSlide()
-  addHeaderBycor(s8, 'Prêmios', '08/12')
+  addHeaderBycor(s8, 'Prêmios', '08/12', logoHeader)
 
   // Cabeçalho da tabela de prêmios por cia
   const colCias =
@@ -904,7 +947,7 @@ export async function generateEstudoMercadoPptx(
     const sCob = pptx.addSlide()
     const subNum =
       chunkIdx === 0 ? '09/12' : chunkIdx === 1 ? '09/12 (cont. 1/2)' : '09/12 (cont. 2/2)'
-    addHeaderBycor(sCob, 'Tabela Comparativa de Coberturas', subNum)
+    addHeaderBycor(sCob, 'Tabela Comparativa de Coberturas', subNum, logoHeader)
 
     // Cabeçalho
     const headerRow: pptxgen.TableRow = [
@@ -1028,7 +1071,7 @@ export async function generateEstudoMercadoPptx(
     const sPos = pptx.addSlide()
     const subNum =
       chunkIdx === 0 ? '10/12' : chunkIdx === 1 ? '10/12 (cont. 1/2)' : '10/12 (cont. 2/2)'
-    addHeaderBycor(sPos, 'Tabela Comparativa de POS & Franquias', subNum)
+    addHeaderBycor(sPos, 'Tabela Comparativa de POS & Franquias', subNum, logoHeader)
 
     const headerRow: pptxgen.TableRow = [
       {
@@ -1107,7 +1150,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 11: Opções de Contratação (Editável)
   // =========================================================================
   const s11 = pptx.addSlide()
-  addHeaderBycor(s11, 'Opções de Contratação', '11/12')
+  addHeaderBycor(s11, 'Opções de Contratação', '11/12', logoHeader)
 
   // Tabela compacta com as opções no topo
   const rowsOpcoesContratacao: pptxgen.TableRow[] = [
@@ -1220,22 +1263,20 @@ export async function generateEstudoMercadoPptx(
   const s12 = pptx.addSlide()
 
   // Foto à esquerda com arquitetura moderna
-  s12.addImage({
-    path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+lobby&color=blue',
-    x: 0,
-    y: 0,
-    w: 4.2,
-    h: 5.625,
-  })
+  if (includePhotos) {
+    s12.addImage({
+      path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+lobby&color=blue',
+      x: 0,
+      y: 0,
+      w: 4.2,
+      h: 5.625,
+    })
+  }
 
   // Logo Bycor superior direita no encerramento
-  s12.addImage({
-    path: LOGO_BYCOR_PATH,
-    x: 8.8,
-    y: 0.35,
-    w: 0.65,
-    h: 0.85,
-  })
+  if (logoEncerramento) {
+    s12.addImage(logoEncerramento)
+  }
 
   // Bloco central: Obrigado e Mensagem institucional
   s12.addText(

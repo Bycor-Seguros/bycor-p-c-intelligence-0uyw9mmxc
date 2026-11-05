@@ -10,6 +10,22 @@ import { createServer } from 'vite'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
+// Logotipo da Bycor em disco: os serviços de PPTX resolvem o asset via Vite, que em
+// Node/SSR devolve a URL de dev-server ("/src/assets/logo-bycor-3c53f.jpg") — inexistente
+// no sistema de arquivos. Antes de carregar qualquer módulo via SSR, expomos o caminho
+// absoluto real (raiz do projeto) para que src/assets/logoBycorBase64.ts resolva a mídia
+// no disco dentro do harness. No navegador/SSR de produção nada muda.
+const logoDiskPath = path.resolve(rootDir, 'src/assets/logo-bycor-3c53f.jpg')
+if (fs.existsSync(logoDiskPath)) {
+  process.env.BYCOR_LOGO_DISK_PATH = logoDiskPath
+} else {
+  // Mídia é OPCIONAL na validação PPTX do harness: sem o logotipo em disco a geração
+  // segue sem imagens embutidas (includeLogo=false) e a suíte NÃO aborta.
+  console.warn(
+    `⚠️ Logotipo da Bycor não encontrado no disco: ${logoDiskPath} — a validação PPTX seguirá SEM mídia embutida.`,
+  )
+}
+
 async function run() {
   console.log('Inicializando ambiente de teste Vite/Node...')
 
@@ -83,14 +99,21 @@ async function run() {
       console.error('❌ Falha na validação PPTX OpenXML:', validation.errors)
       process.exit(1)
     }
+    if (validation.warnings && validation.warnings.length > 0) {
+      console.warn('⚠️ Avisos da validação PPTX OpenXML:', validation.warnings)
+    }
     console.log(
       `✅ PPTX OpenXML válido via PptxGenJS! ${validation.slideCount} slides e ${validation.partCount} partes verificadas sem divergências.`,
     )
 
+    process.env.BYCOR_HARNESS = '1'
     const testModule = await vite.ssrLoadModule('/src/services/__tests__/run-golden-tests.ts')
+    if (typeof testModule.runAllSuites === 'function') {
+      await testModule.runAllSuites()
+    }
   } catch (err) {
     console.error('Erro ao executar suite de testes:', err)
-    process.exit(1)
+    process.exitCode = 1
   } finally {
     await vite.close()
   }
