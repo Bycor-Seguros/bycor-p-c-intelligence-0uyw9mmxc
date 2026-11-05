@@ -324,16 +324,29 @@ export function calcularFluxoPremios(params: {
   //     Se NÃO houver Líquido (ex.: Base Net sem comissão), IOF e Bruto ficam pendentes/nulos! TUDO null, nunca zero.
   const temIofExplicito = typeof iof === 'number' && iof > 0
   const iofDerivado = !temIofExplicito
-  const iofCalculado: number | null = temIofExplicito
-    ? iof
-    : liqCalculado !== null && liqCalculado > 0
-      ? Number((liqCalculado * ALIQUOTA_IOF_PADRAO).toFixed(2))
-      : null
 
-  const brutoCalculado =
-    liqCalculado !== null && iofCalculado !== null
-      ? Number((liqCalculado + iofCalculado).toFixed(2))
-      : null
+  // Arredondamento HALF-UP de centavos (Math.round puro sofre com ruído de ponto
+  // flutuante em valores terminados em .xx5).
+  const round2HalfUp = (v: number) => Math.round(v * 100 + Number.EPSILON * Math.sign(v || 1)) / 100
+
+  let iofCalculado: number | null = null
+  let brutoCalculado: number | null = null
+  if (temIofExplicito) {
+    iofCalculado = iof
+    brutoCalculado = liqCalculado !== null ? round2HalfUp(liqCalculado + iof) : null
+  } else if (liqCalculado !== null && liqCalculado > 0) {
+    // IOF derivado: âncora no BRUTO — Bruto = round(Líquido × (1 + alíquota)) e
+    // IOF = Bruto − Líquido (ambos em centavos). Isso mantém a identidade
+    // Líquido + IOF = Bruto exata em centavos e aplica half-up no meio-centavo
+    // (ex.: 64.705,88 × 7,38% → Bruto 69.481,18 → IOF 4.775,30).
+    // O bruto é ancorado no Líquido SEM arredondar (cru da cadeia Net/(1−comissão)):
+    // ex. 64.705,882352... × 1,0738 = 69.481,1765 → Bruto 69.481,18 e
+    // IOF = 69.481,18 − 64.705,88 = 4.775,30 (meio-centavo resolvido no bruto).
+    const brutoRound = round2HalfUp(liqCalculado * (1 + ALIQUOTA_IOF_PADRAO))
+    const liquidoRound = round2HalfUp(liqCalculado)
+    iofCalculado = round2HalfUp(brutoRound - liquidoRound)
+    brutoCalculado = brutoRound
+  }
 
   return {
     net: netBase !== null ? Number(netBase.toFixed(2)) : null,

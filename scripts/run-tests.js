@@ -97,7 +97,9 @@ async function run() {
     const validation = await pptxTest.validatePptxOpenXml(sampleData)
     if (!validation.passed) {
       console.error('❌ Falha na validação PPTX OpenXML:', validation.errors)
-      process.exit(1)
+      // exitCode em vez de exit(): permite o finally fechar o servidor Vite com elegância
+      process.exitCode = 1
+      return
     }
     if (validation.warnings && validation.warnings.length > 0) {
       console.warn('⚠️ Avisos da validação PPTX OpenXML:', validation.warnings)

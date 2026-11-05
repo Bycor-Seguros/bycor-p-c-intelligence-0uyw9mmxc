@@ -265,8 +265,10 @@ export function compararVrdEstagnado(
   if (!(vrdAtual > 0) || !(vrdAnterior > 0)) {
     return false
   }
-  // Compara arredondado em centavos para tolerar ruído de ponto flutuante
-  return Math.round(vrdAtual * 100) === Math.round(vrdAnterior * 100)
+  // Compara com tolerância de 1 centavo: ruído de ponto flutuante (ex. 1.000.000,005
+  // vs 1.000.000,001 — onde Math.round(x*100) cai em lados distintos do meio-centavo)
+  // NÃO pode gerar falso negativo de "VRD alterado".
+  return Math.abs(vrdAtual - vrdAnterior) < 0.01
 }
 
 /**
