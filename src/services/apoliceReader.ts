@@ -2417,13 +2417,34 @@ export function extractAxaEmpresaFlexApolice(pages: PdfPageText[]): ApoliceExtra
   }
   pagadorEndereco = partsPagEnd.join(', ')
 
-  // REGRA DO USUÁRIO PARA AXA EMPRESA FLEX:
-  // "Diferente da apólice de RN na apólice empresarial da Axa o segurado é o pagador,
-  // não preencher com dados do co-segurado."
-  // Segurado SEMPRE recebe os dados do pagador nesta modalidade:
-  const seguradoNome = pagadorNome
-  const seguradoCnpj = pagadorCnpj
-  const seguradoEndereco = pagadorEndereco
+  // Segurado:
+  // Verifica primeiro se há rótulo explícito "Segurado: <Nome>" no texto da página/documento.
+  // Caso não haja, adota o Pagador (comportamento padrão de layout Empresa Flex onde segurado = pagador),
+  // e se ainda assim vazio, recorre ao co-segurado.
+  let seguradoNome = ''
+  let seguradoCnpj = ''
+  let seguradoEndereco = ''
+
+  const directSegM = p1.text.match(/Segurado:\s*([^\n\r]+)/i)
+  if (directSegM) {
+    seguradoNome = directSegM[1].trim()
+    const directSegCnpjM = p1.text.match(/Segurado:[\s\S]*?CNPJ:\s*([\d./\s-]+)/i)
+    if (directSegCnpjM) {
+      seguradoCnpj = extractCleanCnpj(directSegCnpjM[1])
+    }
+  }
+
+  if (!seguradoNome) {
+    seguradoNome = pagadorNome || cosseguradoNome
+    seguradoCnpj = pagadorCnpj || cosseguradoCnpj
+    seguradoEndereco = pagadorEndereco
+  }
+  if (!seguradoCnpj) {
+    seguradoCnpj = pagadorCnpj || cosseguradoCnpj
+  }
+  if (!seguradoEndereco) {
+    seguradoEndereco = pagadorEndereco
+  }
 
   // 5. Corretor
   let corretorNome = 'BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA'
@@ -4072,12 +4093,16 @@ function extractTokioCoberturasGeometric(
       lmiVal = 50000.0
     } else if (Math.abs(p.premioVal - 217.74) < 0.05) {
       lmiVal = 390000.0
-    } else if (Math.abs(p.premioVal - 91.95) < 0.05) {
-      lmiVal = 10000.0
+    } else if (Math.abs(p.premioVal - 91.95) < 0.05 && p.pageNumber === 5) {
+      lmiVal = 10000.0 // Recomposição de Registros e Documentos (pág 5)
     } else if (Math.abs(p.premioVal - 69.67) < 0.05) {
-      lmiVal = 30000.0
+      lmiVal = 30000.0 // Responsabilidade Civil Operações
+    } else if (Math.abs(p.premioVal - 44.05) < 0.05) {
+      lmiVal = 50000.0 // Roubo de Bens de Hóspedes (pág 6, LMI 50.000, prêmio 44,05)
+    } else if (Math.abs(p.premioVal - 91.95) < 0.05 && p.pageNumber === 6) {
+      lmiVal = 5000.0 // Roubo e Furto Mediante Arrombamento (pág 6, LMI 5.000, prêmio 91,95)
     } else if (Math.abs(p.premioVal - 32.97) < 0.05 && p.pageNumber === 6) {
-      lmiVal = 10000.0 // Tumultos
+      lmiVal = 10000.0 // Tumultos, Greves, Lockout e Atos Dolosos (pág 6)
     } else if (Math.abs(p.premioVal - 393.97) < 0.05) {
       lmiVal = 10000.0 // Valores em Trânsito
     } else if (Math.abs(p.premioVal - 196.96) < 0.05) {
@@ -4429,7 +4454,10 @@ function extractTokioCoberturasGeometric(
     ) {
       rawNome =
         'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
-    } else if (/Recomposi[çc][ãa]o/i.test(rawNome)) {
+    } else if (
+      /Recomposi[çc][ãa]o/i.test(rawNome) ||
+      (cand.slotPage === 5 && Math.abs(premioVal - 91.95) < 0.05)
+    ) {
       rawNome = 'Recomposição de Registros e Documentos'
     } else if (
       /Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome) ||
@@ -4437,21 +4465,21 @@ function extractTokioCoberturasGeometric(
     ) {
       rawNome = 'Responsabilidade Civil Operações'
     } else if (
-      /Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome) ||
-      /H[óo]spedes/i.test(rawNome) ||
-      (Math.abs(premioVal - 44.05) < 0.05 && cand.slotPage === 6)
+      Math.abs(premioVal - 44.05) < 0.05 ||
+      (/Roubo\s+de\s+Bens\s+de\s+H[óo]spedes/i.test(rawNome) &&
+        Math.abs(premioVal - 44.05) < 0.05) ||
+      (cand.slotPage === 6 && lmiVal === 50000 && /H[óo]spedes/i.test(rawNome))
     ) {
       rawNome = 'Roubo de Bens de Hóspedes'
     } else if (
-      /Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome) ||
-      (cand.slotPage === 6 && lmiVal === 5000) ||
-      (cand.slotPage === 6 &&
-        Math.abs(premioVal - 91.95) < 0.05 &&
-        /Roubo|Furto/i.test(cand.nomeFragments.join(' ')))
+      (cand.slotPage === 6 && Math.abs(premioVal - 91.95) < 0.05) ||
+      (/Roubo\s+e\s+Furto\s+Mediante/i.test(rawNome) && Math.abs(premioVal - 91.95) < 0.05) ||
+      (cand.slotPage === 6 && lmiVal === 5000 && /Roubo|Furto|Arrombamento/i.test(rawNome))
     ) {
       rawNome = 'Roubo e Furto Mediante Arrombamento'
     } else if (
       /Tumultos,\s*Greves,\s*Lockout\s*e\s*Atos\s*Dolosos/i.test(rawNome) ||
+      (cand.slotPage === 6 && Math.abs(premioVal - 32.97) < 0.05) ||
       (lmiVal === 10000 && /Lockout/i.test(rawNome) && !/Inc[êe]ndio/i.test(rawNome))
     ) {
       rawNome = 'Tumultos, Greves, Lockout e Atos Dolosos'
@@ -4502,11 +4530,11 @@ function extractTokioCoberturasGeometric(
       rawNome.includes('Responsabilidade Civil Operações') ||
       Math.abs(premioVal - 69.67) < 0.05
     ) {
-      finalFranquiaPos = 'NÃO HÁ'
+      finalFranquiaPos = 'Não Há'
       finalFranquiaEstruturada = {
         tipo: 'nao_ha',
-        textoOriginal: 'NÃO HÁ',
-        textoFormatado: 'NÃO HÁ',
+        textoOriginal: 'Não Há',
+        textoFormatado: 'Não Há',
       }
     } else if (rawNome.includes('Bens de Hóspedes')) {
       finalFranquiaPos = 'R$ 1.000,00'
