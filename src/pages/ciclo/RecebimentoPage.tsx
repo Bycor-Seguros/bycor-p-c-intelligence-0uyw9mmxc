@@ -116,7 +116,7 @@ export default function RecebimentoPage() {
   const [docToDelete, setDocToDelete] = useState<DocumentRecord | null>(null)
   const [deletingDoc, setDeletingDoc] = useState(false)
 
-  // Duplicadas detectadas no Cartão de Risco do Garden Bauru (apólices vinculadas a uploads repetidos)
+  // Diagnóstico C1: duplicadas de Cartão de Risco + coberturas de Cartão de Risco sem LMI em nenhum campo
   const [c1DedupOpen, setC1DedupOpen] = useState(false)
   const [c1DedupLoading, setC1DedupLoading] = useState(false)
   const [c1DedupApolices, setC1DedupApolices] = useState<
@@ -129,9 +129,25 @@ export default function RecebimentoPage() {
       }
       totalDuplicadas: number
       grupos: Array<{ nome: string; lmi: number; count: number; idsParaRemover: string[] }>
+      totalSemLmi: number
+      semLmi: Array<{ id: string; nome: string; origem: string }>
     }>
   >([])
   const [c1CheckingDuplicates, setC1CheckingDuplicates] = useState(false)
+
+  // Regra de higienização: cobertura de Cartão de Risco SEM LMI em nenhum campo
+  // (lmi_rs vazio/zero E is_escolhida zerado E is_atualizada zerado E is_atual zerado) é candidata à remoção.
+  // Qualquer cobertura com LMI preenchida em QUALQUER desses campos é preservada
+  // (ex.: "Custo de Defesa - RC" com lmi_rs=100000 e is_* zerados permanece).
+  const isCoberturaSemLmiCartaoRisco = (c: Record<string, unknown>) => {
+    const origem = String(c.origem || '').toLowerCase()
+    if (!origem.includes('cart')) return false
+    const lmiRs = Number(c.lmi_rs || 0)
+    const isEscolhida = Number(c.is_escolhida || 0)
+    const isAtualizada = Number(c.is_atualizada || 0)
+    const isAtual = Number((c as Record<string, unknown>).is_atual || 0)
+    return lmiRs <= 0 && isEscolhida <= 0 && isAtualizada <= 0 && isAtual <= 0
+  }
 
   // Manual upload state
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -303,24 +319,14 @@ export default function RecebimentoPage() {
     }
   }
 
-  // Carregar diagnóstico de duplicadas nas apólices do Garden Bauru
+  // Carregar diagnóstico de duplicadas e coberturas de Cartão de Risco sem LMI (qualquer apólice/processo)
   const handleCheckC1Duplicates = async () => {
     try {
       setC1CheckingDuplicates(true)
-      // Buscar empreendimento Garden Bauru
-      const emps = await pb.collection('empreendimentos').getFullList({
-        filter: "nome_empreendimento ~ 'GARDEN' || nome_empreendimento ~ 'BAURU'",
-      })
-      const empIds = emps.map((e) => e.id)
 
-      // Buscar apólices vinculadas
-      let filterApolices = "numero_apolice ~ '02852' || segurado_na_apolice ~ 'GARDEN'"
-      if (empIds.length > 0) {
-        filterApolices += ` || ${empIds.map((id) => `id_empreendimento = '${id}'`).join(' || ')}`
-      }
-
+      // VARREDURA GLOBAL: qualquer apólice/processo com coberturas de origem Cartão de Risco
       const apols = await pb.collection('apolices').getFullList({
-        filter: filterApolices,
+        sort: '-created',
       })
 
       const resultados: Array<{
@@ -332,13 +338,17 @@ export default function RecebimentoPage() {
         }
         totalDuplicadas: number
         grupos: Array<{ nome: string; lmi: number; count: number; idsParaRemover: string[] }>
+        totalSemLmi: number
+        semLmi: Array<{ id: string; nome: string; origem: string }>
       }> = []
 
       for (const ap of apols) {
         const cobs = await pb.collection('coberturas').getFullList({
           filter: `id_apolice = '${ap.id}'`,
         })
+        if (cobs.length === 0) continue
 
+        // 1) Duplicadas: mesmo nome + mesmo LMI, mantendo a 1ª ocorrência
         const map = new Map<string, Array<{ id: string; nome: string; lmi: number }>>()
         for (const c of cobs) {
           const key = `${(c.nome_cobertura || '').trim().toLowerCase()}|${Number(c.lmi_rs || 0)}`
@@ -368,7 +378,17 @@ export default function RecebimentoPage() {
           }
         })
 
-        if (total > 0) {
+        // 2) Sem LMI em nenhum campo (somente origem Cartão de Risco):
+        // lmi_rs vazio/zero E is_escolhida zerado E is_atualizada zerado E is_atual zerado.
+        const semLmi = cobs
+          .filter((c) => isCoberturaSemLmiCartaoRisco(c as unknown as Record<string, unknown>))
+          .map((c) => ({
+            id: c.id as string,
+            nome: String(c.nome_cobertura || '(sem nome)'),
+            origem: String(c.origem || ''),
+          }))
+
+        if (total > 0 || semLmi.length > 0) {
           resultados.push({
             apolice: {
               id: ap.id,
@@ -378,6 +398,8 @@ export default function RecebimentoPage() {
             },
             totalDuplicadas: total,
             grupos,
+            totalSemLmi: semLmi.length,
+            semLmi,
           })
         }
       }
@@ -385,30 +407,37 @@ export default function RecebimentoPage() {
       setC1DedupApolices(resultados)
       setC1DedupOpen(true)
     } catch (err: unknown) {
-      alert('Erro ao verificar duplicadas do Garden Bauru: ' + (err as Error).message)
+      alert('Erro ao verificar coberturas: ' + (err as Error).message)
     } finally {
       setC1CheckingDuplicates(false)
     }
   }
 
-  // Confirmar remoção de duplicadas pelo modal da C1
+  // Confirmar remoção (duplicadas + sem LMI de Cartão de Risco) pelo modal da C1
   const handleConfirmRemoveC1Duplicates = async () => {
     try {
       setC1DedupLoading(true)
-      let removidosCount = 0
+      let removidosDuplicadas = 0
+      let removidosSemLmi = 0
       for (const item of c1DedupApolices) {
         for (const grp of item.grupos) {
           for (const idToDel of grp.idsParaRemover) {
             await pb.collection('coberturas').delete(idToDel)
-            removidosCount++
+            removidosDuplicadas++
           }
         }
+        for (const semLmiItem of item.semLmi) {
+          await pb.collection('coberturas').delete(semLmiItem.id)
+          removidosSemLmi++
+        }
       }
-      alert(`Sucesso! ${removidosCount} cobertura(s) duplicada(s) foram removidas com segurança.`)
+      alert(
+        `Sucesso! ${removidosDuplicadas} cobertura(s) duplicada(s) e ${removidosSemLmi} cobertura(s) de Cartão de Risco sem LMI foram removidas com segurança.`,
+      )
       setC1DedupOpen(false)
       setC1DedupApolices([])
     } catch (err: unknown) {
-      alert('Erro ao remover coberturas duplicadas: ' + (err as Error).message)
+      alert('Erro ao remover coberturas: ' + (err as Error).message)
     } finally {
       setC1DedupLoading(false)
     }
@@ -520,20 +549,20 @@ export default function RecebimentoPage() {
             <span>Base Hotéis (XLSX)</span>
           </Button>
 
-          {/* BOTÃO VERIFICAR DUPLICADAS GARDEN BAURU */}
+          {/* BOTÃO DIAGNÓSTICO C1: DUPLICADAS + COBERTURAS SEM LMI (CARTÃO DE RISCO) */}
           <Button
             onClick={handleCheckC1Duplicates}
             disabled={c1CheckingDuplicates}
             variant="outline"
             className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 text-xs font-semibold h-10 px-3.5 shadow-sm flex items-center gap-2"
-            title="Verificar coberturas duplicadas geradas por uploads repetidos de Cartão de Risco"
+            title="Verificar coberturas duplicadas e coberturas de Cartão de Risco sem LMI (qualquer apólice/processo)"
           >
             {c1CheckingDuplicates ? (
               <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-amber-600" />
             )}
-            <span>Verificar Duplicadas Garden Bauru</span>
+            <span>Verificar Duplicadas e Sem LMI</span>
           </Button>
 
           {/* BOTÃO LEITOR DE APÓLICE EMITIDA (PDF) */}
@@ -2081,17 +2110,19 @@ export default function RecebimentoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: DIAGNÓSTICO E REMOÇÃO DE COBERTURAS DUPLICADAS DO GARDEN BAURU */}
+      {/* MODAL: DIAGNÓSTICO C1 — DUPLICADAS + COBERTURAS DE CARTÃO DE RISCO SEM LMI */}
       <Dialog open={c1DedupOpen} onOpenChange={setC1DedupOpen}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto animate-scale-in">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <span>Coberturas Duplicadas — Renovação Garden Bauru</span>
+              <span>Coberturas Duplicadas e Sem LMI</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Diagnóstico de coberturas com mesmo nome e LMI geradas por múltiplos uploads de Cartão
-              de Risco na conta.
+              Diagnóstico de coberturas com mesmo nome e LMI (uploads repetidos de Cartão de Risco)
+              e de coberturas de origem Cartão de Risco sem LMI em nenhum campo (lmi_rs,
+              is_escolhida, is_atualizada e is_atual zerados). Aplicável a qualquer
+              apólice/processo.
             </DialogDescription>
           </DialogHeader>
 
@@ -2099,22 +2130,23 @@ export default function RecebimentoPage() {
             <div className="p-6 text-center text-xs text-gray-600 bg-emerald-50 border border-emerald-200 rounded-lg">
               <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
               <p className="font-semibold text-emerald-800">
-                Nenhuma cobertura duplicada encontrada!
+                Nenhuma cobertura duplicada ou sem LMI encontrada!
               </p>
               <p className="text-emerald-700 text-[11px] mt-1">
-                Todas as apólices do Garden Bauru estão com suas listas de coberturas limpas e sem
-                duplicidade.
+                Todas as apólices estão com suas listas de coberturas limpas e sem duplicidade.
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
                 <p className="font-semibold">
-                  Foram encontradas apólices com linhas repetidas de cobertura:
+                  Foram encontradas apólices com coberturas duplicadas e/ou sem LMI:
                 </p>
                 <p className="text-[11px] text-amber-700">
-                  Ao confirmar, o sistema preservará 1 ocorrência de cada cobertura e apagará com
-                  segurança os registros excedentes duplicados.
+                  Ao confirmar, o sistema preservará 1 ocorrência de cada cobertura duplicada,
+                  removerá as coberturas de Cartão de Risco sem LMI em nenhum campo (lmi_rs,
+                  is_escolhida, is_atualizada e is_atual zerados) e preservará toda cobertura com
+                  LMI preenchida em qualquer um desses campos.
                 </p>
               </div>
 
@@ -2134,21 +2166,53 @@ export default function RecebimentoPage() {
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold">
-                        {item.totalDuplicadas} duplicada(s)
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {item.totalDuplicadas > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold">
+                            {item.totalDuplicadas} duplicada(s)
+                          </span>
+                        )}
+                        {item.totalSemLmi > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">
+                            {item.totalSemLmi} sem LMI
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="max-h-40 overflow-y-auto divide-y text-[11px]">
-                      {item.grupos.map((grp, gIdx) => (
-                        <div key={gIdx} className="py-1.5 flex items-center justify-between">
-                          <span className="text-gray-800">{grp.nome}</span>
-                          <span className="text-gray-500 font-mono">
-                            {formatCurrency(grp.lmi)} ({grp.count}x → manter 1)
-                          </span>
+                    {item.grupos.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
+                          Duplicadas (mesmo nome + mesmo LMI)
+                        </p>
+                        <div className="max-h-40 overflow-y-auto divide-y text-[11px]">
+                          {item.grupos.map((grp, gIdx) => (
+                            <div key={gIdx} className="py-1.5 flex items-center justify-between">
+                              <span className="text-gray-800">{grp.nome}</span>
+                              <span className="text-gray-500 font-mono">
+                                {formatCurrency(grp.lmi)} ({grp.count}x → manter 1)
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+
+                    {item.semLmi.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">
+                          Sem LMI em nenhum campo (origem Cartão de Risco) — serão removidas
+                        </p>
+                        <div className="max-h-52 overflow-y-auto divide-y text-[11px]">
+                          {item.semLmi.map((sl) => (
+                            <div key={sl.id} className="py-1.5 flex items-center justify-between">
+                              <span className="text-gray-800">{sl.nome}</span>
+                              <span className="text-gray-400 text-[10px] italic">{sl.origem}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2179,7 +2243,7 @@ export default function RecebimentoPage() {
                   ) : (
                     <>
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remover Todas as Coberturas Duplicadas</span>
+                      <span>Remover Duplicadas e Sem LMI</span>
                     </>
                   )}
                 </Button>
