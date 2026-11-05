@@ -1,6 +1,7 @@
 import pb from '@/lib/pocketbase/client'
 import { CATEGORIAS_48, formatCurrency } from '@/lib/formatters'
 import { matchCanonicalCategory, RiskCardData } from '@/services/riskCardReader'
+import { normalizarRamoParaSucessao } from '@/services/apoliceStatusService'
 import {
   compararFranquiasEstruturadas,
   parseFranquiaEstruturada,
@@ -12,6 +13,8 @@ import {
   eventosSaoEquivalentes,
   normalizarTermoEquivalencia,
   calcularSimilaridadeTexto,
+  listarTaxonomiaCanonicas,
+  listarSinonimos,
   CoberturaCanonicaRecord,
   CoberturaSinonimoRecord,
   CoverageMatchResult,
@@ -269,6 +272,7 @@ export interface AuditoriaRodadaRecord {
   id: string
   empreendimento: string
   apolice?: string
+  apolice_referencia_real?: string
   numero_rodada: number
   data_rodada: string
   produto_ramo: string
@@ -833,11 +837,295 @@ export function buildAuditoriaSnapshot(
 }
 
 /**
+ * Determina a apólice de referência REAL do comparativo (apólice antecessora emitida,
+ * nunca o registro prospect criado pelo próprio Cartão de Risco).
+ *
+ * Critério: mesmo empreendimento + mesmo ramo normalizado (sucessão), status emitido
+ * (ativa/renovada/vencida/a vencer) ou número de apólice oficial não-prospect, e
+ * vigência imediatamente anterior à vigência do Cartão (data_fim <= início do Cartão
+ * quando houver; fallback: mais recente).
+ */
+export async function resolverApoliceReferenciaReal(params: {
+  empreendimentoId: string
+  apoliceProspectId?: string
+  ramo?: string
+  dataInicioCartao?: string
+}): Promise<Record<string, unknown> | null> {
+  const { empreendimentoId, apoliceProspectId, ramo, dataInicioCartao } = params
+  if (!empreendimentoId) return null
+
+  try {
+    const apolicesList = (await pb.collection('apolices').getFullList({
+      filter: `id_empreendimento="${empreendimentoId}"`,
+      sort: '-data_fim,-created',
+    })) as unknown as Array<Record<string, unknown>>
+
+    const isEmitida = (ap: Record<string, unknown>): boolean => {
+      const status = String(ap.status || '')
+        .toLowerCase()
+        .trim()
+      if (status === 'prospect') return false
+      const statusOk = ['ativa', 'renovada', 'vencida', 'a vencer'].includes(status)
+      const temNumeroOficial =
+        Boolean(String(ap.numero_apolice || '').trim()) &&
+        !/proc_risco_/i.test(String(ap.id_apolice || ''))
+      return statusOk || (temNumeroOficial && Boolean(String(ap.numero_apolice || '').trim()))
+    }
+
+    const emitidas = apolicesList.filter(
+      (ap) => isEmitida(ap) && String(ap.id) !== String(apoliceProspectId || ''),
+    )
+
+    if (emitidas.length === 0) return null
+
+    // Filtro de ramo (mesmo produto)
+    let candidatas = emitidas
+    if (ramo && ramo.trim()) {
+      const ramoNormAlvo = normalizarRamoParaSucessao(ramo)
+      const porRamo = emitidas.filter(
+        (ap) => normalizarRamoParaSucessao(String(ap.ramo || '')) === ramoNormAlvo,
+      )
+      if (porRamo.length > 0) candidatas = porRamo
+    }
+
+    // Vigência imediatamente anterior (data_fim <= início do Cartão), fallback mais recente
+    const refMs = dataInicioCartao ? new Date(dataInicioCartao.slice(0, 10)).getTime() : NaN
+    if (!isNaN(refMs)) {
+      const antesRef = candidatas.find((ap) => {
+        const fim = String(ap.data_fim || '')
+        if (!fim) return false
+        const fimMs = new Date(fim.slice(0, 10)).getTime()
+        return !isNaN(fimMs) && fimMs <= refMs
+      })
+      if (antesRef) return antesRef
+    }
+
+    return candidatas[0] || null
+  } catch (err) {
+    console.warn('Erro ao resolver apólice de referência real:', err)
+    return null
+  }
+}
+
+/**
+ * Recalcula o snapshot comparativo de uma rodada de auditoria a partir dos dados VIGENTES do banco
+ * (coberturas da apólice de referência real + Cartão de Risco persistido), preservando
+ * ressalvas já marcadas pelo analista.
+ */
+export async function recalcularRodadaAuditoria(
+  rodadaId: string,
+  options?: { canonicas?: CoberturaCanonicaRecord[]; sinonimos?: CoberturaSinonimoRecord[] },
+): Promise<AuditoriaRodadaRecord> {
+  // 1. Carrega a rodada original
+  const rodada = (await pb
+    .collection('auditoria_rodadas')
+    .getOne(rodadaId)) as unknown as AuditoriaRodadaRecord
+
+  const empreendimentoId = rodada.empreendimento
+  if (!empreendimentoId) throw new Error('Rodada sem empreendimento vinculado')
+
+  const idCartaoSnap = rodada.snapshot_comparativo?.identificacao?.cartao
+  const ramoReferencia = rodada.produto_ramo || idCartaoSnap?.ramo || ''
+  const vigenciaInicioCartao = idCartaoSnap?.vigenciaInicio || ''
+
+  // 2. Resolve a apólice de referência REAL (nunca o prospect criado pelo Cartão)
+  const apoliceReal = await resolverApoliceReferenciaReal({
+    empreendimentoId,
+    apoliceProspectId: rodada.apolice || rodada.apolice_referencia_real || '',
+    ramo: ramoReferencia,
+    dataInicioCartao: vigenciaInicioCartao,
+  })
+
+  if (!apoliceReal) {
+    throw new Error(
+      'Nenhuma apólice antecessora real (emitida) encontrada para este empreendimento/ramo. O comparativo não pode ser recalculado.',
+    )
+  }
+
+  // 3. Carrega dados vigentes
+  const [coberturasApoliceReal, canonicas, sinonimos] = await Promise.all([
+    pb.collection('coberturas').getFullList({
+      filter: `id_apolice="${apoliceReal.id}"`,
+    }) as unknown as Promise<Array<Record<string, unknown>>>,
+    options?.canonicas
+      ? Promise.resolve(options.canonicas)
+      : listarTaxonomiaCanonicas().catch(() => []),
+    options?.sinonimos ? Promise.resolve(options.sinonimos) : listarSinonimos().catch(() => []),
+  ])
+
+  // 4. Reconstrói o Cartão de Risco a partir do snapshot de identificação + coberturas
+  //    gravadas no processo (coleção coberturas, origem 'Cartão de Risco') do prospect
+  const idProspect = rodada.apolice || rodada.apolice_referencia_real || ''
+  const coberturasCartao = idProspect
+    ? ((await pb.collection('coberturas').getFullList({
+        filter: `id_apolice="${idProspect}" && origem="Cartão de Risco"`,
+      })) as unknown as Array<Record<string, unknown>>)
+    : []
+
+  // Fallback: se não houver coberturas marcadas com origem, usa todas as do prospect
+  const coberturasCartaoFinal =
+    coberturasCartao.length > 0
+      ? coberturasCartao
+      : idProspect
+        ? ((await pb.collection('coberturas').getFullList({
+            filter: `id_apolice="${idProspect}"`,
+          })) as unknown as Array<Record<string, unknown>>)
+        : []
+
+  const cardReconstruido: RiskCardData = {
+    segurado: idCartaoSnap?.segurado || '',
+    cnpj: idCartaoSnap?.cnpj || '',
+    endereco: '',
+    atividade: '',
+    atividadeExercida: '',
+    inicioAtividades: '',
+    contato: { nome: '', telefone: '', email: '' },
+    localRisco: '',
+    vigenciaInicio: idCartaoSnap?.vigenciaInicio || '',
+    vigenciaFim: idCartaoSnap?.vigenciaFim || '',
+    tipoCobertura: idCartaoSnap?.ramo || 'Prédio + Conteúdo',
+    clausulaBeneficiaria: '',
+    cossegurados: [],
+    seguroNovo: false,
+    seguroRenovacao: true,
+    seguradoraAnterior: idCartaoSnap?.seguradora || 'A Cotar',
+    numeroApoliceAnterior: idCartaoSnap?.numeroReferencia || '',
+    possuiOutrosSeguros: false,
+    outrosSegurosDetalhe: '',
+    possuiHistoricoSinistros: false,
+    sinistros: [],
+    protecaoIncendio: {},
+    protecaoRoubo: {},
+    construcao: {
+      tipoConstrucao: '',
+      placasFotovoltaicas: false,
+      isopainel: false,
+      telhadoTermoacustico: false,
+      patrimonioHistorico: false,
+      riscoLocalizadoEm: '',
+      quantidadeAndares: '',
+      anoConstrucao: null,
+      areaConstruidaM2: '',
+      numAptosUnidades: '',
+      estacionamento: '',
+      elevadores: '',
+      escadasRolantes: '',
+      piscina: false,
+      equipamentos: '',
+      mercadoriasEstocadas: '',
+      inflamaveis: '',
+    },
+    lucrosCessantes: {
+      contrataLucrosCessantes: false,
+      planoContinuidade: false,
+      equipamentosCriticos: '',
+      licencasSanitarias: '',
+      inventarioEstoque: '',
+      empresaUnica: '',
+    },
+    vrd: {
+      percentualIncc: null,
+      inccLabel: '',
+      predioAtual: null,
+      predioAtualizado: null,
+      danoMaterialMmuAtual: null,
+      danoMaterialMmuAtualizado: null,
+      mmpAtual: null,
+      mmpAtualizado: null,
+      totalAtual: null,
+      totalAtualizado: null,
+      lucrosCessantesAtual: null,
+      lucrosCessantesAtualizado: null,
+      vrdTotalAtual: null,
+      vrdTotalAtualizado: null,
+    },
+    coberturas: coberturasCartaoFinal.map((c, idx) => ({
+      numero: idx + 1,
+      nomeOriginal: String(c.nome_cobertura || ''),
+      categoriaNormalizada:
+        String(c.categoria_normalizada || '') ||
+        matchCanonicalCategory(String(c.nome_cobertura || '')),
+      isAtual: null,
+      isAtualizada: null,
+      isEscolhida:
+        typeof c.lmi_rs === 'number' && c.lmi_rs > 0
+          ? c.lmi_rs
+          : typeof c.is_escolhida === 'number' && c.is_escolhida > 0
+            ? c.is_escolhida
+            : typeof c.is_atualizada === 'number' && c.is_atualizada > 0
+              ? c.is_atualizada
+              : typeof c.is_atual === 'number' && c.is_atual > 0
+                ? c.is_atual
+                : null,
+      observacao: String(c.observacao || ''),
+    })),
+    sheetName: '',
+    fileName: rodada.arquivo_origem || '',
+  }
+
+  // 5. Recalcula o snapshot com dados vigentes
+  const novoSnapshot = buildAuditoriaSnapshot(
+    cardReconstruido,
+    apoliceReal,
+    coberturasApoliceReal,
+    {
+      produtoCartao: idCartaoSnap?.ramo || '',
+      ramoCanonicaCartao: ramoReferencia || undefined,
+      ressalvasIniciais: rodada.ressalvas_marcadas || [],
+      canonicas: (canonicas || []) as CoberturaCanonicaRecord[],
+      sinonimos: (sinonimos || []) as CoberturaSinonimoRecord[],
+    },
+  )
+
+  // 6. Recalcula totais (ressalvas preservadas: IDs marcados que ainda existem no novo snapshot)
+  const ressalvasAnteriores = new Set(rodada.ressalvas_marcadas || [])
+  const ressalvasPreservadas: string[] = []
+  novoSnapshot.coberturas.casadas.forEach((c) => {
+    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
+  })
+  novoSnapshot.coberturas.soNoCartao.forEach((c) => {
+    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
+  })
+  novoSnapshot.coberturas.soNaApolice.forEach((c) => {
+    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
+  })
+
+  const totalDivergencias =
+    novoSnapshot.identificacao.divergenciasIdentificacao.length +
+    novoSnapshot.coberturas.totalDivergencias +
+    novoSnapshot.vrdPorRubrica.filter((r) => r.divergente).length
+
+  // 7. Grava a nova rodada (nova versão no histórico, preservando a anterior)
+  const record = await pb.collection('auditoria_rodadas').create({
+    empreendimento: empreendimentoId,
+    apolice: idProspect || null,
+    apolice_referencia_real: String(apoliceReal.id),
+    numero_rodada: (rodada.numero_rodada || 1) + 1,
+    data_rodada: new Date().toISOString().slice(0, 10),
+    produto_ramo: rodada.produto_ramo,
+    arquivo_origem: rodada.arquivo_origem,
+    usuario_upload: rodada.usuario_upload || null,
+    usuario_email: rodada.usuario_email || '',
+    desfecho: rodada.desfecho,
+    total_divergencias: totalDivergencias,
+    total_ressalvas_c5: ressalvasPreservadas.length,
+    snapshot_comparativo: novoSnapshot,
+    ressalvas_marcadas: ressalvasPreservadas,
+    observacoes: `Recalculada a partir dos dados vigentes do banco (apólice de referência: ${String(
+      apoliceReal.numero_apolice || apoliceReal.id_apolice || '—',
+    )}). Histórico da rodada #${rodada.numero_rodada} preservado.`,
+  })
+
+  return record as unknown as AuditoriaRodadaRecord
+}
+
+/**
  * Salva uma nova rodada de auditoria no PocketBase, preservando o histórico de rodadas anteriores
  */
 export async function createAuditoriaRodada(params: {
   empreendimentoId: string
   apoliceId?: string
+  apoliceReferenciaRealId?: string
   produtoRamo: string
   arquivoOrigem: string
   usuarioId?: string
@@ -885,6 +1173,7 @@ export async function createAuditoriaRodada(params: {
   const payload = {
     empreendimento: params.empreendimentoId,
     apolice: params.apoliceId || null,
+    apolice_referencia_real: params.apoliceReferenciaRealId || params.apoliceId || null,
     numero_rodada: nextRodada,
     data_rodada: new Date().toISOString().slice(0, 10),
     produto_ramo: params.produtoRamo,

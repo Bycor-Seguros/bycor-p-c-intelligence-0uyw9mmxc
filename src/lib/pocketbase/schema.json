@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T01:39:06.759Z",
+  "generatedAt": "2026-11-05T02:25:59.475Z",
   "collections": [
     {
       "name": "users",
@@ -2301,6 +2301,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "apolice_referencia_real",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
         }
       ],
       "indexes": [

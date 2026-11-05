@@ -28,11 +28,20 @@ import {
   Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { formatCurrency, formatDate, formatCnpj } from '@/lib/formatters'
 import {
   AuditoriaRodadaRecord,
   ItemAuditoriaComparativo,
   toggleItemRessalvaC5,
+  recalcularRodadaAuditoria,
   encontrarLmiApoliceCorrespondente,
   CorrespondenciaApoliceLmi,
 } from '@/services/auditoriaCartaoApoliceService'
@@ -51,6 +60,9 @@ export default function AuditoriaCartaoApolicePage() {
   const [loading, setLoading] = useState(true)
   const [activeRodada, setActiveRodada] = useState<AuditoriaRodadaRecord | null>(null)
   const [togglingRessalva, setTogglingRessalva] = useState<string | null>(null)
+  const [recalculando, setRecalculando] = useState(false)
+  const [confirmRecalcOpen, setConfirmRecalcOpen] = useState(false)
+  const [erroRecalculo, setErroRecalculo] = useState<string | null>(null)
 
   // Filtros
   const [filterEmp, setFilterEmp] = useState<string>(searchParams.get('emp') || 'todos')
@@ -142,6 +154,29 @@ export default function AuditoriaCartaoApolicePage() {
       prev.set('rodada', r.id)
       return prev
     })
+  }
+
+  const handleRecalcular = async () => {
+    if (!activeRodada) return
+    try {
+      setRecalculando(true)
+      setErroRecalculo(null)
+      const [canList, sinList] = await Promise.all([
+        listarTaxonomiaCanonicas().catch(() => []),
+        listarSinonimos().catch(() => []),
+      ])
+      const novaRodada = await recalcularRodadaAuditoria(activeRodada.id, {
+        canonicas: canList,
+        sinonimos: sinList,
+      })
+      setActiveRodada(novaRodada)
+      setRodadas((prev) => [novaRodada, ...prev])
+      setConfirmRecalcOpen(false)
+    } catch (err) {
+      setErroRecalculo((err as Error).message || 'Erro ao recalcular a rodada')
+    } finally {
+      setRecalculando(false)
+    }
   }
 
   const handleToggleRessalva = async (itemId: string, currentState: boolean) => {
@@ -396,6 +431,20 @@ export default function AuditoriaCartaoApolicePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => setConfirmRecalcOpen(true)}
+                        disabled={recalculando}
+                        variant="outline"
+                        className="text-xs font-semibold h-9 border-gray-300 hover:bg-gray-50 flex items-center gap-1.5"
+                        title="Recalcula o comparativo a partir dos dados vigentes do banco (apólice antecessora real), preservando as ressalvas já marcadas"
+                      >
+                        {recalculando ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#16578B]" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5 text-[#16578B]" />
+                        )}
+                        <span>{recalculando ? 'Recalculando...' : 'Recalcular'}</span>
+                      </Button>
                       <span
                         className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${
                           activeRodada.desfecho === 'RENOVACAO'
@@ -459,6 +508,13 @@ export default function AuditoriaCartaoApolicePage() {
                     </div>
                     <div className="font-semibold text-blue-700">Etapa 0 + Etapa 1 Ativas</div>
                   </div>
+
+                  {erroRecalculo && (
+                    <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{erroRecalculo}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Abas de Navegação Detalhada */}
@@ -1214,6 +1270,56 @@ export default function AuditoriaCartaoApolicePage() {
           </div>
         </div>
       )}
+
+      {/* Diálogo de confirmação do Recalcular */}
+      <Dialog open={confirmRecalcOpen} onOpenChange={setConfirmRecalcOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <RefreshCw className="w-4 h-4 text-[#16578B]" />
+              Recalcular rodada de auditoria
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              O Relatório Comparativo será recalculado a partir dos{' '}
+              <strong>dados vigentes do banco</strong>: coberturas atuais do Cartão de Risco do
+              processo (já higienizadas) e coberturas da <strong>apólice antecessora real</strong>{' '}
+              (mesmo empreendimento, mesmo ramo, vigência imediatamente anterior) — nunca o registro
+              prospect criado pelo próprio Cartão. A rodada atual é preservada no histórico e uma
+              nova rodada é gravada. As ressalvas C5 já marcadas são mantidas quando o item
+              correspondente continuar existindo.
+            </DialogDescription>
+          </DialogHeader>
+          {erroRecalculo && (
+            <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800">
+              {erroRecalculo}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmRecalcOpen(false)}
+              disabled={recalculando}
+              className="text-xs font-semibold h-9 border-gray-300 hover:bg-gray-50"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleRecalcular}
+              disabled={recalculando}
+              className="bg-[#16578B] hover:bg-[#12456e] text-white text-xs font-semibold h-9"
+            >
+              {recalculando ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Recalculando...
+                </>
+              ) : (
+                'Confirmar Recálculo'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

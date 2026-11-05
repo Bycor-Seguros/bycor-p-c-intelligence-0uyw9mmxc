@@ -1765,11 +1765,44 @@ export async function saveRiskCardToDatabase(
   if (empRecordId) {
     try {
       onProgress?.('Registrando nova rodada da Auditoria Cartão × Apólice...')
-      const { buildAuditoriaSnapshot, createAuditoriaRodada } =
+      const { buildAuditoriaSnapshot, createAuditoriaRodada, resolverApoliceReferenciaReal } =
         await import('@/services/auditoriaCartaoApoliceService')
+
+      // REGRA: o comparativo usa SEMPRE a apólice antecessora REAL (emitida, mesmo empreendimento,
+      // mesmo ramo, vigência imediatamente anterior) — nunca o registro prospect criado pelo Cartão.
+      let apoliceReferenciaReal = apoliceRecordParaAuditoria
+      if (apoliceRecordParaAuditoria) {
+        const statusApol = String(apoliceRecordParaAuditoria.status || '')
+          .toLowerCase()
+          .trim()
+        const isProspect =
+          statusApol === 'prospect' ||
+          /^proc_risco_/i.test(String(apoliceRecordParaAuditoria.id_apolice || ''))
+        if (isProspect) {
+          const real = await resolverApoliceReferenciaReal({
+            empreendimentoId: empRecordId,
+            apoliceProspectId: apoliceRecordId || '',
+            ramo: match.ramoCanonicaCartao || match.matchedApoliceRamo || '',
+            dataInicioCartao: card.vigenciaInicio || '',
+          })
+          if (real) {
+            apoliceReferenciaReal = real
+            const coberturasReal = (await pb.collection('coberturas').getFullList({
+              filter: `id_apolice="${String(real.id)}"`,
+            })) as unknown as Array<Record<string, unknown>>
+            coberturasApoliceVigente = coberturasReal
+            onProgress?.(
+              `Comparativo ancorado na apólice antecessora real (${
+                String(real.numero_apolice || real.id_apolice || '—') || '—'
+              }).`,
+            )
+          }
+        }
+      }
+
       const snapshot = buildAuditoriaSnapshot(
         card,
-        apoliceRecordParaAuditoria,
+        apoliceReferenciaReal,
         coberturasApoliceVigente,
         {
           produtoCartao: match.produtoCartao,
@@ -1792,6 +1825,9 @@ export async function saveRiskCardToDatabase(
       const rodadaCriada = await createAuditoriaRodada({
         empreendimentoId: empRecordId,
         apoliceId: apoliceRecordId || undefined,
+        apoliceReferenciaRealId: apoliceReferenciaReal
+          ? String((apoliceReferenciaReal as Record<string, unknown>).id)
+          : undefined,
         produtoRamo: match.ramoCanonicaCartao || match.produtoCartao || 'Riscos Nomeados',
         arquivoOrigem: card.fileName || originalFile.name || 'Cartao_de_Risco.xlsx',
         usuarioId: usuarioId || undefined,
