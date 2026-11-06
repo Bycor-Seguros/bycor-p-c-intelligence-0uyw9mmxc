@@ -531,6 +531,42 @@ export async function runAllSuites() {
         console.log(`     Observação/Prêmio: "${cob.observacao || ''}"${slotInfo}`)
       })
     }
+
+    // Bloco de diagnóstico: Lista completa das coberturas extraídas com mapeamento para o gabarito
+    console.log('\nLISTA COMPLETA DAS 17 COBERTURAS EXTRAÍDAS:')
+    console.log('-------------------------------------------')
+    tokioApoliceResult.coberturas.forEach((cob, idx) => {
+      const gabMatches = TABELA_VERDADE_TOKIO.filter((gab) => gab.nomePattern.test(cob.nome))
+      const gabMatchStr =
+        gabMatches.length > 0
+          ? gabMatches.map((g) => `#${g.id} (${g.nomeCompleto})`).join(', ')
+          : 'NENHUM'
+      const lmiStr = cob.lmi !== null && cob.lmi !== undefined ? String(cob.lmi) : '—'
+      const franqStr = cob.franquiaPos || '—'
+      const premStr = cob.observacao || '—'
+      const pagStr = cob.slotPage !== undefined ? String(cob.slotPage) : '—'
+      const slotYStr = cob.slotBottomY !== undefined ? cob.slotBottomY.toFixed(1) : '—'
+
+      console.log(
+        `[#${idx + 1}] nome="${cob.nome}" | norm="${cob.categoriaNormalizada || '—'}" | LMI=${lmiStr} | franquia="${franqStr}" | prêmio="${premStr}" | pág=${pagStr} | slotY=${slotYStr} | casou com gabarito: ${gabMatchStr}`,
+      )
+    })
+
+    // Bloco de diagnóstico: Contador de casamentos por item do gabarito
+    console.log('\nCONTADOR DE CASAMENTOS POR GABARITO:')
+    console.log('------------------------------------')
+    TABELA_VERDADE_TOKIO.forEach((gab) => {
+      const matchCount = tokioApoliceResult.coberturas.filter((cob) =>
+        gab.nomePattern.test(cob.nome),
+      ).length
+      let tag = 'OK (1 casamento)'
+      if (matchCount === 0) {
+        tag = 'FALTANTE'
+      } else if (matchCount >= 2) {
+        tag = `DUPLICATA (${matchCount} casamentos)`
+      }
+      console.log(`Gabarito #${gab.id} (${gab.nomeCompleto}): ${matchCount} casamento(s) (${tag})`)
+    })
   }
 
   // =========================================================================
