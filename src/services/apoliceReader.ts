@@ -4458,7 +4458,13 @@ function extractTokioCoberturasGeometric(
     const premioVal = cand.premioVal
 
     // Normalização canônica dos nomes completos das coberturas Tokio Marine BT Fortaleza:
-    if (/CUSTOS\s+DE\s+DEFESA/i.test(rawNome) || Math.abs(premioVal - 18.55) < 0.05) {
+    // Guard (Run 8): slot pág 5 Y≈98 (prêmio 76,23) herda "Custos de Defesa" da célula de cima;
+    // o ramo se abstém para cair em "Despesas de Contenção e Salvamento".
+    if (
+      (/CUSTOS\s+DE\s+DEFESA/i.test(rawNome) &&
+        !(cand.slotPage === 5 && Math.abs(premioVal - 76.23) < 0.05)) ||
+      Math.abs(premioVal - 18.55) < 0.05
+    ) {
       rawNome = 'Custos de Defesa do Segurado'
     } else if (
       /DESPESAS\s+DE\s+CONTEN[ÇC][ÃA]O/i.test(rawNome) ||
@@ -4481,12 +4487,20 @@ function extractTokioCoberturasGeometric(
     } else if (/Infidelidade/i.test(rawNome) || Math.abs(premioVal - 310.06) < 0.05) {
       rawNome = 'Infidelidade de Empregados'
     } else if (
-      /Lucros\s+Cessantes/i.test(rawNome) ||
-      lmiVal === 390000 ||
-      Math.abs(premioVal - 217.74) < 0.05 ||
-      /Despesas\s+Fixas/i.test(rawNome) ||
-      /Per[íi]odo\s+Indenit[áa]rio/i.test(rawNome) ||
-      /HORAS\s+DE\s+PARALISA[ÇC][ÃA]O/i.test(rawFranquia)
+      // Guard (Run 8): slot pág 6 Y≈362 (prêmio 32,97) herda "Lucros Cessantes" da célula de cima;
+      // o ramo se abstém para cair em "Recomposição de Registros e Documentos".
+      !(
+        cand.slotPage === 6 &&
+        Math.abs(premioVal - 32.97) < 0.05 &&
+        cand.slotBottomY > 260 &&
+        cand.slotBottomY < 420
+      ) &&
+      (/Lucros\s+Cessantes/i.test(rawNome) ||
+        lmiVal === 390000 ||
+        Math.abs(premioVal - 217.74) < 0.05 ||
+        /Despesas\s+Fixas/i.test(rawNome) ||
+        /Per[íi]odo\s+Indenit[áa]rio/i.test(rawNome) ||
+        /HORAS\s+DE\s+PARALISA[ÇC][ÃA]O/i.test(rawFranquia))
     ) {
       rawNome =
         'Lucros Cessantes (Despesas Fixas), em Decorrência de Incêndio (Inclusive Decorrente de Tumultos, Greves e Lockout), Raio, Explosão, Implosão, Fumaça e Queda de Aeronaves (Período Indenitário = 12 Meses)'
@@ -4500,8 +4514,16 @@ function extractTokioCoberturasGeometric(
     ) {
       rawNome = 'Recomposição de Registros e Documentos'
     } else if (
-      /Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome) ||
-      Math.abs(premioVal - 69.67) < 0.05
+      // Guard (Run 8): slot pág 6 Y≈273 (prêmio 44,05) herda "Responsabilidade Civil Operações";
+      // o ramo se abstém para cair em "Roubo e Furto Mediante Arrombamento".
+      !(
+        cand.slotPage === 6 &&
+        Math.abs(premioVal - 44.05) < 0.05 &&
+        cand.slotBottomY > 255 &&
+        cand.slotBottomY < 285
+      ) &&
+      (/Responsabilidade\s+Civil\s+Opera[çc][õo]es/i.test(rawNome) ||
+        Math.abs(premioVal - 69.67) < 0.05)
     ) {
       rawNome = 'Responsabilidade Civil Operações'
     } else if (
