@@ -511,6 +511,26 @@ export async function runAllSuites() {
         )
       }
     })
+
+    // Bloco de diagnóstico: coberturas extraídas que NÃO casaram com nenhuma entrada do gabarito Tokio
+    console.log('\nCOBERTURAS EXTRAÍDAS NÃO CASADAS COM GABARITO TOKIO (ÓRFÃS):')
+    console.log('------------------------------------------------------------')
+    const orfas = tokioApoliceResult.coberturas.filter(
+      (cob) => !TABELA_VERDADE_TOKIO.some((gab) => gab.nomePattern.test(cob.nome)),
+    )
+    if (orfas.length === 0) {
+      console.log('Nenhuma cobertura órfã encontrada (todas casaram com algum item do gabarito).')
+    } else {
+      orfas.forEach((cob, idx) => {
+        const slotInfo =
+          cob.slotPage !== undefined || cob.slotBottomY !== undefined
+            ? ` | Slot: pág ${cob.slotPage ?? '?'}, Y ${cob.slotBottomY !== undefined ? cob.slotBottomY.toFixed(1) : '?'}`
+            : ''
+        console.log(`[Órfã #${idx + 1}] Nome: "${cob.nome}"`)
+        console.log(`     LMI: ${cob.lmi} | Franquia: "${cob.franquiaPos}"`)
+        console.log(`     Observação/Prêmio: "${cob.observacao || ''}"${slotInfo}`)
+      })
+    }
   }
 
   // =========================================================================

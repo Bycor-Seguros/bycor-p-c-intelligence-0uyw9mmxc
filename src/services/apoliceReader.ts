@@ -31,6 +31,8 @@ export interface ExtractedApoliceCobertura {
   franquiaPos: string
   observacao?: string
   franquiaEstruturada?: FranquiaEstruturada
+  slotPage?: number
+  slotBottomY?: number
 }
 
 export interface ApoliceExtracaoDiagnostico {
@@ -4707,6 +4709,8 @@ function extractTokioCoberturasGeometric(
       franquiaPos: finalFranquiaPos,
       franquiaEstruturada: finalFranquiaEstruturada,
       observacao: `Prêmio: R$ ${premioVal.toFixed(2)}`,
+      slotPage: cand.slotPage,
+      slotBottomY: cand.slotBottomY,
     })
   }
 
