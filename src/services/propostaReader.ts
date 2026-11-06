@@ -667,10 +667,22 @@ export function extractAxaDetails(pages: PdfPageText[]): Partial<PropostaSegment
     if (propMatch[2]) seguradoCnpj = propMatch[2].trim()
   }
   if (!seguradoCnpj) {
-    const cnpjMatch = fullText.match(
-      /(?:Proponente|Segurado)[\s\S]*?CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i,
-    )
-    if (cnpjMatch) seguradoCnpj = cnpjMatch[1].trim()
+    // O CNPJ do proponente deve vir do bloco "Dados do Segurado" (mesma linha do
+    // rótulo ou imediatamente seguinte). Uma busca [\s\S]*? no texto completo
+    // vazava o CNPJ do rodapé/cabeçalho da própria seguradora (ex.: AXA) para o
+    // campo do proponente — por isso a busca é limitada a uma janela de linhas
+    // e rejeita qualquer contexto do bloco da seguradora/corretores.
+    const cnpjRe = /CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i
+    const blocoSeguradoraRe = /Registo\s+Susep|Registro\s+Susep|Prezado\s+corretor|Corretagem/i
+    for (let i = 0; i < lines.length; i++) {
+      if (!/(?:^|\s)(?:Proponente|Segurado)\s*:/i.test(lines[i])) continue
+      const janela = [lines[i], lines[i + 1] ?? '', lines[i + 2] ?? ''].join('\n')
+      const cnpjNaJanela = janela.match(cnpjRe)
+      if (cnpjNaJanela && !blocoSeguradoraRe.test(janela)) {
+        seguradoCnpj = cnpjNaJanela[1].trim()
+        break
+      }
+    }
   }
 
   const cossMatch = fullText.match(
