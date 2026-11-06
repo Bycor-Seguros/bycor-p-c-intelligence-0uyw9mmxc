@@ -169,7 +169,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     nomeCompleto: 'Recomposição de Registros e Documentos',
     lmi: 10000.0, // conferido no fixture
     franquiaPos: '10% min R$ 600,00',
-    premio: 91.95,
+    premio: 32.97,
   },
   {
     id: 10,
@@ -185,7 +185,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     nomeCompleto: 'Roubo de Bens de Hóspedes',
     lmi: 50000.0, // conferido no fixture
     franquiaPos: 'R$ 1.000,00',
-    premio: 44.05,
+    premio: 91.95,
   },
   {
     id: 12,
@@ -193,7 +193,7 @@ export const TABELA_VERDADE_TOKIO: CoberturaGabarito[] = [
     nomeCompleto: 'Roubo e Furto Mediante Arrombamento',
     lmi: 5000.0,
     franquiaPos: '10% min R$ 3.000,00',
-    premio: 91.95,
+    premio: 44.05,
   },
   {
     id: 13,
