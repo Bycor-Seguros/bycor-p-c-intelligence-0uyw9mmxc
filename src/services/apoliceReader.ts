@@ -639,7 +639,8 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
     )
     if (headerCnpj && headerCnpj[1] !== corretorCnpj) {
       seguradoraCnpj = headerCnpj[1]
-    } else if (fullText.includes('19.323.190/0001-06')) {
+    } else {
+      // Colisão sem CNPJ de cabeçalho distinto: restaura o CNPJ canônico da AXA Seguros S.A.
       seguradoraCnpj = '19.323.190/0001-06'
     }
   }
