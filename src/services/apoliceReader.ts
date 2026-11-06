@@ -4527,12 +4527,20 @@ function extractTokioCoberturasGeometric(
     ) {
       rawNome = 'Responsabilidade Civil Operações'
     } else if (
-      /Bens\s+de\s+H[óo]spedes/i.test(rawNome) ||
-      (cand.slotPage === 6 &&
-        Math.abs(premioVal - 91.95) < 0.05 &&
-        cand.slotBottomY > 275 &&
-        cand.slotBottomY < 310) ||
-      (cand.slotPage === 6 && lmiVal === 50000 && /H[óo]spedes/i.test(rawNome))
+      // Guard (Run 9): slot pág 6 Y≈273 (prêmio 44,05) não pertence a Bens de Hóspedes;
+      // o ramo se abstém para cair em "Roubo e Furto Mediante Arrombamento".
+      !(
+        cand.slotPage === 6 &&
+        Math.abs(premioVal - 44.05) < 0.05 &&
+        cand.slotBottomY > 255 &&
+        cand.slotBottomY < 285
+      ) &&
+      (/Bens\s+de\s+H[óo]spedes/i.test(rawNome) ||
+        (cand.slotPage === 6 &&
+          Math.abs(premioVal - 91.95) < 0.05 &&
+          cand.slotBottomY > 275 &&
+          cand.slotBottomY < 310) ||
+        (cand.slotPage === 6 && lmiVal === 50000 && /H[óo]spedes/i.test(rawNome)))
     ) {
       rawNome = 'Roubo de Bens de Hóspedes'
     } else if (
