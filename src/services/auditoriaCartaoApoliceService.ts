@@ -516,9 +516,16 @@ export function buildAuditoriaSnapshot(
           const divergenteLmi =
             lmiC !== null && lmiA !== null && Math.abs((lmiC || 0) - (lmiA || 0)) > 100
 
-          // Comparação estruturada de franquias (não por string crua)
+          // Regra de produto: o Cartão de Risco NUNCA tem franquia — é um documento
+          // preenchido pelo segurado, preocupado apenas com cobertura e LMI. Quando a
+          // franquia do lado do cartão está vazia/ausente, a franquia da apólice é
+          // apenas INFORMATIVA: não gera divergência nem pré-marca Ressalva C5.
+          // O comparador estruturado continua valendo quando o cartão traz franquia preenchida.
+          const franquiaCartaoPreenchida =
+            Boolean(ci.franquia && ci.franquia.trim()) &&
+            parseFranquiaEstruturada(ci.franquia).tipo !== 'nao_ha'
           const compFranquia = compararFranquiasEstruturadas(ci.franquia, ai.franquia)
-          const divergenteFranquia = !compFranquia.equivalentes
+          const divergenteFranquia = franquiaCartaoPreenchida && !compFranquia.equivalentes
 
           const isDivergenteGeral = divergenteLmi || divergenteFranquia
 
