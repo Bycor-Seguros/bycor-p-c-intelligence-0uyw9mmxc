@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import pb from '@/lib/pocketbase/client'
 import {
-  FileText,
   Printer,
   Download,
   Building,
   Shield,
   Layers,
   Sparkles,
-  CheckCircle2,
-  Calendar,
-  AlertCircle,
+  Trophy,
+  XCircle,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/formatters'
@@ -28,6 +27,10 @@ import {
 } from '@/services/equivalenciaCoberturasService'
 import { PropostaInputEstudo } from '@/services/estudoMercadoResolver'
 import { toast } from '@/hooks/use-toast'
+import { usePedidoEmissao } from '@/hooks/usePedidoEmissao'
+import PedidoEmissaoDocumento from '@/components/PedidoEmissaoDocumento'
+import { montarDadosPedidoEmissao } from '@/services/pedidoEmissaoService'
+import { formatCnpj } from '@/lib/formatters'
 
 interface EmpreendimentoOpt {
   id: string
@@ -42,15 +45,21 @@ interface EmpreendimentoOpt {
 
 interface PropostaOption {
   id: string
+  rfq?: string
   seguradora: string
   opcao?: number
   versao?: number
   ativa?: boolean
+  proposta_vencedora?: boolean
   premio_bruto: number
+  premio_liquido?: number
+  comissao_trabalhada?: number
   lmi_lmg: number
   coberturas: any[]
   status?: string
   data_proposta?: string
+  arquivo?: string
+  arquivo_nome?: string
   expand?: {
     seguradora?: { id?: string; nome: string }
     rfq?: {
@@ -105,6 +114,9 @@ export default function ApresentacaoPage() {
   const [loading, setLoading] = useState(true)
   const [exportingPptx, setExportingPptx] = useState(false)
   const [exportingEstudoPptx, setExportingEstudoPptx] = useState(false)
+  const [marcandoVencedora, setMarcandoVencedora] = useState(false)
+  const [mostrarPedidoEmissao, setMostrarPedidoEmissao] = useState(false)
+  const [carregandoEmps, setCarregandoEmps] = useState(false)
 
   // Equivalências para resolução fiel da taxonomia canônica (C3)
   const [canonicasC3, setCanonicasC3] = useState<CoberturaCanonicaRecord[]>([])
@@ -152,8 +164,13 @@ export default function ApresentacaoPage() {
           console.warn('Aviso: falha ao carregar taxonomia C3:', eqErr)
         }
         if (props.length > 0) {
-          const vencedora = props.find((p: any) => p.status === 'Selecionada')
-          setSelectedPropId(vencedora ? vencedora.id : props[0].id)
+          const vencedora = props.find((p: any) => p.proposta_vencedora)
+          if (vencedora) {
+            setSelectedPropId(vencedora.id)
+          } else {
+            const selecionadaC3 = props.find((p: any) => p.status === 'Selecionada')
+            setSelectedPropId(selecionadaC3 ? selecionadaC3.id : props[0].id)
+          }
         }
       } catch (e) {
         console.error(e)
@@ -164,7 +181,14 @@ export default function ApresentacaoPage() {
     fetchInit()
   }, [])
 
-  const selectedEmp = empreendimentos.find((e) => e.id === selectedEmpId)
+  // Empreendimento do cliente (via conta_empreendimento do RFQ da proposta selecionada)
+  const selectedEmp = useMemo(() => {
+    if (!selectedPropId) return undefined
+    const rfqId = propostas.find((p) => p.id === selectedPropId)?.rfq
+    const rfq = propostas.find((p) => p.id === selectedPropId)?.expand?.rfq
+    const empId = rfq?.conta_empreendimento || rfq?.expand?.conta_empreendimento?.id
+    return empreendimentos.find((e) => e.id === empId) || empreendimentos[0]
+  }, [empreendimentos, propostas, selectedPropId])
 
   // Todas as propostas da seguradora da proposta selecionada (para seletor de versões)
   const selectedProp = propostas.find((p) => p.id === selectedPropId)
@@ -211,6 +235,106 @@ export default function ApresentacaoPage() {
   const handlePrint = () => {
     window.print()
   }
+
+  // ------- Proposta Vencedora (Opção escolhida pelo cliente) -------
+  const isVencedoraSelecionada = Boolean(selectedProp?.proposta_vencedora)
+  const { pedido: pedidoEmissaoRec, loading: loadingPedidoEmissao } = usePedidoEmissao(
+    isVencedoraSelecionada ? selectedPropId : undefined,
+  )
+
+  const carregarEmpreendimentoDaProposta = async (
+    prop: PropostaOption,
+  ): Promise<EmpreendimentoOpt | undefined> => {
+    try {
+      const rfqId = prop.rfq || prop.expand?.rfq?.conta_empreendimento
+      if (!rfqId) return selectedEmp
+      const rfqRec: any = await pb.collection('rfq').getOne(rfqId, {
+        expand: 'conta_empreendimento',
+      })
+      const emp = rfqRec?.expand?.conta_empreendimento
+      if (emp) return emp as EmpreendimentoOpt
+    } catch {
+      // ignora — usa o empreendimento selecionado na tela como fallback
+    }
+    return selectedEmp
+  }
+
+  const handleMarcarVencedora = async () => {
+    if (!selectedProp || marcandoVencedora) return
+    setMarcandoVencedora(true)
+    try {
+      const rfqId = selectedProp.rfq
+      if (rfqId) {
+        const irmaos = await pb.collection('propostas').getFullList<any>({
+          filter: `rfq = "${rfqId}"`,
+        })
+        for (const irmao of irmaos) {
+          if (irmao.proposta_vencedora) {
+            await pb.collection('propostas').update(irmao.id, { proposta_vencedora: false })
+          }
+        }
+      }
+      await pb.collection('propostas').update(selectedProp.id, { proposta_vencedora: true })
+      setPropostas((prev) =>
+        prev.map((p) => ({ ...p, proposta_vencedora: p.id === selectedProp.id })),
+      )
+      toast({
+        title: 'Proposta Vencedora marcada',
+        description: `${selectedProp.expand?.seguradora?.nome || 'Seguradora'} — Opção ${
+          selectedProp.opcao || 1
+        } (v${selectedProp.versao || 1}) é a escolha do cliente neste RFQ.`,
+      })
+    } catch (err: any) {
+      console.error(err)
+      toast({
+        title: 'Erro ao marcar vencedora',
+        description: err?.message || 'Não foi possível marcar a proposta vencedora.',
+        variant: 'destructive',
+      })
+    } finally {
+      setMarcandoVencedora(false)
+    }
+  }
+
+  const handleDesmarcarVencedora = async () => {
+    if (!selectedProp || marcandoVencedora) return
+    setMarcandoVencedora(true)
+    try {
+      await pb.collection('propostas').update(selectedProp.id, { proposta_vencedora: false })
+      setPropostas((prev) =>
+        prev.map((p) => (p.id === selectedProp.id ? { ...p, proposta_vencedora: false } : p)),
+      )
+      toast({ title: 'Marcação de vencedora removida' })
+    } catch (err: any) {
+      console.error(err)
+      toast({
+        title: 'Erro ao desmarcar vencedora',
+        description: err?.message || 'Não foi possível desmarcar a proposta vencedora.',
+        variant: 'destructive',
+      })
+    } finally {
+      setMarcandoVencedora(false)
+    }
+  }
+
+  const dadosPedidoEmissao = useMemo(async () => {
+    if (!selectedProp) return null
+    const emp = await carregarEmpreendimentoDaProposta(selectedProp)
+    return montarDadosPedidoEmissao(selectedProp as any, emp as any)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProp?.id, selectedEmp?.id])
+  const [dadosPedido, setDadosPedido] = useState<Awaited<
+    ReturnType<typeof montarDadosPedidoEmissao>
+  > | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    dadosPedidoEmissao.then((d) => {
+      if (!cancelled) setDadosPedido(d)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [dadosPedidoEmissao])
 
   // Prepara lista de propostas ativas comparadas na mesa (todas as cias/opções ativas)
   const propostasParaEstudo: PropostaInputEstudo[] = React.useMemo(() => {
@@ -450,6 +574,87 @@ export default function ApresentacaoPage() {
         empreendimentoNome={selectedEmp?.nome_empreendimento || 'Empreendimento Selecionado'}
         propostasComparadas={propostasParaEstudo}
       />
+
+      {/* Barra da Proposta Vencedora (C4 pós-apresentação) */}
+      <div className="bg-white rounded-xl border-2 border-amber-300 p-4 shadow-sm print:hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">
+              Proposta Vencedora — Opção escolhida pelo cliente
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {selectedProp && (
+              <Button
+                onClick={isVencedoraSelecionada ? handleDesmarcarVencedora : handleMarcarVencedora}
+                disabled={marcandoVencedora || !selectedProp}
+                variant={isVencedoraSelecionada ? 'outline' : 'default'}
+                className={
+                  isVencedoraSelecionada
+                    ? 'h-8 text-xs border-gray-300 text-gray-600'
+                    : 'h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold'
+                }
+              >
+                {marcandoVencedora ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Salvando...
+                  </span>
+                ) : isVencedoraSelecionada ? (
+                  <>
+                    <XCircle className="w-3.5 h-3.5 mr-1.5" /> Desmarcar vencedora
+                  </>
+                ) : (
+                  <>
+                    <Trophy className="w-3.5 h-3.5 mr-1.5" /> Marcar esta como Vencedora
+                  </>
+                )}
+              </Button>
+            )}
+            {isVencedoraSelecionada && (
+              <Button
+                onClick={() => setMostrarPedidoEmissao((v) => !v)}
+                className="h-8 text-xs bg-[#16578B] hover:bg-[#0F2B46] text-white font-bold"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1.5" />
+                {mostrarPedidoEmissao
+                  ? 'Ocultar Pedido de Emissão'
+                  : pedidoEmissaoRec
+                    ? 'Abrir Pedido de Emissão'
+                    : 'Gerar Pedido de Emissão'}
+              </Button>
+            )}
+          </div>
+        </div>
+        {isVencedoraSelecionada && selectedProp && (
+          <div className="mt-3 p-3 rounded-lg bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-xs text-gray-800">
+              <strong className="text-amber-700">★ Proposta Vencedora:</strong>{' '}
+              {selectedProp.expand?.seguradora?.nome || 'Seguradora'} — Opção{' '}
+              {selectedProp.opcao || 1} (v{selectedProp.versao || 1}) —{' '}
+              {formatCurrency(selectedProp.premio_bruto)}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              {loadingPedidoEmissao
+                ? 'Carregando Pedido de Emissão...'
+                : pedidoEmissaoRec
+                  ? 'Pedido de Emissão já gerado — consultável e editável abaixo.'
+                  : 'Pedido de Emissão ainda não gerado para esta vencedora.'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Documento do Pedido de Emissão (editável) */}
+      {isVencedoraSelecionada && mostrarPedidoEmissao && dadosPedido && (
+        <PedidoEmissaoDocumento
+          dados={dadosPedido}
+          pedidoExistente={pedidoEmissaoRec}
+          onSalvo={() => window.location.reload()}
+          onFechar={() => setMostrarPedidoEmissao(false)}
+        />
+      )}
 
       {/* Selectors Bar */}
       <div className="bg-white rounded-xl border border-[#E4E9F0] p-4 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 print:hidden">
