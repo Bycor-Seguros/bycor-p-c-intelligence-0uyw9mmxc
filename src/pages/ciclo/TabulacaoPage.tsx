@@ -49,9 +49,15 @@ import {
   AlertaDescobertaEvento,
   derivarEventosTipicosPadrao,
   normalizarTermoEquivalencia,
-  solicitarSugestaoEquivalenciaIa,
-  SugestaoEquivalenciaIaResult,
 } from '@/services/equivalenciaCoberturasService'
+import { toast } from '@/hooks/use-toast'
+import {
+  useSugestoesIaEquivalencia,
+  chaveParIa,
+  ParNaoMapeado,
+  SugestaoLoteItem,
+} from '@/hooks/useSugestoesIaEquivalencia'
+import { PainelSugestoesIaLote } from '@/components/PainelSugestoesIaLote'
 
 interface PropostaCoverageItem {
   nome?: string
@@ -139,11 +145,30 @@ export default function TabulacaoPage() {
   const [salvandoMapeamento, setSalvandoMapeamento] = useState(false)
 
   // Assistente de IA de Equivalência (Conhecimento de Mercado)
-  // Estado por chave única (alias + seguradora)
-  const [sugestoesIa, setSugestoesIa] = useState<Record<string, SugestaoEquivalenciaIaResult>>({})
-  const [carregandoIa, setCarregandoIa] = useState<Record<string, boolean>>({})
-  const [errosIa, setErrosIa] = useState<Record<string, string>>({})
-  const [aceitandoIa, setAceitandoIa] = useState<Record<string, boolean>>({})
+  // Estado do fluxo por célula + varredura em lote vive no hook, que também registra
+  // o feedback (confirmada/rejeitada) na coleção ia_equivalencia_feedback
+  const {
+    sugestoesIa,
+    carregandoIa,
+    errosIa,
+    aceitandoIa,
+    sugerirParaPar,
+    aceitarSugestaoIa,
+    rejeitarSugestaoIa,
+    limparErroIa,
+    loteAtivo,
+    loteItens,
+    loteIndice,
+    executarLote,
+    cancelarLote,
+    fecharLote,
+    removerItemLote,
+  } = useSugestoesIaEquivalencia({
+    rfqId: selectedRfqId !== 'todos' ? selectedRfqId : undefined,
+  })
+
+  // Painel de sugestões em lote (varredura das linhas não mapeadas)
+  const [painelLoteAberto, setPainelLoteAberto] = useState(false)
 
   // Edit Coberturas modal manual
   const [editingProp, setEditingProp] = useState<PropostaRecord | null>(null)
@@ -355,99 +380,118 @@ export default function TabulacaoPage() {
   }
 
   // Invoca o agente nativo Skip Cloud de Conhecimento de Mercado para sugerir equivalência
-  const handleSugerirComIa = async (alias: string, segNome: string, segId?: string) => {
-    const chave = `${alias}___${segNome}`
-    try {
-      setCarregandoIa((prev) => ({ ...prev, [chave]: true }))
-      setErrosIa((prev) => {
-        const copy = { ...prev }
-        delete copy[chave]
-        return copy
-      })
-
-      const sugestao = await solicitarSugestaoEquivalenciaIa({
-        textoOriginal: alias,
-        seguradoraNome: segNome,
-        seguradoraId: segId,
-      })
-
-      setSugestoesIa((prev) => ({ ...prev, [chave]: sugestao }))
-    } catch (err: unknown) {
-      const msg = (err as Error)?.message || 'Erro ao consultar agente de IA'
-      setErrosIa((prev) => ({ ...prev, [chave]: msg }))
-    } finally {
-      setCarregandoIa((prev) => ({ ...prev, [chave]: false }))
-    }
+  const handleSugerirComIa = (alias: string, segNome: string, segId?: string) => {
+    void sugerirParaPar(alias, segNome, segId)
   }
 
-  // Aceitar sugestão da IA: grava pelo fluxo existente de alias/sinônimo da cia
-  // Nada grava automático sem decisão explícita do analista
+  // Aceitar sugestão da IA: grava o sinônimo (fluxo persistente já existente) E registra
+  // o feedback 'confirmada' na coleção ia_equivalencia_feedback (via hook — a falha do
+  // feedback não bloqueia o salvamento do sinônimo)
   const handleAceitarSugestaoIa = async (alias: string, segNome: string, segId?: string) => {
-    const chave = `${alias}___${segNome}`
+    const chave = chaveParIa(alias, segNome)
     const sugestao = sugestoesIa[chave]
     if (!sugestao || !sugestao.canonica_sugerida) return
 
     try {
-      setAceitandoIa((prev) => ({ ...prev, [chave]: true }))
+      await aceitarSugestaoIa({
+        alias,
+        segNome,
+        segId,
+        sugestao,
+        persistir: async (s) => {
+          // Encontra a canônica correspondente na taxonomia
+          let canRec = canonicas.find(
+            (c) =>
+              normalizarTermoEquivalencia(c.nome) ===
+              normalizarTermoEquivalencia(s.canonica_sugerida),
+          )
 
-      // Encontra a canônica correspondente na taxonomia
-      let canRec = canonicas.find(
-        (c) =>
-          normalizarTermoEquivalencia(c.nome) ===
-          normalizarTermoEquivalencia(sugestao.canonica_sugerida),
-      )
+          // Se a canônica não existir exatamente, cria
+          if (!canRec) {
+            canRec = await salvarCoberturaCanonica({
+              nome: s.canonica_sugerida.trim(),
+              descricao: `Criada a partir de sugestão de IA para "${alias}" (${segNome})`,
+              eventosTipicos:
+                s.eventos_identificados && s.eventos_identificados.length > 0
+                  ? s.eventos_identificados
+                  : derivarEventosTipicosPadrao(s.canonica_sugerida),
+            })
+          }
 
-      // Se a canônica não existir exatamente, cria ou seleciona a mais próxima
-      if (!canRec) {
-        canRec = await salvarCoberturaCanonica({
-          nome: sugestao.canonica_sugerida.trim(),
-          descricao: `Criada a partir de sugestão de IA para "${alias}" (${segNome})`,
-          eventosTipicos:
-            sugestao.eventos_identificados && sugestao.eventos_identificados.length > 0
-              ? sugestao.eventos_identificados
-              : derivarEventosTipicosPadrao(sugestao.canonica_sugerida),
-        })
-      }
+          // Grava o sinônimo da cia pelo fluxo existente de persistência permanente
+          await salvarSinonimo({
+            alias: alias.trim(),
+            seguradoraId: segId,
+            seguradoraNome: segNome.trim(),
+            canonicaNome: canRec.nome,
+            coberturaCanonicaId: canRec.id,
+            eventosExcluidos: s.eventos_excluidos_recomendados || [],
+            observacao: `Aceito via IA Conhecimento de Mercado (${s.grau_confianca}): ${s.justificativa_curta}`,
+          })
 
-      // Grava o sinônimo da cia pelo fluxo existente de persistência permanente
-      await salvarSinonimo({
-        alias: alias.trim(),
-        seguradoraId: segId,
-        seguradoraNome: segNome.trim(),
-        canonicaNome: canRec.nome,
-        coberturaCanonicaId: canRec.id,
-        eventosExcluidos: sugestao.eventos_excluidos_recomendados || [],
-        observacao: `Aceito via IA Conhecimento de Mercado (${sugestao.grau_confianca}): ${sugestao.justificativa_curta}`,
+          await fetchEquivalencias()
+          return canRec.id
+        },
       })
-
-      // Limpa a sugestão após aceitar e atualiza os sinônimos
-      setSugestoesIa((prev) => {
-        const copy = { ...prev }
-        delete copy[chave]
-        return copy
-      })
-
-      await fetchEquivalencias()
     } catch (err: unknown) {
-      alert('Erro ao aceitar sugestão da IA: ' + ((err as Error)?.message || String(err)))
-    } finally {
-      setAceitandoIa((prev) => ({ ...prev, [chave]: false }))
+      toast({
+        title: 'Erro ao gravar sinônimo sugerido pela IA',
+        description: (err as Error)?.message || String(err),
+        variant: 'destructive',
+      })
     }
   }
 
-  // Rejeitar sugestão da IA: descarta o card da tela sem gravar nada
-  const handleRejeitarSugestaoIa = (alias: string, segNome: string) => {
-    const chave = `${alias}___${segNome}`
-    setSugestoesIa((prev) => {
-      const copy = { ...prev }
-      delete copy[chave]
-      return copy
+  // Rejeitar sugestão da IA: descarta o card da tela E registra o feedback 'rejeitada'
+  const handleRejeitarSugestaoIa = async (alias: string, segNome: string, segId?: string) => {
+    const chave = chaveParIa(alias, segNome)
+    const sugestao = sugestoesIa[chave]
+
+    if (sugestao) {
+      await rejeitarSugestaoIa({ alias, segNome, segId, sugestao })
+    } else {
+      // Só limpa o card de erro (fechar falha da IA sem decisão registrável)
+      limparErroIa(chave)
+    }
+  }
+
+  // Pares (alias x seguradora) não mapeados da rodada corrente, para a varredura em lote
+  const loteParesNaoMapeados = useMemo<ParNaoMapeado[]>(() => {
+    const mapa = new Map<string, ParNaoMapeado>()
+    propostasComEquivalencia.forEach((pe) => {
+      if (selectedRfqId !== 'todos' && pe.proposta.rfq !== selectedRfqId) return
+      pe.coberturasCasadas.forEach((c) => {
+        if (c.matchType !== 'nao_mapeada') return
+        const alias = c.nomeOriginal?.trim()
+        if (!alias) return
+        const chave = chaveParIa(alias, pe.seguradoraNome)
+        if (!mapa.has(chave)) {
+          mapa.set(chave, {
+            alias,
+            seguradoraNome: pe.seguradoraNome,
+            seguradoraId: pe.seguradoraId,
+          })
+        }
+      })
     })
-    setErrosIa((prev) => {
-      const copy = { ...prev }
-      delete copy[chave]
-      return copy
-    })
+    return Array.from(mapa.values())
+  }, [propostasComEquivalencia, selectedRfqId])
+
+  const handleIniciarLoteIa = () => {
+    if (loteParesNaoMapeados.length === 0) return
+    setPainelLoteAberto(true)
+    void executarLote(loteParesNaoMapeados)
+  }
+
+  // Reaproveita os mesmos handlers do fluxo por célula (grava feedback igualmente)
+  const handleAceitarLote = async (item: SugestaoLoteItem) => {
+    if (!item.sugestao) return
+    await handleAceitarSugestaoIa(item.par.alias, item.par.seguradoraNome, item.par.seguradoraId)
+  }
+
+  const handleRejeitarLote = async (item: SugestaoLoteItem) => {
+    if (!item.sugestao) return
+    await handleRejeitarSugestaoIa(item.par.alias, item.par.seguradoraNome, item.par.seguradoraId)
   }
 
   // Abrir modal de mapeamento para cobertura não mapeada ou para ajustar mapeamento
@@ -644,6 +688,22 @@ export default function TabulacaoPage() {
           </Button>
 
           <Button
+            onClick={handleIniciarLoteIa}
+            disabled={loteAtivo || loteParesNaoMapeados.length === 0}
+            title="Varre todas as coberturas não mapeadas da rodada e pede sugestão ao agente de Conhecimento de Mercado"
+            variant="outline"
+            className="text-xs h-9 border-indigo-300 bg-indigo-50/50 text-indigo-900 hover:bg-indigo-100"
+          >
+            {loteAtivo ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+            )}
+            Sugerir equivalências (IA)
+            {loteParesNaoMapeados.length > 0 ? ` (${loteParesNaoMapeados.length})` : ''}
+          </Button>
+
+          <Button
             onClick={handleExportMatrixCsv}
             disabled={comparedProposals.length === 0}
             variant="outline"
@@ -665,6 +725,23 @@ export default function TabulacaoPage() {
             onDataChange={() => fetchEquivalencias()}
           />
         </div>
+      )}
+
+      {/* PAINEL DE SUGESTÕES DA IA EM LOTE (REVISÃO INDIVIDUAL) */}
+      {painelLoteAberto && (
+        <PainelSugestoesIaLote
+          loteAtivo={loteAtivo}
+          loteItens={loteItens}
+          loteIndice={loteIndice}
+          onCancel={cancelarLote}
+          onClose={() => {
+            fecharLote()
+            setPainelLoteAberto(false)
+          }}
+          onAceitar={handleAceitarLote}
+          onRejeitar={handleRejeitarLote}
+          onRemover={removerItemLote}
+        />
       )}
 
       {/* RFQ Selector Filter */}
@@ -1434,6 +1511,7 @@ export default function TabulacaoPage() {
                                               handleRejeitarSugestaoIa(
                                                 covMatch.nomeOriginal,
                                                 pe.seguradoraNome,
+                                                pe.seguradoraId,
                                               )
                                             }
                                             className="h-6 text-[10px] text-gray-500 hover:text-gray-800 px-1.5"
