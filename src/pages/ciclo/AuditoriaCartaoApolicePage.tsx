@@ -196,6 +196,13 @@ export default function AuditoriaCartaoApolicePage() {
 
   const snap = activeRodada?.snapshot_comparativo
 
+  // Regra de produto: o botão "Ressalva C5" só é exibido em linhas com divergência real
+  // (LMI divergente com desvio >= 1%, ou cobertura só no cartão não emitida com LMI > 0),
+  // ou quando a linha já possui ressalva marcada manualmente em rodadas anteriores —
+  // nesses casos o botão permanece para permitir a desmarcação. Linhas casadas sem
+  // divergência (mesma LMI, nada novo) não exibem o botão.
+  const ressalvasMarcadasSet = new Set(activeRodada?.ressalvas_marcadas || [])
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -591,6 +598,12 @@ export default function AuditoriaCartaoApolicePage() {
                                   snap.coberturas.casadas.map((item) => {
                                     const isDiv = item.divergente
                                     const isCandidato = item.candidatoRessalvaC5
+                                    // Guard de exibição: linhas casadas sem divergência real
+                                    // (LMI idêntico, nada novo) não exibem o botão "Ressalva C5".
+                                    // Se houver ressalva manual pré-existente, o botão permanece
+                                    // visível para permitir a desmarcação.
+                                    const temRessalvaManual = ressalvasMarcadasSet.has(item.id)
+                                    const mostrarBotaoRessalva = isDiv || temRessalvaManual
                                     return (
                                       <tr
                                         key={item.id}
@@ -661,25 +674,29 @@ export default function AuditoriaCartaoApolicePage() {
                                           {item.franquiaApolice || item.franquiaCartao || '—'}
                                         </td>
                                         <td className="py-2.5 px-3 text-center">
-                                          <button
-                                            type="button"
-                                            disabled={togglingRessalva === item.id}
-                                            onClick={() =>
-                                              handleToggleRessalva(item.id, isCandidato)
-                                            }
-                                            className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
-                                              isCandidato
-                                                ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
-                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                            }`}
-                                          >
-                                            {togglingRessalva === item.id ? (
-                                              <Loader2 className="w-3 h-3 animate-spin" />
-                                            ) : (
-                                              <Tag className="w-3 h-3" />
-                                            )}
-                                            <span>{isCandidato ? 'Ressalva C5' : 'Marcar'}</span>
-                                          </button>
+                                          {mostrarBotaoRessalva ? (
+                                            <button
+                                              type="button"
+                                              disabled={togglingRessalva === item.id}
+                                              onClick={() =>
+                                                handleToggleRessalva(item.id, isCandidato)
+                                              }
+                                              className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
+                                                isCandidato
+                                                  ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
+                                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                              }`}
+                                            >
+                                              {togglingRessalva === item.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : (
+                                                <Tag className="w-3 h-3" />
+                                              )}
+                                              <span>{isCandidato ? 'Ressalva C5' : 'Marcar'}</span>
+                                            </button>
+                                          ) : (
+                                            <span className="text-[10px] text-gray-400">—</span>
+                                          )}
                                         </td>
                                       </tr>
                                     )
@@ -833,30 +850,37 @@ export default function AuditoriaCartaoApolicePage() {
                                           </div>
                                         </td>
                                         <td className="py-2.5 px-3 text-center">
-                                          <button
-                                            type="button"
-                                            disabled={togglingRessalva === item.id}
-                                            onClick={() =>
-                                              handleToggleRessalva(
-                                                item.id,
-                                                item.candidatoRessalvaC5,
-                                              )
-                                            }
-                                            className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
-                                              item.candidatoRessalvaC5
-                                                ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
-                                                : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
-                                            }`}
-                                          >
-                                            {togglingRessalva === item.id ? (
-                                              <Loader2 className="w-3 h-3 animate-spin" />
-                                            ) : (
-                                              <Tag className="w-3 h-3" />
-                                            )}
-                                            <span>
-                                              {item.candidatoRessalvaC5 ? 'Ressalva C5' : 'Marcar'}
-                                            </span>
-                                          </button>
+                                          {item.candidatoRessalvaC5 ||
+                                          ressalvasMarcadasSet.has(item.id) ? (
+                                            <button
+                                              type="button"
+                                              disabled={togglingRessalva === item.id}
+                                              onClick={() =>
+                                                handleToggleRessalva(
+                                                  item.id,
+                                                  item.candidatoRessalvaC5,
+                                                )
+                                              }
+                                              className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
+                                                item.candidatoRessalvaC5
+                                                  ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
+                                                  : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+                                              }`}
+                                            >
+                                              {togglingRessalva === item.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : (
+                                                <Tag className="w-3 h-3" />
+                                              )}
+                                              <span>
+                                                {item.candidatoRessalvaC5
+                                                  ? 'Ressalva C5'
+                                                  : 'Marcar'}
+                                              </span>
+                                            </button>
+                                          ) : (
+                                            <span className="text-[10px] text-gray-400">—</span>
+                                          )}
                                         </td>
                                       </tr>
                                     )
@@ -917,27 +941,35 @@ export default function AuditoriaCartaoApolicePage() {
                                         {item.franquiaApolice || '—'}
                                       </td>
                                       <td className="py-2.5 px-3 text-center">
-                                        <button
-                                          type="button"
-                                          disabled={togglingRessalva === item.id}
-                                          onClick={() =>
-                                            handleToggleRessalva(item.id, item.candidatoRessalvaC5)
-                                          }
-                                          className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
-                                            item.candidatoRessalvaC5
-                                              ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
-                                              : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
-                                          }`}
-                                        >
-                                          {togglingRessalva === item.id ? (
-                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                          ) : (
-                                            <Tag className="w-3 h-3" />
-                                          )}
-                                          <span>
-                                            {item.candidatoRessalvaC5 ? 'Ressalva C5' : 'Marcar'}
-                                          </span>
-                                        </button>
+                                        {item.candidatoRessalvaC5 ||
+                                        ressalvasMarcadasSet.has(item.id) ? (
+                                          <button
+                                            type="button"
+                                            disabled={togglingRessalva === item.id}
+                                            onClick={() =>
+                                              handleToggleRessalva(
+                                                item.id,
+                                                item.candidatoRessalvaC5,
+                                              )
+                                            }
+                                            className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 mx-auto ${
+                                              item.candidatoRessalvaC5
+                                                ? 'bg-red-600 text-white hover:bg-red-700 shadow-xs'
+                                                : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
+                                            }`}
+                                          >
+                                            {togglingRessalva === item.id ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <Tag className="w-3 h-3" />
+                                            )}
+                                            <span>
+                                              {item.candidatoRessalvaC5 ? 'Ressalva C5' : 'Marcar'}
+                                            </span>
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-gray-400">—</span>
+                                        )}
                                       </td>
                                     </tr>
                                   ))
