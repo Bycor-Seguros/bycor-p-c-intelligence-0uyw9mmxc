@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-07T04:59:05.896Z",
+  "generatedAt": "2026-11-07T05:44:02.420Z",
   "collections": [
     {
       "name": "users",
@@ -2460,6 +2460,128 @@
         "CREATE INDEX idx_cob_sinonimos_alias ON cobertura_sinonimos (alias)",
         "CREATE INDEX idx_cob_sinonimos_seg ON cobertura_sinonimos (seguradora)",
         "CREATE INDEX idx_cob_sinonimos_can ON cobertura_sinonimos (cobertura_canonica)"
+      ]
+    },
+    {
+      "name": "ia_equivalencia_feedback",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "decisao",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["confirmada", "rejeitada"]
+        },
+        {
+          "name": "alias",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "seguradora",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "seguradoras"
+        },
+        {
+          "name": "seguradora_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cobertura_canonica",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "coberturas_canonicas"
+        },
+        {
+          "name": "canonica_sugerida",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "grau_confianca",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Alta", "Media", "Baixa"]
+        },
+        {
+          "name": "justificativa",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "eventos_identificados",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "eventos_excluidos_recomendados",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "conversation_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "message_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "agente_slug",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "rfq",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rfq"
+        },
+        {
+          "name": "analista",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_ia_eq_fb_alias ON ia_equivalencia_feedback (alias)",
+        "CREATE INDEX idx_ia_eq_fb_seg ON ia_equivalencia_feedback (seguradora)",
+        "CREATE INDEX idx_ia_eq_fb_can ON ia_equivalencia_feedback (cobertura_canonica)",
+        "CREATE INDEX idx_ia_eq_fb_agente ON ia_equivalencia_feedback (agente_slug)"
       ]
     }
   ]

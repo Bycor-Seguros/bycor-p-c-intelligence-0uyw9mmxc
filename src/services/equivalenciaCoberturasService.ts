@@ -92,6 +92,87 @@ export async function solicitarSugestaoEquivalenciaIa(params: {
   return payload as SugestaoEquivalenciaIaResult
 }
 
+export const AGENTE_EQUIVALENCIA_SLUG = 'conhecimento-mercado'
+
+export type DecisaoFeedbackIa = 'confirmada' | 'rejeitada'
+
+export interface IaEquivalenciaFeedbackRecord {
+  id: string
+  decisao: DecisaoFeedbackIa
+  alias: string
+  seguradora?: string
+  seguradora_nome: string
+  cobertura_canonica?: string
+  canonica_sugerida: string
+  grau_confianca?: 'Alta' | 'Media' | 'Baixa'
+  justificativa?: string
+  eventos_identificados?: string[]
+  eventos_excluidos_recomendados?: string[]
+  conversation_id?: string
+  message_id?: string
+  agente_slug: string
+  rfq?: string
+  analista?: string
+  created: string
+}
+
+/**
+ * Registra a decisão do analista sobre uma sugestão de equivalência da IA
+ * (Agente Nativo de Conhecimento de Mercado). A decisão humana é a verdade
+ * final: nada é aplicado automaticamente — aqui fica só o rastro de auditoria
+ * do par (alias x canônica) com o agente usado.
+ */
+export async function registrarFeedbackEquivalenciaIa(params: {
+  decisao: DecisaoFeedbackIa
+  alias: string
+  seguradoraId?: string
+  seguradoraNome?: string
+  coberturaCanonicaId?: string
+  canonicaSugerida: string
+  grauConfianca?: 'Alta' | 'Media' | 'Baixa'
+  justificativa?: string
+  eventosIdentificados?: string[]
+  eventosExcluidosRecomendados?: string[]
+  conversationId?: string
+  messageId?: string
+  agenteSlug?: string
+  rfqId?: string
+}): Promise<IaEquivalenciaFeedbackRecord> {
+  const payload: Record<string, unknown> = {
+    decisao: params.decisao,
+    alias: params.alias.trim(),
+    seguradora: params.seguradoraId || null,
+    seguradora_nome: params.seguradoraNome?.trim() || '',
+    cobertura_canonica: params.coberturaCanonicaId || null,
+    canonica_sugerida: params.canonicaSugerida.trim(),
+    grau_confianca: params.grauConfianca || undefined,
+    justificativa: params.justificativa?.trim() || '',
+    eventos_identificados: params.eventosIdentificados || [],
+    eventos_excluidos_recomendados: params.eventosExcluidosRecomendados || [],
+    conversation_id: params.conversationId || '',
+    message_id: params.messageId || '',
+    agente_slug: params.agenteSlug || 'conhecimento-mercado',
+    rfq: params.rfqId || null,
+    analista: pb.authStore.record?.id || null,
+  }
+  return await pb
+    .collection('ia_equivalencia_feedback')
+    .create<IaEquivalenciaFeedbackRecord>(payload)
+}
+
+/**
+ * Lista os registros de feedback (confirmações/rejeições) das sugestões de IA.
+ * Filtro opcional, ex.: `decisao='confirmada'` ou `agente_slug='conhecimento-mercado'`.
+ */
+export async function listarFeedbackEquivalenciaIa(
+  filter?: string,
+  limit = 200,
+): Promise<IaEquivalenciaFeedbackRecord[]> {
+  return await pb
+    .collection('ia_equivalencia_feedback')
+    .getFullList<IaEquivalenciaFeedbackRecord>({ filter, sort: '-created', limit })
+}
+
 /**
  * Normaliza string para indexação e casamento de termos (alias, nome de cobertura)
  */
