@@ -1864,10 +1864,14 @@ function postProcessAxaCoberturas(
     }
 
     // 16. Roubo de Bens dos Hóspedes
+    // Guard: só renomeia quando o nome já é a cobertura "Roubo E/Ou Furto Qualificado De Bens Dos
+    // Hóspedes" (variante de grafia). NÃO pode capturar outras coberturas que contenham "Hóspedes"
+    // (ex: "Roubo De Valores Dos Hóspedes Nas Dependências Do Local Segurado No Interior De
+    // Cofre-Forte") — renomeá-la gerava duplicata, o dedup descartava a linha real e o quadro
+    // ficava com 39 linhas e LMI trocada entre as coberturas 24 e 28.
     if (
-      c.nome.includes('Hóspedes') ||
-      c.nome.includes('Hospedes') ||
-      c.nome.startsWith('Roubo E/Ou Furto Qualificado De Bens Dos')
+      (c.nome.includes('Hóspedes') || c.nome.includes('Hospedes')) &&
+      /Roubo\s*E\s*\/\s*Ou\s*Furto\s+Qualificado\s+De\s+Bens/i.test(c.nome)
     ) {
       c.nome = 'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes'
       c.categoriaBloco = 'Danos Materiais'
