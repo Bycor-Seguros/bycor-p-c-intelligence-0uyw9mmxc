@@ -62,7 +62,7 @@ export function extrairParcelamentoECondicoes(
   if (matchSemJuros && matchSemJuros[1]) {
     const qtd = Number(matchSemJuros[1])
     if (!isNaN(qtd) && qtd > 0) {
-      parcelamentoSemJurosTexto = `${qtd}x sem juros`
+      parcelamentoSemJurosTexto = `${qtd}x`
       numeroParcelasSemJuros = qtd
     }
   } else if (/sem\s+juros/i.test(forma)) {
@@ -70,7 +70,7 @@ export function extrairParcelamentoECondicoes(
     const m = forma.match(/(\d+)\s*[xX]\b/i) || forma.match(/(\d+)\s*parcelas?/i)
     if (m && m[1]) {
       const qtd = Number(m[1])
-      parcelamentoSemJurosTexto = `${qtd}x sem juros`
+      parcelamentoSemJurosTexto = `${qtd}x`
       numeroParcelasSemJuros = qtd
     }
   } else {

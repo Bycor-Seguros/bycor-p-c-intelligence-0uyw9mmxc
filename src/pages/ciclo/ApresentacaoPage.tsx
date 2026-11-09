@@ -606,6 +606,7 @@ export default function ApresentacaoPage() {
         construcaoTexto: montarConstrucaoTexto(emp),
         protecionaisTexto: montarProtecoesTexto(emp),
         sinistrosTexto: montarSinistrosTexto(emp),
+        vrdPredio: vrdDm,
         vrdMmu: Number((prop as any)?.vrd_mmu) || undefined,
         vrdMmp: Number((prop as any)?.vrd_mmp) || undefined,
         vrdDmTotal: vrdDm,
