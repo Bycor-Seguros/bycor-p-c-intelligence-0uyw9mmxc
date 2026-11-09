@@ -495,7 +495,7 @@ export async function generateEstudoMercadoPptx(
       { text: 'Informação', options: { bold: true, fill: { color: 'E2E8F0' }, fontSize: 8.5 } },
     ],
     [{ text: 'Segurado' }, { text: data.empreendimentoNome }],
-    [{ text: 'CNPJ' }, { text: data.cnpj || '38.594.094/0001-47' }],
+    [{ text: 'CNPJ' }, { text: data.cnpj || '—' }],
     [
       { text: 'Co-segurado' },
       {
@@ -511,28 +511,11 @@ export async function generateEstudoMercadoPptx(
     ],
     [{ text: 'Seguro' }, { text: data.statusSeguro || 'NOVO' }],
     [{ text: 'Para a Vigência' }, { text: data.vigenciaTexto }],
-    [{ text: 'CNAE / Atividade' }, { text: data.cnaeAtividade || 'Hotel / Apart-Hotel' }],
+    [{ text: 'CNAE / Atividade' }, { text: data.cnaeAtividade || '—' }],
     [{ text: 'Local do Risco' }, { text: data.enderecoTexto }],
-    [
-      { text: 'Construção' },
-      {
-        text:
-          data.construcaoTexto ||
-          'Tipo Superior – Alvenaria; 14.013m²; sem Isopainéis; 15 andares + 4 Subsolos; 298 Aptos; Estacionamento Terceirizado Rotativo c/ 250 vagas, 6 Elevadores, Academia, Chiller e Geradores.',
-      },
-    ],
-    [
-      { text: 'Protecionais' },
-      {
-        text:
-          data.protecionaisTexto ||
-          'Incêndio: Extintores, Hidrantes, Sprinklers, Detectores e Alarmes de Fumaça, Brigada de Incêndio, SPDA; RTI; C/Manutenção Preventiva das Instalações Elétricas.\nRoubo: recepção disponível 24 horas e serviço de segurança/atendimento contínuo na portaria CFTV, Cofres.',
-      },
-    ],
-    [
-      { text: 'Sinistros' },
-      { text: data.sinistrosTexto || 'Seguro Novo → sem registros de sinistros' },
-    ],
+    [{ text: 'Construção' }, { text: data.construcaoTexto || '—' }],
+    [{ text: 'Protecionais' }, { text: data.protecionaisTexto || '—' }],
+    [{ text: 'Sinistros' }, { text: data.sinistrosTexto || '—' }],
   ].map((row, idx) => {
     if (idx === 0) return row as pptxgen.TableRow
     const bg = idx % 2 === 0 ? 'F8FAFC' : 'FFFFFF'
@@ -558,12 +541,14 @@ export async function generateEstudoMercadoPptx(
   })
 
   // Tabela direita: Valores em Risco Declarados
-  const vrdPredioStr = formatLmiEstudo(data.vrdPredio || 60000000)
-  const vrdMmuStr = formatLmiEstudo(data.vrdMmu || 20000000)
+  // Sem fallbacks chumbados: onde o cadastro/proposta não traz o valor, fica '—'
+  // para o analista preencher (nunca dados de outro empreendimento).
+  const vrdPredioStr = data.vrdPredio ? formatLmiEstudo(data.vrdPredio) : '—'
+  const vrdMmuStr = data.vrdMmu ? formatLmiEstudo(data.vrdMmu) : '—'
   const vrdMmpStr = data.vrdMmp && data.vrdMmp > 0 ? formatLmiEstudo(data.vrdMmp) : '--'
-  const vrdDmTotalStr = formatLmiEstudo(data.vrdDmTotal || 80000000)
-  const vrdLcAnualStr = formatLmiEstudo(data.vrdLcAnual || 15000000)
-  const vrdTotalStr = formatLmiEstudo(data.vrdDmPlusLc || 95000000)
+  const vrdDmTotalStr = data.vrdDmTotal ? formatLmiEstudo(data.vrdDmTotal) : '—'
+  const vrdLcAnualStr = data.vrdLcAnual ? formatLmiEstudo(data.vrdLcAnual) : '—'
+  const vrdTotalStr = data.vrdDmPlusLc ? formatLmiEstudo(data.vrdDmPlusLc) : '—'
 
   const rowsVrd: pptxgen.TableRow[] = [
     [
@@ -1241,16 +1226,16 @@ export async function generateEstudoMercadoPptx(
         text:
           '4. Gastos de Defesa nos Seguros de Responsabilidade Civil: deverá ser estabelecido um limite específico, onde as coberturas para "Custos de Defesa" e "Cobertura Básica (Indenização e Acordos)" a prejudicados não poderão compartilhar o mesmo limite. Desta forma, o segurado deverá determinar, dentro do Limite Máximo de Garantia (LMG) contratado, qual proporção será destinada a "Gastos de Defesa" e "Cobertura Básica (Indenização e Acordos)".\n' +
           'Sob nenhuma hipótese a Seguradora ou Corretora irá sugerir essa proporcionalidade, ficando sob responsabilidade integral do segurado essa definição. Este estudo contempla 100 mil a título de sugestão.\n' +
-          `    Custos de Defesa: ${data.sugestaoCustosDefesa || 'R$ 100.000,00'}       Indenizações e Acordos: ${data.vrdDmPlusLc ? 'Saldo do LMG' : '____'}\n\n`,
+          `    Custos de Defesa: ${data.sugestaoCustosDefesa || '—'}       Indenizações e Acordos: ${data.vrdDmPlusLc ? 'Saldo do LMG' : '____'}\n\n`,
       },
       {
-        text: `• Observações: ${data.observacoesContratacao || 'A seguradora terá prazo de até 25 dias para avaliação do risco.'}\n\n`,
+        text: `• Observações: ${data.observacoesContratacao || '—'}\n\n`,
       },
       {
-        text: `Data: ${data.dataApresentacaoTexto || '____/____/2026'}       Assinatura do Responsável: ___________________________________       Cargo: ${data.assinaturaCargo || '_________________'}\n\n`,
+        text: `Data: ${data.dataApresentacaoTexto || '____/____/____'}       Assinatura do Responsável: ___________________________________       Cargo: ${data.assinaturaCargo || '_________________'}\n\n`,
       },
       {
-        text: `Este documento é parte integrante do estudo do seguro patrimonial do ${data.empreendimentoNome}${data.cosseguradoNome ? ' e ' + data.cosseguradoNome : ''}, ${data.vigenciaTexto}, apresentado em ${data.dataApresentacaoTexto || '28/10/2026'}.`,
+        text: `Este documento é parte integrante do estudo do seguro patrimonial do ${data.empreendimentoNome}${data.cosseguradoNome ? ' e ' + data.cosseguradoNome : ''}, ${data.vigenciaTexto || ''}, apresentado em ${data.dataApresentacaoTexto || ''}.`,
         options: { fontSize: 7.5, italic: true, color: C_MUTED },
       },
     ],

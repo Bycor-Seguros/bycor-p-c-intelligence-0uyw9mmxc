@@ -12,7 +12,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, formatNumber, formatCnpj } from '@/lib/formatters'
 import { generatePresentationPptx } from '@/services/pptxExportService'
 import {
   generateEstudoMercadoPptx,
@@ -30,16 +30,41 @@ import { toast } from '@/hooks/use-toast'
 import { usePedidoEmissao } from '@/hooks/usePedidoEmissao'
 import PedidoEmissaoDocumento from '@/components/PedidoEmissaoDocumento'
 import { montarDadosPedidoEmissao } from '@/services/pedidoEmissaoService'
-import { formatCnpj } from '@/lib/formatters'
 
 interface EmpreendimentoOpt {
   id: string
   nome_empreendimento: string
   razao_social: string
+  cnpj?: string
+  cossegurado_nome?: string
+  cossegurado_cnpj?: string
+  endereco?: string
   cidade: string
   uf: string
-  area_construida_m2: number
-  num_unidades: number
+  atividade?: string
+  atividade_exercida?: string
+  ano_construcao?: number
+  area_construida_m2?: number
+  tipo_construcao?: string
+  num_andares?: number
+  num_unidades?: number
+  num_elevadores?: number
+  vagas_estacionamento?: number
+  prot_extintores?: boolean
+  prot_hidrantes?: boolean
+  prot_sprinklers?: boolean
+  prot_detector_fumaca?: boolean
+  prot_alarme_incendio?: boolean
+  prot_brigada_incendio?: boolean
+  prot_pararraios?: boolean
+  prot_cftv?: boolean
+  prot_cameras_seguranca?: boolean
+  prot_cofres?: boolean
+  prot_alarme_roubo?: boolean
+  prot_controle_entrada?: boolean
+  prot_vigilancia?: boolean
+  sinistros_ultimos_5anos?: string
+  detalhe_sinistros?: string
   faturamento_12m_rs: number
 }
 
@@ -58,6 +83,8 @@ interface PropostaOption {
   coberturas: any[]
   status?: string
   data_proposta?: string
+  vigencia_inicio?: string
+  vigencia_fim?: string
   arquivo?: string
   arquivo_nome?: string
   expand?: {
@@ -103,6 +130,111 @@ function getCoverageFranquia(c: any): string {
   return 'Padrão'
 }
 
+const MESES_PT = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+]
+
+function formatDataBrPonto(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+// Vigência a partir da proposta/rodada selecionada (ex.: "01.11.2026 a 01.11.2027 (365 dias)")
+function montarVigenciaTexto(inicio?: string, fim?: string): string {
+  const i = formatDataBrPonto(inicio)
+  const f = formatDataBrPonto(fim)
+  if (!i && !f) return ''
+  if (i && f && inicio && fim) {
+    const dias = Math.max(
+      0,
+      Math.round((new Date(fim).getTime() - new Date(inicio).getTime()) / 86400000),
+    )
+    return `${i} a ${f} (${dias} dias)`
+  }
+  return i || f
+}
+
+// Versão a partir da proposta selecionada (ex.: "Outubro/2026 - V2")
+function montarVersaoTexto(prop?: PropostaOption): string {
+  if (!prop) return ''
+  const partes: string[] = []
+  if (prop.data_proposta) {
+    const d = new Date(prop.data_proposta)
+    if (!isNaN(d.getTime())) partes.push(`${MESES_PT[d.getMonth()]}/${d.getFullYear()}`)
+  }
+  partes.push(`V${Number(prop.versao || 1)}`)
+  return partes.join(' - ')
+}
+
+// Construção a partir do cadastro real do empreendimento selecionado
+function montarConstrucaoTexto(emp?: EmpreendimentoOpt): string {
+  if (!emp) return ''
+  const partes: string[] = []
+  if (emp.tipo_construcao) partes.push(`Tipo ${emp.tipo_construcao}`)
+  if (emp.area_construida_m2) partes.push(`${formatNumber(emp.area_construida_m2)}m²`)
+  if (emp.num_andares) partes.push(`${emp.num_andares} andares`)
+  if (emp.num_unidades) partes.push(`${emp.num_unidades} unidades`)
+  if (emp.ano_construcao) partes.push(`construção em ${emp.ano_construcao}`)
+  if (emp.vagas_estacionamento) partes.push(`estacionamento ${emp.vagas_estacionamento} vagas`)
+  if (emp.num_elevadores) partes.push(`${emp.num_elevadores} elevadores`)
+  return partes.join('; ')
+}
+
+// Proteções a partir do cadastro real do empreendimento selecionado
+function montarProtecoesTexto(emp?: EmpreendimentoOpt): string {
+  if (!emp) return ''
+  const incendio: string[] = []
+  if (emp.prot_extintores) incendio.push('Extintores')
+  if (emp.prot_hidrantes) incendio.push('Hidrantes')
+  if (emp.prot_sprinklers) incendio.push('Sprinklers')
+  if (emp.prot_detector_fumaca) incendio.push('Detectores de Fumaça')
+  if (emp.prot_alarme_incendio) incendio.push('Alarme de Incêndio')
+  if (emp.prot_brigada_incendio) incendio.push('Brigada de Incêndio')
+  if (emp.prot_pararraios) incendio.push('SPDA (Pararraios)')
+  const roubo: string[] = []
+  if (emp.prot_cftv || emp.prot_cameras_seguranca) roubo.push('CFTV')
+  if (emp.prot_cofres) roubo.push('Cofres')
+  if (emp.prot_alarme_roubo) roubo.push('Alarme de Roubo')
+  if (emp.prot_controle_entrada) roubo.push('Controle de Entrada')
+  if (emp.prot_vigilancia) roubo.push('Vigilância')
+  const linhas: string[] = []
+  if (incendio.length > 0) linhas.push(`Incêndio: ${incendio.join(', ')}.`)
+  if (roubo.length > 0) linhas.push(`Roubo: ${roubo.join(', ')}.`)
+  return linhas.join('\n')
+}
+
+// Sinistros a partir do cadastro real do empreendimento selecionado
+function montarSinistrosTexto(emp?: EmpreendimentoOpt): string {
+  if (!emp) return ''
+  const base = emp.sinistros_ultimos_5anos?.trim() || ''
+  const detalhe = emp.detalhe_sinistros?.trim() || ''
+  if (!base && !detalhe) return ''
+  if (base && detalhe) return `${base} — ${detalhe}`
+  return base || detalhe
+}
+
+// Cossegurado na contratação a partir do cadastro do empreendimento selecionado
+function montarCosseguradoContratacao(emp?: EmpreendimentoOpt): string {
+  if (!emp?.cossegurado_nome) return ''
+  const cnpj = emp.cossegurado_cnpj ? formatCnpj(emp.cossegurado_cnpj) : ''
+  return cnpj ? `${emp.cossegurado_nome} - ${cnpj}` : emp.cossegurado_nome
+}
+
 export default function ApresentacaoPage() {
   const [empreendimentos, setEmpreendimentos] = useState<EmpreendimentoOpt[]>([])
   const [propostas, setPropostas] = useState<PropostaOption[]>([])
@@ -128,10 +260,10 @@ export default function ApresentacaoPage() {
       'Estudo de transição, para proteção patrimonial do Condomínio São International Square e BT São Caetano Hotéis Ltda para vigência de 01/11/2026 a 01/11/2027. Comparativo baseado nas características do empreendimento, coberturas da apólice anterior, know-how Bycor (Hotéis e Resorts) e propostas das seguradoras.',
     objetivoImportanteTexto:
       'Os valores de LMI (Limite Máximo de Indenização) por cobertura assim como LMGA (Limite Máximo de Garantia Agregada) para coberturas de RC são estimativos e, devem ser avaliados pelo contratante/segurado que é o legítimo conhecedor do valor em risco. O valor das coberturas são de inteira responsabilidade do Segurado. Por conta da transição sugerimos que após a implantação do Blue Tree seja feita reavaliação dos valores para adequar as proteções.',
-    contatoInspecaoNome: 'Resp: Engenharia / Manutenção Predial',
-    contatoInspecaoTel: '(11) 98765-4321',
-    contatoInspecaoEmail: 'manutencao@btsaocaetano.com.br',
-    cosseguradoContratacao: 'BT São Caetano Hotéis Ltda - 68.423.239/0001-08',
+    contatoInspecaoNome: '',
+    contatoInspecaoTel: '',
+    contatoInspecaoEmail: '',
+    cosseguradoContratacao: '',
     sugestaoCustosDefesa: 'R$ 100.000,00',
     observacoesContratacao: 'A seguradora terá prazo de até 25 dias para avaliação do risco',
     assinaturaCargo: 'Síndico / Responsável Legal',
@@ -189,6 +321,20 @@ export default function ApresentacaoPage() {
     const empId = rfq?.conta_empreendimento || rfq?.expand?.conta_empreendimento?.id
     return empreendimentos.find((e) => e.id === empId) || empreendimentos[0]
   }, [empreendimentos, propostas, selectedPropId])
+
+  // Ao trocar o empreendimento selecionado, limpa os campos editáveis de Bloco 11
+  // dependentes do risco — nunca carregar dados de outro empreendimento (ex.: defaults
+  // antigos do Acqua); o cossegurado é reposto a partir do cadastro real, quando houver.
+  useEffect(() => {
+    setEstudoForm((prev) => ({
+      ...prev,
+      contatoInspecaoNome: '',
+      contatoInspecaoTel: '',
+      contatoInspecaoEmail: '',
+      cosseguradoContratacao: montarCosseguradoContratacao(selectedEmp),
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmp?.id])
 
   // Todas as propostas da seguradora da proposta selecionada (para seletor de versões)
   const selectedProp = propostas.find((p) => p.id === selectedPropId)
@@ -374,50 +520,41 @@ export default function ApresentacaoPage() {
     setExportingEstudoPptx(true)
     try {
       const emp = selectedEmp
-      const endFormatado = emp
-        ? `${emp.cidade || 'São Caetano do Sul'} - ${emp.uf || 'SP'}`
-        : 'São Paulo - SP'
+      const prop = selectedProp
 
       const ciasComProposta = Array.from(
         new Set(propostasParaEstudo.map((p) => p.seguradoraNome.toUpperCase())),
       )
 
+      const vrdDm = Number((prop as any)?.vrd_dm) || undefined
+      const vrdLc = Number((prop as any)?.vrd_lc) || undefined
+
+      // Perfil do empreendimento SELECIONADO: todos os campos vêm do cadastro real
+      // (empreendimentos) e da proposta/rodada. Onde não há dado, fica vazio ('—' no
+      // PPTX) para o analista preencher — nunca dados de outro empreendimento.
       const estudoData: EstudoMercadoEditavelData = {
-        empreendimentoNome: emp?.nome_empreendimento || 'Condomínio São International Square',
-        cosseguradoNome: 'BT São Caetano Hotéis Ltda',
-        vigenciaTexto: '01.11.2026 a 01.11. 2027 (365 dias)',
-        versaoTexto: 'Outubro/2026 - V2',
-        enderecoTexto:
-          (emp as any)?.endereco ||
-          'Al. Terracota, 250 • Ceramica • São Caetano do Sul • Cep 09531-190',
+        empreendimentoNome: emp?.nome_empreendimento || '',
+        cosseguradoNome: emp?.cossegurado_nome || undefined,
+        vigenciaTexto: montarVigenciaTexto(prop?.vigencia_inicio, prop?.vigencia_fim),
+        versaoTexto: montarVersaoTexto(prop),
+        enderecoTexto: emp?.endereco || '',
         objetivoTexto: estudoForm.objetivoTexto,
         objetivoImportanteTexto: estudoForm.objetivoImportanteTexto,
-        cnpj: (emp as any)?.cnpj || '38.594.094/0001-47',
-        cosseguradoCnpj: (emp as any)?.cossegurado_cnpj || '68.423.239/0001-08',
+        cnpj: emp?.cnpj || undefined,
+        cosseguradoCnpj: emp?.cossegurado_cnpj || undefined,
         tipoSeguro: 'Patrimonial',
         coberturaResumo: 'Prédio, Conteúdo (MMU/MMP) e Lucros Cessantes (L.Bruto)',
-        statusSeguro: 'NOVO',
-        cnaeAtividade: 'Hotel / Apart-Hotel',
-        construcaoTexto:
-          'Tipo Superior – Alvenaria; 14.013m²; sem Isopainéis; 15 andares + 4 Subsolos; 298 Aptos; Estacionamento Terceirizado Rotativo c/ 250 vagas, 6 Elevadores, Academia, Chiller e Geradores.',
-        protecionaisTexto:
-          'Incêndio: Extintores, Hidrantes, Sprinklers, Detectores e Alarmes de Fumaça, Brigada de Incêndio, SPDA; RTI; C/Manutenção Preventiva das Instalações Elétricas.\nRoubo: recepção disponível 24 horas e serviço de segurança/atendimento contínuo na portaria CFTV, Cofres.',
-        sinistrosTexto: 'Seguro Novo → sem registros de sinistros',
-        vrdPredio: 60000000,
-        vrdMmu: 20000000,
-        vrdMmp: 0,
-        vrdDmTotal: 80000000,
-        vrdLcAnual: 15000000,
-        vrdDmPlusLc: 95000000,
-        ciasApresentaramProposta:
-          ciasComProposta.length > 0
-            ? ciasComProposta
-            : ['ALLIANZ SEGUROS', 'AXA SEGUROS', 'PORTO SEGURO', 'SWISS RE SEGUROS'],
-        ciasEmAnaliseOuNaoApresentaram: [
-          'TOKIO MARINE',
-          'CHUBB SEGUROS (Apólice - Atlântica)',
-          'ZURICH SEGUROS (Cosseguro na Apólice Chubb)',
-        ],
+        cnaeAtividade: emp?.atividade || emp?.atividade_exercida || undefined,
+        construcaoTexto: montarConstrucaoTexto(emp),
+        protecionaisTexto: montarProtecoesTexto(emp),
+        sinistrosTexto: montarSinistrosTexto(emp),
+        vrdMmu: Number((prop as any)?.vrd_mmu) || undefined,
+        vrdMmp: Number((prop as any)?.vrd_mmp) || undefined,
+        vrdDmTotal: vrdDm,
+        vrdLcAnual: vrdLc,
+        vrdDmPlusLc: vrdDm && vrdLc ? vrdDm + vrdLc : undefined,
+        ciasApresentaramProposta: ciasComProposta,
+        ciasEmAnaliseOuNaoApresentaram: [],
         propostas: propostasParaEstudo,
         canonicasC3,
         sinonimosC3,
@@ -540,17 +677,6 @@ export default function ApresentacaoPage() {
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Imprimir Minuta A4</span>
-          </Button>
-
-          <Button
-            onClick={handleExportEstudoMercadoPptx}
-            disabled={exportingEstudoPptx}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 font-bold flex items-center gap-1.5 shadow-sm"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-200" />
-            <span>
-              {exportingEstudoPptx ? 'Gerando Estudo...' : 'Exportar Estudo de Mercado (PPTX)'}
-            </span>
           </Button>
 
           <Button
