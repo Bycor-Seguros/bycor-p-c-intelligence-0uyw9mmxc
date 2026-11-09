@@ -13,6 +13,7 @@ export interface PropostaInputEstudo {
   opcao?: number
   versao?: number
   ativa?: boolean
+  propostaVencedora?: boolean
   premioTotalComIof: number
   premioLiquido?: number
   parcelamentoSemJurosTexto: string // ex: "4x sem juros" ou ""

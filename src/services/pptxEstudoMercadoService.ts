@@ -74,38 +74,95 @@ const C_BORDER = 'CBD5E1'
 const C_TEXT = '1E293B'
 const C_WHITE = 'FFFFFF'
 const C_GREEN = '15803D'
+const C_GOLD = 'D97706'
+const C_GOLD_BG = 'FEF3C7'
+const C_GOLD_BORDER = 'F59E0B'
+const C_ZEBRA = 'F8FAFC'
+const C_ZEBRA_ROW = 'F8FAFC'
+const C_VENCEDORA_BG = 'DCFCE7'
+const C_VENCEDORA_TEXT = '15803D'
 
-function addHeaderBycor(
+// Grid global de margens e alinhamentos
+const GRID = {
+  marginLeft: 0.6,
+  marginRight: 0.6,
+  contentWidth: 8.8,
+  titleTop: 0.35,
+  contentTop: 1.05,
+  footerBottom: 5.22,
+  slideWidth: 10.0,
+  slideHeight: 5.625,
+}
+
+function addSlideHeaderAndFooter(
   slide: pptxgen.Slide,
   titulo: string,
+  subtitulo: string | null,
   numeroPagina: string,
   logo: { path: string; x: number; y: number; w: number; h: number } | null,
 ) {
-  // Título da página
-  slide.addText([{ text: titulo, options: { fontSize: 22, bold: true, color: C_NAVY } }], {
-    x: 0.6,
-    y: 0.4,
-    w: 7.2,
-    h: 0.6,
-    fontFace: 'Arial',
+  // Bloco de título + subtítulo alinhados
+  const titleRuns: pptxgen.TextProps[] = [
+    { text: titulo, options: { fontSize: 20, bold: true, color: C_NAVY, fontFace: 'Arial' } },
+  ]
+  if (subtitulo) {
+    titleRuns.push({
+      text: `   |   ${subtitulo}`,
+      options: { fontSize: 10, bold: false, color: C_MUTED, fontFace: 'Arial' },
+    })
+  }
+
+  slide.addText(titleRuns, {
+    x: GRID.marginLeft,
+    y: GRID.titleTop,
+    w: 7.8,
+    h: 0.55,
     margin: 0,
   })
 
-  // Logo oficial da Bycor no canto superior direito (embutida como asset do pacote PPTX)
+  // Linha sutil separadora abaixo do cabeçalho
+  slide.addShape(pptxgen.ShapeType.rect, {
+    x: GRID.marginLeft,
+    y: GRID.titleTop + 0.58,
+    w: GRID.contentWidth,
+    h: 0.015,
+    fill: { color: 'E2E8F0' },
+    line: { color: 'E2E8F0', width: 0.5 },
+  })
+
+  // Logo Bycor superior direito
   if (logo) {
     slide.addImage(logo)
   }
 
-  // Rodapé número de página "NN/12"
+  // Rodapé unificado: marca Bycor à esquerda, numeração à direita
+  slide.addText(
+    [
+      { text: 'BYCOR P&C INTELLIGENCE', options: { bold: true, color: C_NAVY } },
+      { text: '   •   Estudo Técnico de Mercado', options: { color: C_MUTED } },
+    ],
+    {
+      x: GRID.marginLeft,
+      y: GRID.footerBottom,
+      w: 6.0,
+      h: 0.3,
+      fontFace: 'Arial',
+      fontSize: 8,
+      margin: 0,
+    },
+  )
+
   slide.addText(numeroPagina, {
-    x: 8.5,
-    y: 5.2,
-    w: 1.0,
+    x: 8.0,
+    y: GRID.footerBottom,
+    w: 1.4,
     h: 0.3,
     fontFace: 'Arial',
-    fontSize: 9,
+    fontSize: 8.5,
+    bold: true,
     color: C_MUTED,
     align: 'right',
+    margin: 0,
   })
 }
 
@@ -176,15 +233,14 @@ export async function generateEstudoMercadoPptx(
   const s1 = pptx.addSlide()
 
   // Faixa esquerda de ilustração / cor
-  s1.addShape(pptx.ShapeType.rect, {
+  s1.addShape(pptxgen.ShapeType.rect, {
     x: 0,
     y: 0,
-    w: 4.4,
+    w: 10,
     h: 5.625,
     fill: { color: C_NAVY },
     line: { color: C_NAVY },
   })
-
   // Logo oficial Bycor em destaque na capa
   if (logoCapa) {
     s1.addImage(logoCapa)
@@ -251,11 +307,25 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 2: Institucional BYCOR (Fixo)
   // =========================================================================
   const s2 = pptx.addSlide()
-  addHeaderBycor(s2, 'Somos a BYCOR Seguros', '02/12', logoHeader)
+  addSlideHeaderAndFooter(
+    s2,
+    'Somos a BYCOR Seguros',
+    'Apresentação Corporativa',
+    '02/12',
+    logoHeader,
+  )
 
   s2.addText(
     'A BYCOR Consultoria e Corretora de Seguros é especialista na transferência de riscos por meio de apólices de seguro, atuando com foco na proteção customizada de negócios e devidamente registrada na SUSEP.',
-    { x: 0.6, y: 1.05, w: 8.8, h: 0.5, fontFace: 'Arial', fontSize: 10, color: C_TEXT },
+    {
+      x: GRID.marginLeft,
+      y: GRID.contentTop,
+      w: GRID.contentWidth,
+      h: 0.45,
+      fontFace: 'Arial',
+      fontSize: 10,
+      color: C_TEXT,
+    },
   )
 
   // 5 Diferenciais em Cards horizontais
@@ -278,19 +348,19 @@ export async function generateEstudoMercadoPptx(
     },
     {
       titulo: 'Atendimento Personalizado',
-      desc: 'Suporte dedicado para tomadas de decisão e gestão de seguros e foco na proteção customizada do seu negócio',
+      desc: 'Suporte dedicado para tomadas de decisão e gestão com proteção customizada',
     },
   ]
 
   const cardW = 1.68
   const cardH = 2.0
-  const startX = 0.6
+  const startX = GRID.marginLeft
   const gapX = 0.1
-  const cardY = 1.65
+  const cardY = 1.6
 
   diferenciais.forEach((d, i) => {
     const xPos = startX + i * (cardW + gapX)
-    s2.addShape(pptx.ShapeType.roundRect, {
+    s2.addShape(pptxgen.ShapeType.roundRect, {
       x: xPos,
       y: cardY,
       w: cardW,
@@ -310,10 +380,10 @@ export async function generateEstudoMercadoPptx(
   })
 
   // Segmentos e Produtos no rodapé
-  s2.addShape(pptx.ShapeType.roundRect, {
-    x: 0.6,
-    y: 3.8,
-    w: 8.8,
+  s2.addShape(pptxgen.ShapeType.roundRect, {
+    x: GRID.marginLeft,
+    y: 3.75,
+    w: GRID.contentWidth,
     h: 1.3,
     fill: { color: 'F0FDF4' },
     line: { color: 'BBF7D0', width: 1 },
@@ -335,18 +405,26 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 9, color: C_TEXT },
       },
     ],
-    { x: 0.8, y: 3.9, w: 8.4, h: 1.1, fontFace: 'Arial' },
+    { x: GRID.marginLeft + 0.2, y: 3.85, w: GRID.contentWidth - 0.4, h: 1.1, fontFace: 'Arial' },
   )
 
   // =========================================================================
   // SLIDE 3: Conteúdo do Estudo (Índice)
   // =========================================================================
   const s3 = pptx.addSlide()
-  addHeaderBycor(s3, 'Conteúdo do Estudo', '03/12', logoHeader)
+  addSlideHeaderAndFooter(s3, 'Conteúdo do Estudo', 'Índice Executivo', '03/12', logoHeader)
 
   s3.addText(
     `Este estudo apresenta as cotações das Seguradoras para o Seguro Patrimonial do ${data.empreendimentoNome}${data.cosseguradoNome ? ' e do novo ' + data.cosseguradoNome : ''}, estruturado em seis blocos temáticos:`,
-    { x: 0.6, y: 1.05, w: 8.8, h: 0.5, fontFace: 'Arial', fontSize: 10, color: C_TEXT },
+    {
+      x: GRID.marginLeft,
+      y: GRID.contentTop,
+      w: GRID.contentWidth,
+      h: 0.45,
+      fontFace: 'Arial',
+      fontSize: 10,
+      color: C_TEXT,
+    },
   )
 
   const blocosIndice = [
@@ -384,16 +462,16 @@ export async function generateEstudoMercadoPptx(
 
   const bW = 2.75
   const bH = 1.35
-  const bGapX = 0.25
-  const bGapY = 0.25
+  const bGapX = 0.27
+  const bGapY = 0.22
 
   blocosIndice.forEach((b, idx) => {
     const col = idx % 3
     const row = Math.floor(idx / 3)
-    const bx = 0.6 + col * (bW + bGapX)
-    const by = 1.75 + row * (bH + bGapY)
+    const bx = GRID.marginLeft + col * (bW + bGapX)
+    const by = 1.7 + row * (bH + bGapY)
 
-    s3.addShape(pptx.ShapeType.roundRect, {
+    s3.addShape(pptxgen.ShapeType.roundRect, {
       x: bx,
       y: by,
       w: bW,
@@ -404,7 +482,7 @@ export async function generateEstudoMercadoPptx(
     })
 
     // Barra azul superior
-    s3.addShape(pptx.ShapeType.rect, {
+    s3.addShape(pptxgen.ShapeType.rect, {
       x: bx,
       y: by,
       w: bW,
@@ -427,13 +505,19 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 4: Objetivo do Estudo (Editável pelo Analista)
   // =========================================================================
   const s4 = pptx.addSlide()
-  addHeaderBycor(s4, 'Objetivo do Estudo', '04/12', logoHeader)
+  addSlideHeaderAndFooter(
+    s4,
+    'Objetivo do Estudo',
+    'Contexto Técnico e Operacional',
+    '04/12',
+    logoHeader,
+  )
 
   // Card do texto do objetivo
-  s4.addShape(pptx.ShapeType.roundRect, {
-    x: 0.6,
-    y: 1.05,
-    w: 8.8,
+  s4.addShape(pptxgen.ShapeType.roundRect, {
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
+    w: GRID.contentWidth,
     h: 2.1,
     fill: { color: C_BG_CARD },
     line: { color: C_BORDER, width: 1 },
@@ -455,12 +539,18 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 9.5, color: C_TEXT },
       },
     ],
-    { x: 0.8, y: 1.15, w: 8.4, h: 1.9, fontFace: 'Arial' },
+    {
+      x: GRID.marginLeft + 0.2,
+      y: GRID.contentTop + 0.12,
+      w: GRID.contentWidth - 0.4,
+      h: 1.85,
+      fontFace: 'Arial',
+    },
   )
 
   // 3 Fotos ilustrativas (conforme PDF de referência)
   const imgW = 2.8
-  const imgH = 1.7
+  const imgH = 1.75
   const imgY = 3.3
   const imgGap = 0.2
 
@@ -472,7 +562,7 @@ export async function generateEstudoMercadoPptx(
 
   if (includePhotos) {
     fotoPlaceholders.forEach((url, i) => {
-      const ix = 0.6 + i * (imgW + imgGap)
+      const ix = GRID.marginLeft + i * (imgW + imgGap)
       s4.addImage({
         path: url,
         x: ix,
@@ -487,7 +577,13 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 5: Dados do Segurado e do Risco
   // =========================================================================
   const s5 = pptx.addSlide()
-  addHeaderBycor(s5, 'Dados do Segurado e do Risco', '05/12', logoHeader)
+  addSlideHeaderAndFooter(
+    s5,
+    'Dados do Segurado e do Risco',
+    'Perfil Operacional e VRD',
+    '05/12',
+    logoHeader,
+  )
 
   // Tabela esquerda: Dados cadastrais e operacionais do risco
   const rowsCadastrais: pptxgen.TableRow[] = [
@@ -533,8 +629,8 @@ export async function generateEstudoMercadoPptx(
   })
 
   s5.addTable(rowsCadastrais, {
-    x: 0.6,
-    y: 1.05,
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
     w: 5.2,
     colW: [1.3, 3.9],
     border: { pt: 0.5, color: C_BORDER },
@@ -611,7 +707,7 @@ export async function generateEstudoMercadoPptx(
 
   s5.addText('Valores em Risco Declarados', {
     x: 6.0,
-    y: 1.05,
+    y: GRID.contentTop,
     w: 3.4,
     h: 0.3,
     fontFace: 'Arial',
@@ -622,9 +718,9 @@ export async function generateEstudoMercadoPptx(
 
   s5.addTable(rowsVrd, {
     x: 6.0,
-    y: 1.4,
+    y: GRID.contentTop + 0.35,
     w: 3.4,
-    colW: [2.2, 1.2],
+    colW: [2.1, 1.3],
     border: { pt: 0.5, color: C_BORDER },
     margin: 0.05,
   })
@@ -633,15 +729,21 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 6: Marco Regulatório Nova Lei de Seguros 15.040/2024 (Fixo)
   // =========================================================================
   const s6 = pptx.addSlide()
-  addHeaderBycor(s6, 'Informações', '06/12', logoHeader)
+  addSlideHeaderAndFooter(
+    s6,
+    'Informações Regulatórias',
+    'Nova Lei de Seguros 15.040/2024',
+    '06/12',
+    logoHeader,
+  )
 
   s6.addText('Marco Regulatório Nova Lei de Seguros 15.040/2024 em vigor a partir de 11/12/2025', {
-    x: 0.6,
-    y: 1.0,
-    w: 8.8,
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
+    w: GRID.contentWidth,
     h: 0.35,
     fontFace: 'Arial',
-    fontSize: 13,
+    fontSize: 12.5,
     bold: true,
     color: C_NAVY,
   })
@@ -693,21 +795,35 @@ export async function generateEstudoMercadoPptx(
         text: 'Para a cobertura de Despesas de Salvamento e Contenção, fica estabelecido um limite definido por cada Cia, no Limite Máximo de Garantia das coberturas contratadas. Há a opção de contratar a cobertura de forma adicional.',
       },
     ],
-    { x: 0.6, y: 1.4, w: 8.8, h: 3.7, fontFace: 'Arial', fontSize: 8.5, color: C_TEXT },
+    {
+      x: GRID.marginLeft,
+      y: GRID.contentTop + 0.38,
+      w: GRID.contentWidth,
+      h: 3.7,
+      fontFace: 'Arial',
+      fontSize: 8.5,
+      color: C_TEXT,
+    },
   )
 
   // =========================================================================
   // SLIDE 7: Seguradoras Consultadas
   // =========================================================================
   const s7 = pptx.addSlide()
-  addHeaderBycor(s7, 'Seguradoras Consultadas', '07/12', logoHeader)
+  addSlideHeaderAndFooter(
+    s7,
+    'Seguradoras Consultadas',
+    'Status da Rodada RFQ',
+    '07/12',
+    logoHeader,
+  )
 
   // Card Cias que apresentaram Propostas
-  s7.addShape(pptx.ShapeType.roundRect, {
-    x: 0.6,
-    y: 1.1,
-    w: 5.0,
-    h: 1.9,
+  s7.addShape(pptxgen.ShapeType.roundRect, {
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
+    w: 5.1,
+    h: 1.95,
     fill: { color: C_BG_CARD },
     line: { color: C_BORDER, width: 1 },
     rectRadius: 0.08,
@@ -729,15 +845,15 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 10, bold: true, color: C_GREEN },
       })),
     ],
-    { x: 0.8, y: 1.25, w: 4.6, h: 1.6, fontFace: 'Arial' },
+    { x: GRID.marginLeft + 0.2, y: GRID.contentTop + 0.15, w: 4.7, h: 1.65, fontFace: 'Arial' },
   )
 
   // Card Cias em análise ou não apresentaram
-  s7.addShape(pptx.ShapeType.roundRect, {
-    x: 0.6,
-    y: 3.2,
-    w: 5.0,
-    h: 1.9,
+  s7.addShape(pptxgen.ShapeType.roundRect, {
+    x: GRID.marginLeft,
+    y: 3.15,
+    w: 5.1,
+    h: 1.95,
     fill: { color: C_BG_CARD },
     line: { color: C_BORDER, width: 1 },
     rectRadius: 0.08,
@@ -763,7 +879,7 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 10, bold: true, color: 'DC2626' },
       })),
     ],
-    { x: 0.8, y: 3.35, w: 4.6, h: 1.6, fontFace: 'Arial' },
+    { x: GRID.marginLeft + 0.2, y: 3.3, w: 4.7, h: 1.65, fontFace: 'Arial' },
   )
 
   // Foto de fachada corporativa à direita
@@ -771,7 +887,7 @@ export async function generateEstudoMercadoPptx(
     s7.addImage({
       path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+headquarters&color=blue',
       x: 5.9,
-      y: 1.1,
+      y: GRID.contentTop,
       w: 3.5,
       h: 4.0,
     })
@@ -781,7 +897,7 @@ export async function generateEstudoMercadoPptx(
   // SLIDE 8: Prêmios
   // =========================================================================
   const s8 = pptx.addSlide()
-  addHeaderBycor(s8, 'Prêmios', '08/12', logoHeader)
+  addSlideHeaderAndFooter(s8, 'Prêmios', 'Comparativo Financeiro e Condições', '08/12', logoHeader)
 
   // Cabeçalho da tabela de prêmios por cia
   const colCias =
@@ -827,338 +943,16 @@ export async function generateEstudoMercadoPptx(
             parcelamentoSemJurosTexto: '',
             numeroCoberturas: 42,
             coberturasOriginais: [],
+            vencedora: true,
           },
         ]
 
   const numColCias = colCias.length
-  const colWPrimeira = 2.8
-  const colWRestante = (8.8 - colWPrimeira) / numColCias
+  const colWPrimeira = 2.4
+  const colWRestante = (GRID.contentWidth - colWPrimeira) / numColCias
   const colWArrayPremios = [colWPrimeira, ...Array(numColCias).fill(colWRestante)]
 
   const rowsPremios: pptxgen.TableRow[] = [
-    [
-      {
-        text: 'Item',
-        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 8.5 },
-      },
-      {
-        text: 'Dados / Opções',
-        options: {
-          bold: true,
-          fill: { color: C_NAVY },
-          color: C_WHITE,
-          fontSize: 8.5,
-          align: 'center',
-          colspan: numColCias,
-        },
-      },
-    ],
-    [
-      { text: 'Valor em Risco Declarado – D.Materiais' },
-      { text: vrdDmTotalStr, options: { align: 'center', bold: true, colspan: numColCias } },
-    ],
-    [
-      { text: 'Valor em Risco Declarado – Lucros Cessantes – L. Bruto (12 meses)' },
-      { text: vrdLcAnualStr, options: { align: 'center', bold: true, colspan: numColCias } },
-    ],
-    [
-      { text: 'Seguradora', options: { bold: true, fill: { color: 'F1F5F9' } } },
-      ...colCias.map((p) => {
-        const nome = p.opcao ? `${p.seguradoraNome} (Opção ${p.opcao})` : p.seguradoraNome
-        return {
-          text: nome,
-          options: { bold: true, fill: { color: 'F1F5F9' }, align: 'center' as const },
-        }
-      }),
-    ],
-    [
-      { text: 'Prêmio Total (com IOF) R$', options: { bold: true, color: C_NAVY } },
-      ...colCias.map((p) => ({
-        text: formatLmiEstudo(p.premioTotalComIof),
-        options: { bold: true, fontSize: 10, color: C_NAVY, align: 'center' as const },
-      })),
-    ],
-    [
-      { text: 'Parcelamento sem Juros' },
-      ...colCias.map((p) => ({
-        text: p.parcelamentoSemJurosTexto || '—',
-        options: { align: 'center' as const, bold: true },
-      })),
-    ],
-    [
-      { text: 'Nº de Coberturas' },
-      ...colCias.map((p) => ({
-        text: String(p.numeroCoberturas || p.coberturasOriginais?.length || 42),
-        options: { align: 'center' as const, bold: true },
-      })),
-    ],
-  ]
-
-  s8.addTable(rowsPremios, {
-    x: 0.6,
-    y: 1.05,
-    w: 8.8,
-    colW: colWArrayPremios,
-    border: { pt: 0.5, color: C_BORDER },
-    margin: 0.05,
-  })
-
-  // Rodapé técnico do slide de prêmios: Risco Relativo vs Risco Absoluto
-  s8.addText(
-    [
-      {
-        text: 'Patrimonial - Tipo de Cobertura\n\n',
-        options: {
-          bold: true,
-          fontSize: 9.5,
-          color: C_NAVY,
-          underline: { style: 'sng', color: C_NAVY },
-        },
-      },
-      {
-        text: 'Básica: 1º Risco Relativo     |     Lucros Cessantes: 1º Risco Relativo     |     Demais Coberturas: 1º Risco Absoluto\n\n',
-        options: { bold: true, fontSize: 8.5, color: C_TEXT },
-      },
-      {
-        text: '• Risco Relativo = Se o Valor em Risco Declarado na apólice for inferior a 80% do Valor em Risco apurado no momento do sinistro, será aplicada Cláusula de Rateio.\n',
-        options: { fontSize: 8, color: C_MUTED },
-      },
-      {
-        text: '• Risco Absoluto = Indenização pelo valor integral de qualquer sinistro até o Limite Máximo de Indenização da cobertura reivindicada/contratada.\n',
-        options: { fontSize: 8, color: C_MUTED },
-      },
-      {
-        text: '• Demais coberturas/exclusões conforme Condições Gerais das Seguradoras',
-        options: { fontSize: 8, color: C_MUTED },
-      },
-    ],
-    { x: 0.6, y: 3.8, w: 8.8, h: 1.4, fontFace: 'Arial' },
-  )
-
-  // =========================================================================
-  // SLIDE 9: Tabela Comparativa de Coberturas (42 linhas canônicas)
-  // Paginação inteligente: O Estudo exibe a descrição COMPLETA da cobertura canônica
-  // (decisão do analista). Para comportar linhas mais altas sem estourar o slide (h=5.625"),
-  // paginamos em 3 slides de 14 linhas (14 + 14 + 14 = 42).
-  // =========================================================================
-  const CHUNK_SIZE = 14
-  const chunksLinhas: (typeof linhas42)[] = [
-    linhas42.slice(0, CHUNK_SIZE),
-    linhas42.slice(CHUNK_SIZE, CHUNK_SIZE * 2),
-    linhas42.slice(CHUNK_SIZE * 2, 42),
-  ]
-
-  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
-    const sCob = pptx.addSlide()
-    const subNum =
-      chunkIdx === 0 ? '09/12' : chunkIdx === 1 ? '09/12 (cont. 1/2)' : '09/12 (cont. 2/2)'
-    addHeaderBycor(sCob, 'Tabela Comparativa de Coberturas', subNum, logoHeader)
-
-    // Cabeçalho
-    const headerRow: pptxgen.TableRow = [
-      {
-        text: 'COBERTURAS',
-        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 6.8 },
-      },
-      {
-        text: 'SOLICITADA',
-        options: {
-          bold: true,
-          fill: { color: C_NAVY },
-          color: C_WHITE,
-          fontSize: 6.8,
-          align: 'right',
-        },
-      },
-      ...colCias.map((c) => {
-        const numCob = c.numeroCoberturas || c.coberturasOriginais?.length || 42
-        const nome = c.opcao ? `${c.seguradoraNome} (${numCob})` : `${c.seguradoraNome} (${numCob})`
-        return {
-          text: nome,
-          options: {
-            bold: true,
-            fill: { color: C_NAVY },
-            color: C_WHITE,
-            fontSize: 6.8,
-            align: 'center' as const,
-          },
-        }
-      }),
-    ]
-
-    const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
-      const bg = lIdx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
-      const solStr =
-        typeof linha.item.lmiSolicitado === 'number'
-          ? formatLmiEstudo(linha.item.lmiSolicitado)
-          : String(linha.item.lmiSolicitado || '—')
-
-      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
-      const textoNome = linha.item.nome || linha.item.titulo
-
-      return [
-        {
-          text: `${linha.item.numero}  ${textoNome}`,
-          options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
-        },
-        {
-          text: solStr,
-          options: {
-            bold: true,
-            fontSize: 6.2,
-            color: C_NAVY,
-            fill: { color: bg },
-            align: 'right' as const,
-          },
-        },
-        ...colCias.map((c) => {
-          const cell = linha.celulasPorProposta.get(c.id)
-          const val = cell?.valorFormatado || 'X'
-          const isAbaixo = cell?.abaixoDoSolicitado
-          const isX = val === 'X'
-          const fontColor = isX ? '94A3B8' : isAbaixo ? 'B91C1C' : C_TEXT
-          return {
-            text: val,
-            options: {
-              fontSize: 6.2,
-              color: fontColor,
-              fill: { color: bg },
-              align: 'center' as const,
-              bold: isAbaixo || val === '✓',
-            },
-          }
-        }),
-      ]
-    })
-
-    // Se for o último slide de coberturas (3/3), inclui a linha final de Prêmio Bruto (R$)
-    if (chunkIdx === chunksLinhas.length - 1) {
-      dataRows.push([
-        {
-          text: 'Prêmio Bruto (R$)',
-          options: { bold: true, fill: { color: 'EFF6FF' }, fontSize: 7, color: C_NAVY },
-        },
-        { text: '', options: { fill: { color: 'EFF6FF' } } },
-        ...colCias.map((c) => ({
-          text: formatLmiEstudo(c.premioTotalComIof),
-          options: {
-            bold: true,
-            fill: { color: 'EFF6FF' },
-            fontSize: 7,
-            color: C_NAVY,
-            align: 'center' as const,
-          },
-        })),
-      ])
-    }
-
-    // Aumenta a coluna do nome para 4.1 polegadas para acomodar as descrições completas
-    const colWNome = 4.1
-    const colWSol = 1.2
-    const colWCiasCob = (8.8 - colWNome - colWSol) / numColCias
-
-    sCob.addTable([headerRow, ...dataRows], {
-      x: 0.6,
-      y: 0.95,
-      w: 8.8,
-      colW: [colWNome, colWSol, ...Array(numColCias).fill(colWCiasCob)],
-      border: { pt: 0.5, color: C_BORDER },
-      margin: 0.02,
-    })
-  })
-
-  // =========================================================================
-  // SLIDE 10: Tabela Comparativa de POS & Franquias (42 linhas canônicas)
-  // Paginamos também em 3 slides de 14 linhas (14 + 14 + 14 = 42) para
-  // acomodar as descrições completas das coberturas e as franquias no padrão X% min R$Y.
-  // =========================================================================
-  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
-    const sPos = pptx.addSlide()
-    const subNum =
-      chunkIdx === 0 ? '10/12' : chunkIdx === 1 ? '10/12 (cont. 1/2)' : '10/12 (cont. 2/2)'
-    addHeaderBycor(sPos, 'Tabela Comparativa de POS & Franquias', subNum, logoHeader)
-
-    const headerRow: pptxgen.TableRow = [
-      {
-        text: 'COBERTURAS',
-        options: { bold: true, fill: { color: C_NAVY }, color: C_WHITE, fontSize: 6.8 },
-      },
-      ...colCias.map((c) => {
-        const numCob = c.numeroCoberturas || c.coberturasOriginais?.length || 42
-        return {
-          text: `${c.seguradoraNome} (${numCob})`,
-          options: {
-            bold: true,
-            fill: { color: C_NAVY },
-            color: C_WHITE,
-            fontSize: 6.8,
-            align: 'center' as const,
-          },
-        }
-      }),
-    ]
-
-    const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
-      const bg = lIdx % 2 === 0 ? 'FFFFFF' : 'F8FAFC'
-
-      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
-      const textoNome = linha.item.nome || linha.item.titulo
-
-      return [
-        {
-          text: `${linha.item.numero}  ${textoNome}`,
-          options: { bold: true, fontSize: 6.2, color: C_NAVY, fill: { color: bg } },
-        },
-        ...colCias.map((c) => {
-          const cell = linha.celulasPorProposta.get(c.id)
-          const franq = cell?.franquiaTexto || 'Não há'
-          const isX = franq === 'X'
-          return {
-            text: franq,
-            options: {
-              fontSize: 6.2,
-              color: isX ? '94A3B8' : C_TEXT,
-              fill: { color: bg },
-              align: 'center' as const,
-            },
-          }
-        }),
-      ]
-    })
-
-    const colWNomePos = 4.2
-    const colWCiasPos = (8.8 - colWNomePos) / numColCias
-
-    sPos.addTable([headerRow, ...dataRows], {
-      x: 0.6,
-      y: 0.95,
-      w: 8.8,
-      colW: [colWNomePos, ...Array(numColCias).fill(colWCiasPos)],
-      border: { pt: 0.5, color: C_BORDER },
-      margin: 0.02,
-    })
-
-    // Rodapé de asterisco obrigatório em todos os slides de POS
-    sPos.addText('* POS & Franquia por Reclamante, Evento, Veículo, Equipamento.', {
-      x: 0.6,
-      y: 5.25,
-      w: 7.5,
-      h: 0.25,
-      fontFace: 'Arial',
-      fontSize: 7.5,
-      italic: true,
-      color: C_MUTED,
-    })
-  })
-
-  // =========================================================================
-  // SLIDE 11: Opções de Contratação (Editável)
-  // =========================================================================
-  const s11 = pptx.addSlide()
-  addHeaderBycor(s11, 'Opções de Contratação', '11/12', logoHeader)
-
-  // Tabela compacta com as opções no topo
-  const rowsOpcoesContratacao: pptxgen.TableRow[] = [
     [
       {
         text: 'Item',
@@ -1177,43 +971,603 @@ export async function generateEstudoMercadoPptx(
       },
     ],
     [
-      { text: 'Opção de Contratação', options: { bold: true } },
-      ...colCias.map(() => ({ text: '(   )', options: { align: 'center' as const, bold: true } })),
+      {
+        text: 'Valor em Risco – D.Materiais',
+        options: { fontSize: 7.5, bold: true, fill: { color: 'FFFFFF' } },
+      },
+      {
+        text: vrdDmTotalStr,
+        options: {
+          align: 'right',
+          bold: true,
+          colspan: numColCias,
+          fontSize: 7.5,
+          fill: { color: 'FFFFFF' },
+        },
+      },
     ],
     [
-      { text: 'Seguradora', options: { bold: true } },
-      ...colCias.map((c) => ({
-        text: c.seguradoraNome,
-        options: { align: 'center' as const, bold: true },
-      })),
+      {
+        text: 'Valor em Risco – Lucros Cessantes',
+        options: { fontSize: 7.5, bold: true, fill: { color: C_ZEBRA_ROW } },
+      },
+      {
+        text: vrdLcAnualStr,
+        options: {
+          align: 'right',
+          bold: true,
+          colspan: numColCias,
+          fontSize: 7.5,
+          fill: { color: C_ZEBRA_ROW },
+        },
+      },
     ],
     [
-      { text: 'Prêmio Total (com IOF) R$', options: { bold: true, color: C_NAVY } },
-      ...colCias.map((c) => ({
-        text: formatLmiEstudo(c.premioTotalComIof),
-        options: { align: 'center' as const, bold: true },
-      })),
+      {
+        text: 'Seguradora',
+        options: { bold: true, fontSize: 7.5, fill: { color: 'E2E8F0' }, color: C_NAVY },
+      },
+      ...colCias.map((p) => {
+        const isVencedora = Boolean(p.vencedora)
+        const rotulo = p.opcao ? `${p.seguradoraNome} (Opção ${p.opcao})` : p.seguradoraNome
+        const texto = isVencedora ? `★ ${rotulo}\n[Recomendada]` : rotulo
+        return {
+          text: texto,
+          options: {
+            bold: true,
+            fontSize: 7.5,
+            fill: { color: isVencedora ? C_VENCEDORA_BG : 'E2E8F0' },
+            color: isVencedora ? C_VENCEDORA_TEXT : C_NAVY,
+            align: 'center' as const,
+          },
+        }
+      }),
     ],
     [
-      { text: 'Parcelamento sem Juros' },
-      ...colCias.map((c) => ({
-        text: c.parcelamentoSemJurosTexto || '—',
-        options: { align: 'center' as const },
-      })),
+      {
+        text: 'Prêmio Total (com IOF)',
+        options: { bold: true, fontSize: 8, color: C_NAVY, fill: { color: 'FFFFFF' } },
+      },
+      ...colCias.map((p) => {
+        const isVencedora = Boolean(p.vencedora)
+        return {
+          text: formatLmiEstudo(p.premioTotalComIof),
+          options: {
+            bold: true,
+            fontSize: 8.5,
+            color: isVencedora ? C_VENCEDORA_TEXT : C_NAVY,
+            fill: { color: isVencedora ? 'DCFCE7' : 'FFFFFF' },
+            align: 'right' as const,
+          },
+        }
+      }),
     ],
     [
-      { text: 'Nº de Coberturas' },
-      ...colCias.map((c) => ({
-        text: String(c.numeroCoberturas || 42),
-        options: { align: 'center' as const },
-      })),
+      { text: 'Parcelamento sem Juros', options: { fontSize: 7.5, fill: { color: C_ZEBRA_ROW } } },
+      ...colCias.map((p) => {
+        const isVencedora = Boolean(p.vencedora)
+        return {
+          text: p.parcelamentoSemJurosTexto || '—',
+          options: {
+            align: 'center' as const,
+            bold: true,
+            fontSize: 7.5,
+            fill: { color: isVencedora ? C_VENCEDORA_BG : C_ZEBRA_ROW },
+          },
+        }
+      }),
+    ],
+    [
+      { text: 'Nº de Coberturas', options: { fontSize: 7.5, fill: { color: 'FFFFFF' } } },
+      ...colCias.map((p) => {
+        const isVencedora = Boolean(p.vencedora)
+        return {
+          text: String(p.numeroCoberturas || p.coberturasOriginais?.length || 42),
+          options: {
+            align: 'center' as const,
+            bold: true,
+            fontSize: 7.5,
+            fill: { color: isVencedora ? C_VENCEDORA_BG : 'FFFFFF' },
+          },
+        }
+      }),
+    ],
+  ]
+
+  // Renderiza tabela comparativa de prêmios
+  s8.addTable(rowsPremios, {
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
+    w: GRID.contentWidth,
+    colW: colWArrayPremios,
+    border: { pt: 0.5, color: C_BORDER },
+    margin: 0.04,
+  })
+
+  // Gráfico de barras comparando prêmio total das propostas (Item 5 do escopo)
+  try {
+    const chartLabels = colCias.map((p) => {
+      const base = p.opcao ? `${p.seguradoraNome} Op.${p.opcao}` : p.seguradoraNome
+      return p.vencedora ? `★ ${base}` : base
+    })
+    const chartValues = colCias.map((p) => Math.round(p.premioTotalComIof || 0))
+
+    const chartData = [
+      {
+        name: 'Prêmio Total (com IOF)',
+        labels: chartLabels,
+        values: chartValues,
+      },
+    ]
+
+    s8.addChart(pptxgen.ChartType.bar, chartData, {
+      x: GRID.marginLeft,
+      y: 2.85,
+      w: 4.6,
+      h: 2.1,
+      barDir: 'col',
+      chartColors: [C_NAVY],
+      dataLabelPosition: 'outEnd',
+      dataLabelFormatCode: '#,##0',
+      dataLabelFontSize: 7,
+      dataLabelColor: C_NAVY,
+      showValue: true,
+      showLegend: false,
+      showTitle: true,
+      title: 'Comparativo de Prêmio Total (R$)',
+      titleFontSize: 8.5,
+      titleColor: C_NAVY,
+      valAxisHidden: false,
+      catAxisLabelFontSize: 7,
+      catAxisLabelColor: C_TEXT,
+      valAxisLabelFontSize: 6.5,
+    })
+  } catch (err) {
+    console.warn('[EstudoMercado] Não foi possível adicionar gráfico no Slide 8:', err)
+  }
+
+  // Bloco técnico lateral: Risco Relativo vs Risco Absoluto e Destaque
+  s8.addShape(pptxgen.ShapeType.roundRect, {
+    x: 5.4,
+    y: 2.85,
+    w: 4.0,
+    h: 2.1,
+    fill: { color: C_BG_CARD },
+    line: { color: C_BORDER, width: 1 },
+    rectRadius: 0.06,
+  })
+
+  s8.addText(
+    [
+      {
+        text: 'Patrimonial - Tipo de Cobertura\n\n',
+        options: {
+          bold: true,
+          fontSize: 8.5,
+          color: C_NAVY,
+          underline: { style: 'sng', color: C_NAVY },
+        },
+      },
+      {
+        text: 'Básica / Lucros Cessantes: 1º Risco Relativo (Rateio se VRD < 80% do apurado)\n\n',
+        options: { bold: true, fontSize: 7.5, color: C_TEXT },
+      },
+      {
+        text: 'Demais Coberturas: 1º Risco Absoluto (Indenização integral até o LMI contratado)\n\n',
+        options: { bold: true, fontSize: 7.5, color: C_TEXT },
+      },
+      {
+        text: '• Destaque verde indica a proposta recomendada pela Bycor para contratação.\n',
+        options: { fontSize: 7, color: C_GREEN, bold: true },
+      },
+      {
+        text: '• Coberturas e exclusões regidas pelas CGs das respectivas seguradoras.',
+        options: { fontSize: 7, color: C_MUTED },
+      },
+    ],
+    { x: 5.55, y: 2.95, w: 3.7, h: 1.9, fontFace: 'Arial' },
+  )
+
+  // =========================================================================
+  // SLIDE 9: Tabela Comparativa de Coberturas (42 linhas canônicas)
+  // Paginação com cabeçalho repetido em cada slide, zebra e largura proporcional
+  // =========================================================================
+  const CHUNK_SIZE = 14
+  const chunksLinhas: (typeof linhas42)[] = [
+    linhas42.slice(0, CHUNK_SIZE),
+    linhas42.slice(CHUNK_SIZE, CHUNK_SIZE * 2),
+    linhas42.slice(CHUNK_SIZE * 2, 42),
+  ]
+
+  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
+    const sCob = pptx.addSlide()
+    const subNum =
+      chunkIdx === 0 ? '09/12' : chunkIdx === 1 ? '09/12 (cont. 1/2)' : '09/12 (cont. 2/2)'
+    const subtitulo = `Parte ${chunkIdx + 1} de 3 • Limites Máximos de Indenização (LMI)`
+    addSlideHeaderAndFooter(sCob, 'Tabela Comparativa de Coberturas', subtitulo, subNum, logoHeader)
+
+    // Cabeçalho da tabela de coberturas repetido em todas as páginas
+    const headerRow: pptxgen.TableRow = [
+      {
+        text: 'COBERTURAS',
+        options: {
+          bold: true,
+          fill: { color: C_NAVY },
+          color: C_WHITE,
+          fontSize: 6.8,
+          align: 'left',
+        },
+      },
+      {
+        text: 'SOLICITADA',
+        options: {
+          bold: true,
+          fill: { color: C_NAVY },
+          color: C_WHITE,
+          fontSize: 6.8,
+          align: 'right',
+        },
+      },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        const numCob = c.numeroCoberturas || c.coberturasOriginais?.length || 42
+        const nome = isVenc
+          ? `★ ${c.seguradoraNome} (${numCob})`
+          : `${c.seguradoraNome} (${numCob})`
+        return {
+          text: nome,
+          options: {
+            bold: true,
+            fill: { color: isVenc ? '047857' : C_NAVY },
+            color: C_WHITE,
+            fontSize: 6.8,
+            align: 'center' as const,
+          },
+        }
+      }),
+    ]
+
+    const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
+      const bg = lIdx % 2 === 0 ? 'FFFFFF' : C_ZEBRA_ROW
+      const solStr =
+        typeof linha.item.lmiSolicitado === 'number'
+          ? formatLmiEstudo(linha.item.lmiSolicitado)
+          : String(linha.item.lmiSolicitado || '—')
+
+      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
+      const textoNome = linha.item.nome || linha.item.titulo
+
+      return [
+        {
+          text: `${linha.item.numero}  ${textoNome}`,
+          options: {
+            bold: true,
+            fontSize: 6.2,
+            color: C_NAVY,
+            fill: { color: bg },
+            align: 'left' as const,
+          },
+        },
+        {
+          text: solStr,
+          options: {
+            bold: true,
+            fontSize: 6.2,
+            color: C_NAVY,
+            fill: { color: bg },
+            align: 'right' as const,
+          },
+        },
+        ...colCias.map((c) => {
+          const isVenc = Boolean(c.vencedora)
+          const cell = linha.celulasPorProposta.get(c.id)
+          const val = cell?.valorFormatado || 'X'
+          const isAbaixo = cell?.abaixoDoSolicitado
+          const isX = val === 'X'
+          const fontColor = isX
+            ? '94A3B8'
+            : isAbaixo
+              ? 'B91C1C'
+              : isVenc
+                ? C_VENCEDORA_TEXT
+                : C_TEXT
+          const cellBg = isVenc ? (lIdx % 2 === 0 ? 'F0FDF4' : 'DCFCE7') : bg
+          const isNumeric = val !== 'X' && val !== '✓' && val !== '—' && val !== 'Não há'
+          return {
+            text: val,
+            options: {
+              fontSize: 6.2,
+              color: fontColor,
+              fill: { color: cellBg },
+              align: (isNumeric ? 'right' : 'center') as 'right' | 'center',
+              bold: isAbaixo || val === '✓' || isVenc,
+            },
+          }
+        }),
+      ]
+    })
+
+    // Se for o último slide de coberturas (3/3), inclui a linha final de Prêmio Bruto (R$)
+    if (chunkIdx === chunksLinhas.length - 1) {
+      dataRows.push([
+        {
+          text: 'Prêmio Total com IOF (R$)',
+          options: {
+            bold: true,
+            fill: { color: 'EFF6FF' },
+            fontSize: 6.8,
+            color: C_NAVY,
+            align: 'left' as const,
+          },
+        },
+        { text: '', options: { fill: { color: 'EFF6FF' } } },
+        ...colCias.map((c) => {
+          const isVenc = Boolean(c.vencedora)
+          return {
+            text: formatLmiEstudo(c.premioTotalComIof),
+            options: {
+              bold: true,
+              fill: { color: isVenc ? 'DCFCE7' : 'EFF6FF' },
+              fontSize: 6.8,
+              color: isVenc ? C_VENCEDORA_TEXT : C_NAVY,
+              align: 'right' as const,
+            },
+          }
+        }),
+      ])
+    }
+
+    const colWNome = 4.1
+    const colWSol = 1.1
+    const colWCiasCob = (GRID.contentWidth - colWNome - colWSol) / numColCias
+
+    sCob.addTable([headerRow, ...dataRows], {
+      x: GRID.marginLeft,
+      y: GRID.contentTop,
+      w: GRID.contentWidth,
+      colW: [colWNome, colWSol, ...Array(numColCias).fill(colWCiasCob)],
+      border: { pt: 0.5, color: C_BORDER },
+      margin: 0.02,
+    })
+  })
+
+  // =========================================================================
+  // SLIDE 10: Tabela Comparativa de POS & Franquias (42 linhas canônicas)
+  // Cabeçalho repetido em todas as páginas e larguras proporcionais
+  // =========================================================================
+  chunksLinhas.forEach((linhasChunk, chunkIdx) => {
+    const sPos = pptx.addSlide()
+    const subNum =
+      chunkIdx === 0 ? '10/12' : chunkIdx === 1 ? '10/12 (cont. 1/2)' : '10/12 (cont. 2/2)'
+    const subtitulo = `Parte ${chunkIdx + 1} de 3 • Participação Obrigatória do Segurado`
+    addSlideHeaderAndFooter(
+      sPos,
+      'Tabela Comparativa de POS & Franquias',
+      subtitulo,
+      subNum,
+      logoHeader,
+    )
+
+    const headerRow: pptxgen.TableRow = [
+      {
+        text: 'COBERTURAS',
+        options: {
+          bold: true,
+          fill: { color: C_NAVY },
+          color: C_WHITE,
+          fontSize: 6.8,
+          align: 'left',
+        },
+      },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        const numCob = c.numeroCoberturas || c.coberturasOriginais?.length || 42
+        const nome = isVenc
+          ? `★ ${c.seguradoraNome} (${numCob})`
+          : `${c.seguradoraNome} (${numCob})`
+        return {
+          text: nome,
+          options: {
+            bold: true,
+            fill: { color: isVenc ? '047857' : C_NAVY },
+            color: C_WHITE,
+            fontSize: 6.8,
+            align: 'center' as const,
+          },
+        }
+      }),
+    ]
+
+    const dataRows: pptxgen.TableRow[] = linhasChunk.map((linha, lIdx) => {
+      const bg = lIdx % 2 === 0 ? 'FFFFFF' : C_ZEBRA_ROW
+
+      // Exibe a nomenclatura da Taxonomia (campo nome da coberturas_canonicas)
+      const textoNome = linha.item.nome || linha.item.titulo
+
+      return [
+        {
+          text: `${linha.item.numero}  ${textoNome}`,
+          options: {
+            bold: true,
+            fontSize: 6.2,
+            color: C_NAVY,
+            fill: { color: bg },
+            align: 'left' as const,
+          },
+        },
+        ...colCias.map((c) => {
+          const isVenc = Boolean(c.vencedora)
+          const cell = linha.celulasPorProposta.get(c.id)
+          const franq = cell?.franquiaTexto || 'Não há'
+          const isX = franq === 'X'
+          const cellBg = isVenc ? (lIdx % 2 === 0 ? 'F0FDF4' : 'DCFCE7') : bg
+          return {
+            text: franq,
+            options: {
+              fontSize: 6.2,
+              color: isX ? '94A3B8' : isVenc ? C_VENCEDORA_TEXT : C_TEXT,
+              fill: { color: cellBg },
+              align: 'center' as const,
+              bold: isVenc && !isX,
+            },
+          }
+        }),
+      ]
+    })
+
+    const colWNomePos = 4.2
+    const colWCiasPos = (GRID.contentWidth - colWNomePos) / numColCias
+
+    sPos.addTable([headerRow, ...dataRows], {
+      x: GRID.marginLeft,
+      y: GRID.contentTop,
+      w: GRID.contentWidth,
+      colW: [colWNomePos, ...Array(numColCias).fill(colWCiasPos)],
+      border: { pt: 0.5, color: C_BORDER },
+      margin: 0.02,
+    })
+
+    // Nota de rodapé técnica
+    sPos.addText('* POS & Franquia por Reclamante, Evento, Veículo, Equipamento.', {
+      x: GRID.marginLeft,
+      y: 5.0,
+      w: 7.5,
+      h: 0.2,
+      fontFace: 'Arial',
+      fontSize: 7.2,
+      italic: true,
+      color: C_MUTED,
+    })
+  })
+
+  // =========================================================================
+  // SLIDE 11: Opções de Contratação (Editável)
+  // =========================================================================
+  const s11 = pptx.addSlide()
+  addSlideHeaderAndFooter(
+    s11,
+    'Opções de Contratação',
+    'Quadro de Decisão e Aceite',
+    '11/12',
+    logoHeader,
+  )
+
+  // Tabela compacta com as opções no topo e destaque da vencedora
+  const rowsOpcoesContratacao: pptxgen.TableRow[] = [
+    [
+      {
+        text: 'Item',
+        options: {
+          bold: true,
+          fill: { color: C_NAVY },
+          color: C_WHITE,
+          fontSize: 8,
+          align: 'left',
+        },
+      },
+      {
+        text: 'Dados / Opções',
+        options: {
+          bold: true,
+          fill: { color: C_NAVY },
+          color: C_WHITE,
+          fontSize: 8,
+          align: 'center',
+          colspan: numColCias,
+        },
+      },
+    ],
+    [
+      {
+        text: 'Opção de Contratação',
+        options: { bold: true, fontSize: 7.5, fill: { color: 'FFFFFF' } },
+      },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        return {
+          text: isVenc ? '( ✓ ) [RECOMENDADA]' : '(   )',
+          options: {
+            align: 'center' as const,
+            bold: true,
+            fontSize: 7.5,
+            fill: { color: isVenc ? C_VENCEDORA_BG : 'FFFFFF' },
+            color: isVenc ? C_VENCEDORA_TEXT : C_TEXT,
+          },
+        }
+      }),
+    ],
+    [
+      { text: 'Seguradora', options: { bold: true, fontSize: 7.5, fill: { color: C_ZEBRA_ROW } } },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        const rotulo = c.opcao ? `${c.seguradoraNome} (Opção ${c.opcao})` : c.seguradoraNome
+        return {
+          text: rotulo,
+          options: {
+            align: 'center' as const,
+            bold: true,
+            fontSize: 7.5,
+            fill: { color: isVenc ? C_VENCEDORA_BG : C_ZEBRA_ROW },
+            color: isVenc ? C_VENCEDORA_TEXT : C_NAVY,
+          },
+        }
+      }),
+    ],
+    [
+      {
+        text: 'Prêmio Total (com IOF)',
+        options: { bold: true, color: C_NAVY, fontSize: 8, fill: { color: 'FFFFFF' } },
+      },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        return {
+          text: formatLmiEstudo(c.premioTotalComIof),
+          options: {
+            align: 'right' as const,
+            bold: true,
+            fontSize: 8.5,
+            fill: { color: isVenc ? 'DCFCE7' : 'FFFFFF' },
+            color: isVenc ? C_VENCEDORA_TEXT : C_NAVY,
+          },
+        }
+      }),
+    ],
+    [
+      { text: 'Parcelamento sem Juros', options: { fontSize: 7.5, fill: { color: C_ZEBRA_ROW } } },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        return {
+          text: c.parcelamentoSemJurosTexto || '—',
+          options: {
+            align: 'center' as const,
+            fontSize: 7.5,
+            bold: true,
+            fill: { color: isVenc ? C_VENCEDORA_BG : C_ZEBRA_ROW },
+          },
+        }
+      }),
+    ],
+    [
+      { text: 'Nº de Coberturas', options: { fontSize: 7.5, fill: { color: 'FFFFFF' } } },
+      ...colCias.map((c) => {
+        const isVenc = Boolean(c.vencedora)
+        return {
+          text: String(c.numeroCoberturas || 42),
+          options: {
+            align: 'center' as const,
+            fontSize: 7.5,
+            bold: true,
+            fill: { color: isVenc ? C_VENCEDORA_BG : 'FFFFFF' },
+          },
+        }
+      }),
     ],
   ]
 
   s11.addTable(rowsOpcoesContratacao, {
-    x: 0.6,
-    y: 0.95,
-    w: 8.8,
+    x: GRID.marginLeft,
+    y: GRID.contentTop,
+    w: GRID.contentWidth,
     colW: colWArrayPremios,
     border: { pt: 0.5, color: C_BORDER },
     margin: 0.04,
@@ -1259,7 +1613,15 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 7.5, italic: true, color: C_MUTED },
       },
     ],
-    { x: 0.6, y: 2.7, w: 8.8, h: 2.5, fontFace: 'Arial', fontSize: 8, color: C_TEXT },
+    {
+      x: GRID.marginLeft,
+      y: 2.65,
+      w: GRID.contentWidth,
+      h: 2.55,
+      fontFace: 'Arial',
+      fontSize: 8,
+      color: C_TEXT,
+    },
   )
 
   // =========================================================================
@@ -1306,7 +1668,7 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Barra Navy no rodapé
-  s12.addShape(pptx.ShapeType.rect, {
+  s12.addShape(pptxgen.ShapeType.rect, {
     x: 0,
     y: 5.5,
     w: 10,

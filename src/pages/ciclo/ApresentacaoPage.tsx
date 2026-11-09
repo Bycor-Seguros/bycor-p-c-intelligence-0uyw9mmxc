@@ -560,6 +560,7 @@ export default function ApresentacaoPage() {
         opcao: opNum,
         versao: Number(p.versao || 1),
         ativa: p.ativa,
+        propostaVencedora: Boolean(p.proposta_vencedora),
         premioTotalComIof: Number(p.premio_bruto || 0),
         premioLiquido: Number((p as any).premio_liquido || 0),
         parcelamentoSemJurosTexto,
