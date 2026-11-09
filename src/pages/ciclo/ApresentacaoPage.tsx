@@ -90,9 +90,10 @@ interface PropostaOption {
   expand?: {
     seguradora?: { id?: string; nome: string }
     rfq?: {
+      id?: string
       conta_empreendimento?: string
       expand?: {
-        conta_empreendimento?: { id: string; nome_empreendimento: string }
+        conta_empreendimento?: EmpreendimentoOpt
       }
     }
   }
@@ -280,12 +281,11 @@ export default function ApresentacaoPage() {
           }),
           pb.collection('propostas').getFullList<PropostaOption>({
             sort: '-created',
-            expand: 'seguradora',
+            expand: 'seguradora,rfq,rfq.conta_empreendimento',
           }),
         ])
         setEmpreendimentos(emps)
         setPropostas(props)
-        if (emps.length > 0) setSelectedEmpId(emps[0].id)
 
         // Carrega equivalências C3
         try {
@@ -297,12 +297,20 @@ export default function ApresentacaoPage() {
         }
         if (props.length > 0) {
           const vencedora = props.find((p: any) => p.proposta_vencedora)
-          if (vencedora) {
-            setSelectedPropId(vencedora.id)
-          } else {
-            const selecionadaC3 = props.find((p: any) => p.status === 'Selecionada')
-            setSelectedPropId(selecionadaC3 ? selecionadaC3.id : props[0].id)
+          const inicialProp =
+            vencedora || props.find((p: any) => p.status === 'Selecionada') || props[0]
+          setSelectedPropId(inicialProp.id)
+
+          // Inicializa o dropdown de empreendimento com o empreendimento do RFQ da proposta inicial
+          const rfq = inicialProp.expand?.rfq
+          const empDoRfqId = rfq?.conta_empreendimento || rfq?.expand?.conta_empreendimento?.id
+          if (empDoRfqId && emps.some((e) => e.id === empDoRfqId)) {
+            setSelectedEmpId(empDoRfqId)
+          } else if (emps.length > 0) {
+            setSelectedEmpId(emps[0].id)
           }
+        } else if (emps.length > 0) {
+          setSelectedEmpId(emps[0].id)
         }
       } catch (e) {
         console.error(e)
@@ -313,18 +321,31 @@ export default function ApresentacaoPage() {
     fetchInit()
   }, [])
 
-  // Empreendimento do cliente (via conta_empreendimento do RFQ da proposta selecionada)
-  const selectedEmp = useMemo(() => {
-    if (!selectedPropId) return undefined
-    const rfqId = propostas.find((p) => p.id === selectedPropId)?.rfq
-    const rfq = propostas.find((p) => p.id === selectedPropId)?.expand?.rfq
+  // Sincroniza o dropdown de Empreendimento quando o usuário troca a Proposta selecionada.
+  // Se a proposta tiver RFQ associado com conta_empreendimento, o dropdown muda para esse empreendimento.
+  useEffect(() => {
+    if (!selectedPropId || propostas.length === 0) return
+    const prop = propostas.find((p) => p.id === selectedPropId)
+    const rfq = prop?.expand?.rfq
     const empId = rfq?.conta_empreendimento || rfq?.expand?.conta_empreendimento?.id
-    return empreendimentos.find((e) => e.id === empId) || empreendimentos[0]
-  }, [empreendimentos, propostas, selectedPropId])
+    if (empId && empreendimentos.some((e) => e.id === empId)) {
+      setSelectedEmpId(empId)
+    }
+  }, [selectedPropId, propostas, empreendimentos])
+
+  // Fonte da verdade do empreendimento: o dropdown "Selecione o Cliente / Empreendimento" (selectedEmpId).
+  // Alimenta a Minuta A4, a Minuta Executiva PPTX, o Estudo de Mercado F1 e o perfil em tela.
+  const selectedEmp = useMemo(() => {
+    if (selectedEmpId) {
+      const match = empreendimentos.find((e) => e.id === selectedEmpId)
+      if (match) return match
+    }
+    return empreendimentos[0]
+  }, [empreendimentos, selectedEmpId])
 
   // Ao trocar o empreendimento selecionado, limpa os campos editáveis de Bloco 11
-  // dependentes do risco — nunca carregar dados de outro empreendimento (ex.: defaults
-  // antigos do Acqua); o cossegurado é reposto a partir do cadastro real, quando houver.
+  // dependentes do risco — nunca carregar dados de outro empreendimento;
+  // o cossegurado é reposto a partir do cadastro real, quando houver.
   useEffect(() => {
     setEstudoForm((prev) => ({
       ...prev,
@@ -332,6 +353,11 @@ export default function ApresentacaoPage() {
       contatoInspecaoTel: '',
       contatoInspecaoEmail: '',
       cosseguradoContratacao: montarCosseguradoContratacao(selectedEmp),
+      objetivoTexto: selectedEmp?.nome_empreendimento
+        ? `Estudo de transição, para proteção patrimonial de ${selectedEmp.nome_empreendimento}${
+            selectedEmp.cossegurado_nome ? ` e ${selectedEmp.cossegurado_nome}` : ''
+          } para vigência de 01/11/2026 a 01/11/2027. Comparativo baseado nas características do empreendimento, coberturas da apólice anterior, know-how Bycor (Hotéis e Resorts) e propostas das seguradoras.`
+        : prev.objetivoTexto,
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmp?.id])
