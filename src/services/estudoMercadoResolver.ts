@@ -15,12 +15,74 @@ export interface PropostaInputEstudo {
   ativa?: boolean
   premioTotalComIof: number
   premioLiquido?: number
-  parcelamentoSemJurosTexto: string // ex: "4x", "7x"
+  parcelamentoSemJurosTexto: string // ex: "4x sem juros" ou ""
   numeroParcelasSemJuros?: number
+  condicoesPagamentoTexto?: string // ex: "Até 4 parcelas sem juros, ou até 7 parcelas, com juros de 2,0% ao mês."
   numeroCoberturas?: number
   vrdDm?: number
   vrdLc?: number
   coberturasOriginais: any[] // array de coberturas salvas na proposta
+}
+
+export interface ParcelamentoECondicoesResultado {
+  parcelamentoSemJurosTexto: string
+  condicoesPagamentoTexto: string
+  numeroParcelasSemJuros?: number
+}
+
+/**
+ * Extrai e normaliza "Parcelamento sem Juros" e texto de "Condições de Pagamento"
+ * a partir de forma_pagamento e numero_parcelas da proposta.
+ * Onde o campo não permitir determinar o parcelamento sem juros, retorna vazio
+ * para que o analista preencha nos Campos Editáveis (nunca valores fixos chumbados).
+ */
+export function extrairParcelamentoECondicoes(
+  formaPagamentoRaw?: string | null,
+  numeroParcelasRaw?: number | string | null,
+): ParcelamentoECondicoesResultado {
+  const forma = typeof formaPagamentoRaw === 'string' ? formaPagamentoRaw.trim() : ''
+  const numParc = Number(numeroParcelasRaw || 0)
+
+  if (!forma && (!numParc || isNaN(numParc) || numParc <= 0)) {
+    return {
+      parcelamentoSemJurosTexto: '',
+      condicoesPagamentoTexto: '',
+    }
+  }
+
+  // 1. Procura ocorrência de "sem juros" no texto
+  // Ex: "Até 4 parcelas sem juros, ou até 7 parcelas, com juros de 2,0% ao mês."
+  const matchSemJuros =
+    forma.match(/(?:até\s+|em\s+até\s+)?(\d+)\s*(?:x|parcelas?)\s+sem\s+juros/i) ||
+    forma.match(/sem\s+juros[^\d]*(\d+)\s*(?:x|parcelas?)/i)
+
+  let parcelamentoSemJurosTexto = ''
+  let numeroParcelasSemJuros: number | undefined
+
+  if (matchSemJuros && matchSemJuros[1]) {
+    const qtd = Number(matchSemJuros[1])
+    if (!isNaN(qtd) && qtd > 0) {
+      parcelamentoSemJurosTexto = `${qtd}x sem juros`
+      numeroParcelasSemJuros = qtd
+    }
+  } else if (/sem\s+juros/i.test(forma)) {
+    // Tem "sem juros" genérico; tenta capturar número de parcelas
+    const m = forma.match(/(\d+)\s*x/i) || forma.match(/(\d+)\s*parcelas?/i)
+    if (m && m[1]) {
+      const qtd = Number(m[1])
+      parcelamentoSemJurosTexto = `${qtd}x sem juros`
+      numeroParcelasSemJuros = qtd
+    }
+  }
+
+  // 2. Condições de pagamento: preserva o texto integral de forma_pagamento quando existir
+  const condicoesPagamentoTexto = forma
+
+  return {
+    parcelamentoSemJurosTexto,
+    condicoesPagamentoTexto,
+    numeroParcelasSemJuros,
+  }
 }
 
 export interface CelulaCoberturaEstudo {

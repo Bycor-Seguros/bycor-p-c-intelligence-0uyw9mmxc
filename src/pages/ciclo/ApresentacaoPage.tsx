@@ -25,7 +25,10 @@ import {
   CoberturaCanonicaRecord,
   CoberturaSinonimoRecord,
 } from '@/services/equivalenciaCoberturasService'
-import { PropostaInputEstudo } from '@/services/estudoMercadoResolver'
+import {
+  PropostaInputEstudo,
+  extrairParcelamentoECondicoes,
+} from '@/services/estudoMercadoResolver'
 import { toast } from '@/hooks/use-toast'
 import { usePedidoEmissao } from '@/hooks/usePedidoEmissao'
 import PedidoEmissaoDocumento from '@/components/PedidoEmissaoDocumento'
@@ -343,6 +346,40 @@ export default function ApresentacaoPage() {
     return empreendimentos[0]
   }, [empreendimentos, selectedEmpId])
 
+  // Todas as propostas da seguradora da proposta selecionada (para seletor de versões)
+  const selectedProp = propostas.find((p) => p.id === selectedPropId)
+
+  // Ao trocar a proposta selecionada, atualiza as observações de contratação com a condição de pagamento
+  // real da proposta (ex.: parcelamento com juros), preservando texto editado se compatível.
+  useEffect(() => {
+    if (!selectedProp) return
+    const forma = (selectedProp as any).forma_pagamento
+    const numP = (selectedProp as any).numero_parcelas
+    const { condicoesPagamentoTexto } = extrairParcelamentoECondicoes(forma, numP)
+
+    setEstudoForm((prev) => {
+      // Se há condição de pagamento real e observações atuais são a padrão ou vazias,
+      // compõe a observação incluindo as condições de pagamento da proposta selecionada.
+      const basePadrao = 'A seguradora terá prazo de até 25 dias para avaliação do risco'
+      let novaObs = prev.observacoesContratacao
+      if (condicoesPagamentoTexto) {
+        if (!novaObs || novaObs === basePadrao || novaObs.startsWith('Condições de pagamento:')) {
+          novaObs = `Condições de pagamento: ${condicoesPagamentoTexto}. ${basePadrao}.`
+        }
+      } else if (novaObs.startsWith('Condições de pagamento:')) {
+        novaObs = basePadrao
+      }
+      return {
+        ...prev,
+        observacoesContratacao: novaObs,
+      }
+    })
+  }, [
+    selectedProp?.id,
+    (selectedProp as any)?.forma_pagamento,
+    (selectedProp as any)?.numero_parcelas,
+  ])
+
   // Ao trocar o empreendimento selecionado, limpa os campos editáveis de Bloco 11
   // dependentes do risco — nunca carregar dados de outro empreendimento;
   // o cossegurado é reposto a partir do cadastro real, quando houver.
@@ -361,9 +398,6 @@ export default function ApresentacaoPage() {
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmp?.id])
-
-  // Todas as propostas da seguradora da proposta selecionada (para seletor de versões)
-  const selectedProp = propostas.find((p) => p.id === selectedPropId)
 
   // Agrupa todas as propostas por CIA + OPÇÃO. Cada opção tem sua versão ativa própria.
   // propostasExibicao apresenta cada opção com sua versão ativa para o usuário escolher como oferta
@@ -513,14 +547,11 @@ export default function ApresentacaoPage() {
     return propostasExibicao.map((p) => {
       const segNome = p.expand?.seguradora?.nome || 'Seguradora'
       const opNum = Number(p.opcao || 1)
-      const numParc = Number((p as any).numero_parcelas || 0)
-      const formaPag = (p as any).forma_pagamento || ''
+      const numParcRaw = (p as any).numero_parcelas
+      const formaPagRaw = (p as any).forma_pagamento
 
-      let parcelamentoTexto = numParc > 0 ? `${numParc}x` : '1x'
-      if (!numParc && formaPag) {
-        const matchParc = formaPag.match(/(\d+)x/i)
-        if (matchParc) parcelamentoTexto = `${matchParc[1]}x`
-      }
+      const { parcelamentoSemJurosTexto, condicoesPagamentoTexto, numeroParcelasSemJuros } =
+        extrairParcelamentoECondicoes(formaPagRaw, numParcRaw)
 
       return {
         id: p.id,
@@ -530,8 +561,9 @@ export default function ApresentacaoPage() {
         ativa: p.ativa,
         premioTotalComIof: Number(p.premio_bruto || 0),
         premioLiquido: Number((p as any).premio_liquido || 0),
-        parcelamentoSemJurosTexto: parcelamentoTexto,
-        numeroParcelasSemJuros: numParc || 1,
+        parcelamentoSemJurosTexto,
+        numeroParcelasSemJuros,
+        condicoesPagamentoTexto,
         numeroCoberturas: (p.coberturas || []).length || 42,
         vrdDm: Number((p as any).vrd_dm || 80000000),
         vrdLc: Number((p as any).vrd_lc || 15000000),
