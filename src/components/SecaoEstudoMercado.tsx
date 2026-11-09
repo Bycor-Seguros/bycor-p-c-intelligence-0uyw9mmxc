@@ -51,7 +51,7 @@ export function SecaoEstudoMercado({
   const [tabAtiva, setTabAtiva] = React.useState<'campos' | 'grade'>('campos')
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden print:hidden">
       {/* Header Retrátil com Ação de Exportar */}
       <div className="p-5 bg-gradient-to-r from-[#0F2B46] to-[#16578B] text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
