@@ -117,6 +117,98 @@ export interface LinhaComparativaEstudo {
   celulasPorProposta: Map<string, CelulaCoberturaEstudo> // chave: proposta.id
 }
 
+export interface TotaisVrdEstudoResultado {
+  vrdPredio?: number
+  vrdMmu?: number
+  vrdMmp?: number
+  vrdDmTotal?: number
+  vrdLcAnual?: number
+  vrdDmPlusLc?: number
+}
+
+/**
+ * Racional de cálculo dos Valores em Risco Declarados (VRDs) para o Estudo de Mercado (C4):
+ * - Prédio: valor do prédio isolado (armazenado em proposta.vrd_dm)
+ * - MMU/MMP: máquinas, móveis, utensílios e mercadorias (proposta.vrd_mmu / vrd_mmp)
+ * - Total DM (Danos Materiais):
+ *     * Havendo valor de Prédio e MMU/MMP: soma de Prédio + MMU/MMP
+ *     * Sem valor de MMU/MMP: equivalente ao valor de Prédio sozinho
+ *     * Sem Prédio mas com MMU/MMP: equivalente à somatória de MMU/MMP
+ * - LMGA (Total DM + LC):
+ *     * Agrega o valor de LC (Lucros Cessantes) ao Total DM apenas quando houver valor de LC
+ *     * Sem valor de LC: indefinido (exibido como '—' sem inventar valor)
+ */
+export function calcularTotaisVrdEstudo(params: {
+  vrdPredio?: number | null
+  vrdMmu?: number | null
+  vrdMmp?: number | null
+  vrdDmTotal?: number | null
+  vrdLc?: number | null
+  vrdDmPlusLc?: number | null
+}): TotaisVrdEstudoResultado {
+  const predio =
+    typeof params.vrdPredio === 'number' && !isNaN(params.vrdPredio) && params.vrdPredio > 0
+      ? params.vrdPredio
+      : undefined
+  const mmu =
+    typeof params.vrdMmu === 'number' && !isNaN(params.vrdMmu) && params.vrdMmu > 0
+      ? params.vrdMmu
+      : undefined
+  const mmp =
+    typeof params.vrdMmp === 'number' && !isNaN(params.vrdMmp) && params.vrdMmp > 0
+      ? params.vrdMmp
+      : undefined
+  const lc =
+    typeof params.vrdLc === 'number' && !isNaN(params.vrdLc) && params.vrdLc > 0
+      ? params.vrdLc
+      : undefined
+
+  const somaConteudo = (mmu || 0) + (mmp || 0)
+
+  // Total Danos Materiais
+  let vrdDmTotal: number | undefined
+  if (
+    typeof params.vrdDmTotal === 'number' &&
+    !isNaN(params.vrdDmTotal) &&
+    params.vrdDmTotal > 0 &&
+    // Se o caller já passou um vrdDmTotal calculado que seja diferente de predio puro quando há conteúdo,
+    // preservamos. Caso contrário, recalculamos pelo racional C4.
+    params.vrdDmTotal !== predio
+  ) {
+    vrdDmTotal = params.vrdDmTotal
+  } else if (predio !== undefined && somaConteudo > 0) {
+    vrdDmTotal = predio + somaConteudo
+  } else if (predio !== undefined) {
+    vrdDmTotal = predio
+  } else if (somaConteudo > 0) {
+    vrdDmTotal = somaConteudo
+  }
+
+  // Total DM + LC (LMGA)
+  let vrdDmPlusLc: number | undefined
+  if (
+    typeof params.vrdDmPlusLc === 'number' &&
+    !isNaN(params.vrdDmPlusLc) &&
+    params.vrdDmPlusLc > 0 &&
+    params.vrdDmPlusLc !== vrdDmTotal
+  ) {
+    vrdDmPlusLc = params.vrdDmPlusLc
+  } else if (vrdDmTotal !== undefined && lc !== undefined && lc > 0) {
+    vrdDmPlusLc = vrdDmTotal + lc
+  } else {
+    vrdDmPlusLc = undefined
+  }
+
+  return {
+    vrdPredio: predio,
+    vrdMmu: mmu,
+    vrdMmp: mmp,
+    vrdDmTotal,
+    vrdLcAnual: lc,
+    vrdDmPlusLc,
+  }
+}
+
 /**
  * Normaliza e formata LMI de número para o formato do Estudo
  */

@@ -9,6 +9,7 @@ import {
   resolverGradeEstudo42,
   LinhaComparativaEstudo,
   formatLmiEstudo,
+  calcularTotaisVrdEstudo,
 } from './estudoMercadoResolver'
 import { CoberturaCanonicaRecord, CoberturaSinonimoRecord } from './equivalenciaCoberturasService'
 import { LOGO_BYCOR_PATH, isLogoMediaAvailable } from '@/assets/logoBycorBase64'
@@ -541,14 +542,33 @@ export async function generateEstudoMercadoPptx(
   })
 
   // Tabela direita: Valores em Risco Declarados
+  // Aplica o racional C4 de cálculo de VRDs caso o caller não tenha pré-calculado:
+  // - Total DM = Prédio + MMU/MMP quando ambos existirem; ou só Prédio quando não houver MMU/MMP
+  // - LMGA (Total DM + LC) = Total DM + LC apenas quando houver LC
   // Sem fallbacks chumbados: onde o cadastro/proposta não traz o valor, fica '—'
   // para o analista preencher (nunca dados de outro empreendimento).
-  const vrdPredioStr = data.vrdPredio ? formatLmiEstudo(data.vrdPredio) : '—'
-  const vrdMmuStr = data.vrdMmu ? formatLmiEstudo(data.vrdMmu) : '—'
-  const vrdMmpStr = data.vrdMmp && data.vrdMmp > 0 ? formatLmiEstudo(data.vrdMmp) : '--'
-  const vrdDmTotalStr = data.vrdDmTotal ? formatLmiEstudo(data.vrdDmTotal) : '—'
-  const vrdLcAnualStr = data.vrdLcAnual ? formatLmiEstudo(data.vrdLcAnual) : '—'
-  const vrdTotalStr = data.vrdDmPlusLc ? formatLmiEstudo(data.vrdDmPlusLc) : '—'
+  const totaisCalculados = calcularTotaisVrdEstudo({
+    vrdPredio: data.vrdPredio,
+    vrdMmu: data.vrdMmu,
+    vrdMmp: data.vrdMmp,
+    vrdDmTotal: data.vrdDmTotal,
+    vrdLc: data.vrdLcAnual,
+    vrdDmPlusLc: data.vrdDmPlusLc,
+  })
+
+  const vrdPredioFinal = totaisCalculados.vrdPredio ?? data.vrdPredio
+  const vrdMmuFinal = totaisCalculados.vrdMmu ?? data.vrdMmu
+  const vrdMmpFinal = totaisCalculados.vrdMmp ?? data.vrdMmp
+  const vrdDmTotalFinal = totaisCalculados.vrdDmTotal ?? data.vrdDmTotal
+  const vrdLcAnualFinal = totaisCalculados.vrdLcAnual ?? data.vrdLcAnual
+  const vrdTotalFinal = totaisCalculados.vrdDmPlusLc ?? data.vrdDmPlusLc
+
+  const vrdPredioStr = vrdPredioFinal ? formatLmiEstudo(vrdPredioFinal) : '—'
+  const vrdMmuStr = vrdMmuFinal ? formatLmiEstudo(vrdMmuFinal) : '—'
+  const vrdMmpStr = vrdMmpFinal && vrdMmpFinal > 0 ? formatLmiEstudo(vrdMmpFinal) : '--'
+  const vrdDmTotalStr = vrdDmTotalFinal ? formatLmiEstudo(vrdDmTotalFinal) : '—'
+  const vrdLcAnualStr = vrdLcAnualFinal ? formatLmiEstudo(vrdLcAnualFinal) : '—'
+  const vrdTotalStr = vrdTotalFinal ? formatLmiEstudo(vrdTotalFinal) : '—'
 
   const rowsVrd: pptxgen.TableRow[] = [
     [
@@ -1226,7 +1246,7 @@ export async function generateEstudoMercadoPptx(
         text:
           '4. Gastos de Defesa nos Seguros de Responsabilidade Civil: deverá ser estabelecido um limite específico, onde as coberturas para "Custos de Defesa" e "Cobertura Básica (Indenização e Acordos)" a prejudicados não poderão compartilhar o mesmo limite. Desta forma, o segurado deverá determinar, dentro do Limite Máximo de Garantia (LMG) contratado, qual proporção será destinada a "Gastos de Defesa" e "Cobertura Básica (Indenização e Acordos)".\n' +
           'Sob nenhuma hipótese a Seguradora ou Corretora irá sugerir essa proporcionalidade, ficando sob responsabilidade integral do segurado essa definição. Este estudo contempla 100 mil a título de sugestão.\n' +
-          `    Custos de Defesa: ${data.sugestaoCustosDefesa || '—'}       Indenizações e Acordos: ${data.vrdDmPlusLc ? 'Saldo do LMG' : '____'}\n\n`,
+          `    Custos de Defesa: ${data.sugestaoCustosDefesa || '—'}       Indenizações e Acordos: ${vrdTotalFinal ? 'Saldo do LMG' : '____'}\n\n`,
       },
       {
         text: `• Observações: ${data.observacoesContratacao || '—'}\n\n`,

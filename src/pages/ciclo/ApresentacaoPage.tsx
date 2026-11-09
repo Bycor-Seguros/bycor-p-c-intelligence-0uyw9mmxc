@@ -28,6 +28,7 @@ import {
 import {
   PropostaInputEstudo,
   extrairParcelamentoECondicoes,
+  calcularTotaisVrdEstudo,
 } from '@/services/estudoMercadoResolver'
 import { toast } from '@/hooks/use-toast'
 import { usePedidoEmissao } from '@/hooks/usePedidoEmissao'
@@ -584,8 +585,21 @@ export default function ApresentacaoPage() {
         new Set(propostasParaEstudo.map((p) => p.seguradoraNome.toUpperCase())),
       )
 
-      const vrdDm = Number((prop as any)?.vrd_dm) || undefined
-      const vrdLc = Number((prop as any)?.vrd_lc) || undefined
+      const vrdPredioRaw = Number((prop as any)?.vrd_dm) || undefined
+      const vrdMmuRaw = Number((prop as any)?.vrd_mmu) || undefined
+      const vrdMmpRaw = Number((prop as any)?.vrd_mmp) || undefined
+      const vrdLcRaw = Number((prop as any)?.vrd_lc) || undefined
+
+      // Racional C4 de Danos Materiais e LMGA:
+      // - Total DM = Prédio + MMU/MMP (somados quando ambos existirem)
+      // - Sem MMU/MMP = Total DM é o valor de Prédio sozinho
+      // - LMGA (Total DM + LC) = Total DM + LC (apenas quando houver valor de LC)
+      const totaisVrd = calcularTotaisVrdEstudo({
+        vrdPredio: vrdPredioRaw,
+        vrdMmu: vrdMmuRaw,
+        vrdMmp: vrdMmpRaw,
+        vrdLc: vrdLcRaw,
+      })
 
       // Perfil do empreendimento SELECIONADO: todos os campos vêm do cadastro real
       // (empreendimentos) e da proposta/rodada. Onde não há dado, fica vazio ('—' no
@@ -606,12 +620,12 @@ export default function ApresentacaoPage() {
         construcaoTexto: montarConstrucaoTexto(emp),
         protecionaisTexto: montarProtecoesTexto(emp),
         sinistrosTexto: montarSinistrosTexto(emp),
-        vrdPredio: vrdDm,
-        vrdMmu: Number((prop as any)?.vrd_mmu) || undefined,
-        vrdMmp: Number((prop as any)?.vrd_mmp) || undefined,
-        vrdDmTotal: vrdDm,
-        vrdLcAnual: vrdLc,
-        vrdDmPlusLc: vrdDm && vrdLc ? vrdDm + vrdLc : undefined,
+        vrdPredio: totaisVrd.vrdPredio,
+        vrdMmu: totaisVrd.vrdMmu,
+        vrdMmp: totaisVrd.vrdMmp,
+        vrdDmTotal: totaisVrd.vrdDmTotal,
+        vrdLcAnual: totaisVrd.vrdLcAnual,
+        vrdDmPlusLc: totaisVrd.vrdDmPlusLc,
         ciasApresentaramProposta: ciasComProposta,
         ciasEmAnaliseOuNaoApresentaram: [],
         propostas: propostasParaEstudo,
