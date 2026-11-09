@@ -605,8 +605,18 @@ export default function ApresentacaoPage() {
       // Perfil do empreendimento SELECIONADO: todos os campos vêm do cadastro real
       // (empreendimentos) e da proposta/rodada. Onde não há dado, fica vazio ('—' no
       // PPTX) para o analista preencher — nunca dados de outro empreendimento.
+      // Deriva o nome limpo do segurado principal para a capa e relatórios
+      // Se nome_empreendimento contiver sufixo de CNPJ (ex: "Condomínio São International Square - 24.742.208/0002-25"),
+      // extrai o nome sem o CNPJ; caso contrário utiliza razao_social ou nome_empreendimento.
+      const seguradoPrincipalDerivado = (() => {
+        const rawNome = emp?.razao_social || emp?.nome_empreendimento || ''
+        const semCnpj = rawNome.replace(/\s*[-–]\s*\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*$/, '').trim()
+        return semCnpj || rawNome || 'Segurado Principal'
+      })()
+
       const estudoData: EstudoMercadoEditavelData = {
         empreendimentoNome: emp?.nome_empreendimento || '',
+        seguradoPrincipalNome: seguradoPrincipalDerivado,
         cosseguradoNome: emp?.cossegurado_nome || undefined,
         vigenciaTexto: montarVigenciaTexto(prop?.vigencia_inicio, prop?.vigencia_fim),
         versaoTexto: montarVersaoTexto(prop),

@@ -17,6 +17,7 @@ import { LOGO_BYCOR_PATH, isLogoMediaAvailable } from '@/assets/logoBycorBase64'
 export interface EstudoMercadoEditavelData {
   // Dados Gerais do Cabeçalho / Capa
   empreendimentoNome: string
+  seguradoPrincipalNome?: string
   cosseguradoNome?: string
   vigenciaTexto: string // ex: "01.11.2026 a 01.11. 2027 (365 dias)"
   versaoTexto: string // ex: "Outubro/2026 - V2"
@@ -262,32 +263,71 @@ export async function generateEstudoMercadoPptx(
     { x: 0.6, y: 2.3, w: 3.4, h: 2.5, fontFace: 'Arial', align: 'left' },
   )
 
-  // Lado direito: Título principal, Empreendimento e Vigência
-  s1.addText(
-    [
-      { text: 'Condomínio\n', options: { fontSize: 18, color: C_NAVY, bold: true } },
+  // Lado direito: Título principal, Segurado Principal, Co-segurado e Vigência
+  // Fundo do slide é azul-marinho (C_NAVY = '0F2B46'). Todos os textos devem ter
+  // ALTO CONTRASTE (branco 'FFFFFF', azul claro '93C5FD', verde esmeralda '34D399', 'E2E8F0'),
+  // nunca cinzas apagados ou azul escuro sobre azul escuro.
+  const seguradoPrincipal =
+    data.seguradoPrincipalNome?.trim() || data.empreendimentoNome?.trim() || 'Segurado Principal'
+
+  const capaRuns: pptxgen.TextProps[] = [
+    {
+      text: 'SEGURADO PRINCIPAL\n',
+      options: { fontSize: 10, bold: true, color: '93C5FD', fontFace: 'Arial' },
+    },
+    {
+      text: `${seguradoPrincipal}\n`,
+      options: { fontSize: 21, bold: true, color: 'FFFFFF', fontFace: 'Arial' },
+    },
+  ]
+
+  if (data.cosseguradoNome && data.cosseguradoNome.trim().length > 0) {
+    capaRuns.push(
       {
-        text: `${data.empreendimentoNome}\n\n`,
-        options: { fontSize: 24, bold: true, color: C_NAVY },
+        text: '\nCO-SEGURADO\n',
+        options: { fontSize: 9.5, bold: true, color: '93C5FD', fontFace: 'Arial' },
       },
       {
-        text: `${data.cosseguradoNome || ''}\n`,
-        options: { fontSize: 14, bold: true, color: C_BLUE },
+        text: `${data.cosseguradoNome.trim()}\n`,
+        options: { fontSize: 14, bold: true, color: '34D399', fontFace: 'Arial' },
       },
-      { text: `${data.enderecoTexto || ''}\n\n\n`, options: { fontSize: 9.5, color: C_MUTED } },
-      {
-        text: 'Estudo para Contratação do\nSeguro Patrimonial\n\n',
-        options: { fontSize: 18, bold: true, color: C_NAVY },
-      },
-      {
-        text: `Vigência: ${data.vigenciaTexto} | ${data.versaoTexto}`,
-        options: { fontSize: 10, bold: true, color: C_BLUE },
-      },
-    ],
-    { x: 4.8, y: 0.8, w: 4.8, h: 4.2, fontFace: 'Arial', align: 'left', margin: 0 },
+    )
+  }
+
+  if (data.enderecoTexto && data.enderecoTexto.trim().length > 0) {
+    capaRuns.push({
+      text: `${data.enderecoTexto.trim()}\n\n`,
+      options: { fontSize: 9.5, color: 'CBD5E1', fontFace: 'Arial' },
+    })
+  } else {
+    capaRuns.push({
+      text: '\n',
+      options: { fontSize: 9.5, color: 'CBD5E1', fontFace: 'Arial' },
+    })
+  }
+
+  capaRuns.push(
+    {
+      text: 'Estudo para Contratação do Seguro Patrimonial\n',
+      options: { fontSize: 15, bold: true, color: 'FFFFFF', fontFace: 'Arial' },
+    },
+    {
+      text: `Vigência: ${data.vigenciaTexto} | ${data.versaoTexto}`,
+      options: { fontSize: 10.5, bold: true, color: '93C5FD', fontFace: 'Arial' },
+    },
   )
 
-  // Avisos legais no rodapé
+  s1.addText(capaRuns, {
+    x: 4.8,
+    y: 0.8,
+    w: 4.8,
+    h: 4.0,
+    fontFace: 'Arial',
+    align: 'left',
+    margin: 0,
+  })
+
+  // Avisos legais no rodapé da capa (alto contraste sobre azul-marinho)
   s1.addText(
     [
       { text: 'Material de uso restrito ao segurado.\n' },
@@ -297,13 +337,13 @@ export async function generateEstudoMercadoPptx(
     ],
     {
       x: 4.8,
-      y: 5.0,
+      y: 4.95,
       w: 4.8,
-      h: 0.5,
+      h: 0.55,
       fontFace: 'Arial',
       fontSize: 8,
       italic: true,
-      color: C_MUTED,
+      color: '94A3B8',
     },
   )
 
@@ -820,16 +860,31 @@ export async function generateEstudoMercadoPptx(
     logoHeader,
   )
 
-  // Card Cias que apresentaram Propostas
+  // Layout equilibrado do Slide 7:
+  // Coluna esquerda (x: 0.60 a 6.20, largura 5.60) dividida verticalmente em dois cards:
+  //   1) Card Superior (Verde): Cias que apresentaram propostas
+  //   2) Card Inferior (Neutro/Rosé): Cias em análise ou que não apresentaram
+  // Coluna direita (x: 6.45 a 9.40, largura 2.95, altura 3.90): Foto corporativa de apoio,
+  // posicionada estritamente à direita SEM NENHUMA sobreposição aos textos e cards.
+
+  const colTextX = GRID.marginLeft // 0.60
+  const colTextW = 5.65
+  const card1Y = GRID.contentTop + 0.05 // 1.10
+  const card1H = 1.88
+  const card2Y = card1Y + card1H + 0.14 // 3.12
+  const card2H = 1.88
+
+  // 1) Card Cias que apresentaram Propostas (Verde)
   s7.addShape(shapeRoundRect, {
-    x: GRID.marginLeft,
-    y: 1.7,
-    w: 4.4,
-    h: 3.3,
+    x: colTextX,
+    y: card1Y,
+    w: colTextW,
+    h: card1H,
     fill: { color: 'F0FDF4' },
-    line: { color: 'BBF7D0', width: 1 },
-    rectRadius: 0.08,
+    line: { color: '86EFAC', width: 1.2 },
+    rectRadius: 0.06,
   })
+
   const ciasPropList =
     data.ciasApresentaramProposta && data.ciasApresentaramProposta.length > 0
       ? data.ciasApresentaramProposta
@@ -846,19 +901,29 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 10, bold: true, color: C_GREEN },
       })),
     ],
-    { x: GRID.marginLeft + 0.2, y: GRID.contentTop + 0.15, w: 4.7, h: 1.65, fontFace: 'Arial' },
+    {
+      x: colTextX + 0.2,
+      y: card1Y + 0.12,
+      w: colTextW - 0.4,
+      h: card1H - 0.24,
+      fontFace: 'Arial',
+      align: 'left',
+      valign: 'top',
+      margin: 0,
+    },
   )
 
-  // Card Cias em análise ou não apresentaram
+  // 2) Card Cias em análise ou não apresentaram (Rosé/Neutro com ícone ✕)
   s7.addShape(shapeRoundRect, {
-    x: 5.2,
-    y: 1.7,
-    w: 4.2,
-    h: 3.3,
+    x: colTextX,
+    y: card2Y,
+    w: colTextW,
+    h: card2H,
     fill: { color: 'FEF2F2' },
-    line: { color: 'FECACA', width: 1 },
-    rectRadius: 0.08,
+    line: { color: 'FECACA', width: 1.2 },
+    rectRadius: 0.06,
   })
+
   const ciasSemPropList =
     data.ciasEmAnaliseOuNaoApresentaram && data.ciasEmAnaliseOuNaoApresentaram.length > 0
       ? data.ciasEmAnaliseOuNaoApresentaram
@@ -879,17 +944,26 @@ export async function generateEstudoMercadoPptx(
         options: { fontSize: 10, bold: true, color: 'DC2626' },
       })),
     ],
-    { x: GRID.marginLeft + 0.2, y: 3.3, w: 4.7, h: 1.65, fontFace: 'Arial' },
+    {
+      x: colTextX + 0.2,
+      y: card2Y + 0.12,
+      w: colTextW - 0.4,
+      h: card2H - 0.24,
+      fontFace: 'Arial',
+      align: 'left',
+      valign: 'top',
+      margin: 0,
+    },
   )
 
-  // Foto de fachada corporativa à direita
+  // Foto de fachada corporativa à direita (sem sobreposição com os cards)
   if (includePhotos) {
     s7.addImage({
       path: 'https://img.usecurling.com/p/600/800?q=modern+glass+building+headquarters&color=blue',
-      x: 5.9,
-      y: GRID.contentTop,
-      w: 3.5,
-      h: 4.0,
+      x: 6.45,
+      y: card1Y,
+      w: 2.95,
+      h: 3.9,
     })
   }
 
@@ -1092,6 +1166,34 @@ export async function generateEstudoMercadoPptx(
     })
     const chartValues = colCias.map((p) => Math.round(p.premioTotalComIof || 0))
 
+    // Paleta de cores para o gráfico:
+    // Identidade Bycor: verde esmeralda ('15803D' / '10B981') e tons de azul profissional ('16578B' / '2563EB').
+    // Quando cada proposta é uma série individual, o PptxGenJS colore cada barra com a cor da sua série!
+    // Se há vencedora identificada, a série da vencedora recebe o verde Bycor ('10B981'),
+    // e as demais recebem azuis institucionais em gradiente sutil.
+    const hasVencedora = colCias.some((p) => p.vencedora)
+
+    // Cores Bycor para as barras:
+    // Barra vencedora: verde esmeralda Bycor ('10B981' / '15803D')
+    // Demais barras: tons azuis corporativos ('16578B', '2563EB', '0284C7', '3B82F6')
+    const bluePalette = ['16578B', '2563EB', '0284C7', '3B82F6', '0EA5E9', '1D4ED8']
+    let blueIdx = 0
+
+    const barColors = colCias.map((p) => {
+      if (p.vencedora) {
+        return '10B981' // Verde esmeralda Bycor
+      }
+      if (!hasVencedora) {
+        // Se nenhuma está marcada como vencedora, usa azul Bycor e verde alternados
+        const c = blueIdx % 2 === 0 ? '16578B' : '10B981'
+        blueIdx++
+        return c
+      }
+      const c = bluePalette[blueIdx % bluePalette.length]
+      blueIdx++
+      return c
+    })
+
     const chartData = [
       {
         name: 'Prêmio Total (com IOF)',
@@ -1106,7 +1208,7 @@ export async function generateEstudoMercadoPptx(
       w: 4.6,
       h: 2.1,
       barDir: 'col',
-      chartColors: [C_NAVY],
+      chartColors: barColors,
       dataLabelPosition: 'outEnd',
       dataLabelFormatCode: '#,##0',
       dataLabelFontSize: 7,
