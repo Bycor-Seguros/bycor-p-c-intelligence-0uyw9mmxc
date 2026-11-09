@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Layout from '@/components/Layout'
+import { Toaster } from '@/components/ui/toaster'
 
 // Auth Pages
 import LoginPage from '@/pages/auth/LoginPage'
@@ -73,6 +74,7 @@ export default function App() {
           {/* 404 Catch-All */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <Toaster />
       </BrowserRouter>
     </AuthProvider>
   )

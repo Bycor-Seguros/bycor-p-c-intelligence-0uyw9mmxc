@@ -121,7 +121,7 @@ function addSlideHeaderAndFooter(
   })
 
   // Linha sutil separadora abaixo do cabeçalho
-  slide.addShape(pptxgen.ShapeType.rect, {
+  slide.addShape('rect' as pptxgen.ShapeType, {
     x: GRID.marginLeft,
     y: GRID.titleTop + 0.58,
     w: GRID.contentWidth,
@@ -232,8 +232,12 @@ export async function generateEstudoMercadoPptx(
   // =========================================================================
   const s1 = pptx.addSlide()
 
+  const shapeRect = (pptx.ShapeType?.rect || 'rect') as pptxgen.ShapeType
+  const shapeRoundRect = (pptx.ShapeType?.roundRect || 'roundRect') as pptxgen.ShapeType
+  const chartBar = (pptx.ChartType?.bar || (pptx as any).charts?.BAR || 'bar') as any
+
   // Faixa esquerda de ilustração / cor
-  s1.addShape(pptxgen.ShapeType.rect, {
+  s1.addShape(shapeRect, {
     x: 0,
     y: 0,
     w: 10,
@@ -360,7 +364,7 @@ export async function generateEstudoMercadoPptx(
 
   diferenciais.forEach((d, i) => {
     const xPos = startX + i * (cardW + gapX)
-    s2.addShape(pptxgen.ShapeType.roundRect, {
+    s2.addShape(shapeRoundRect, {
       x: xPos,
       y: cardY,
       w: cardW,
@@ -380,7 +384,7 @@ export async function generateEstudoMercadoPptx(
   })
 
   // Segmentos e Produtos no rodapé
-  s2.addShape(pptxgen.ShapeType.roundRect, {
+  s2.addShape(shapeRoundRect, {
     x: GRID.marginLeft,
     y: 3.75,
     w: GRID.contentWidth,
@@ -471,26 +475,25 @@ export async function generateEstudoMercadoPptx(
     const bx = GRID.marginLeft + col * (bW + bGapX)
     const by = 1.7 + row * (bH + bGapY)
 
-    s3.addShape(pptxgen.ShapeType.roundRect, {
+    s3.addShape(shapeRoundRect, {
       x: bx,
       y: by,
       w: bW,
       h: bH,
       fill: { color: C_BG_CARD },
       line: { color: C_BORDER, width: 1 },
-      rectRadius: 0.08,
+      rectRadius: 0.06,
     })
 
-    // Barra azul superior
-    s3.addShape(pptxgen.ShapeType.rect, {
+    // Faixa colorida no topo do card
+    s3.addShape(shapeRect, {
       x: bx,
       y: by,
       w: bW,
-      h: 0.06,
+      h: 0.04,
       fill: { color: C_BLUE },
       line: { color: C_BLUE },
     })
-
     s3.addText(
       [
         { text: `${b.num}\n`, options: { fontSize: 13, bold: true, color: C_BLUE } },
@@ -514,16 +517,15 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Card do texto do objetivo
-  s4.addShape(pptxgen.ShapeType.roundRect, {
+  s4.addShape(shapeRoundRect, {
     x: GRID.marginLeft,
-    y: GRID.contentTop,
+    y: 3.45,
     w: GRID.contentWidth,
-    h: 2.1,
-    fill: { color: C_BG_CARD },
-    line: { color: C_BORDER, width: 1 },
+    h: 1.6,
+    fill: { color: 'FEF2F2' },
+    line: { color: 'FECACA', width: 1.2 },
     rectRadius: 0.08,
   })
-
   s4.addText(
     [
       {
@@ -819,16 +821,15 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Card Cias que apresentaram Propostas
-  s7.addShape(pptxgen.ShapeType.roundRect, {
+  s7.addShape(shapeRoundRect, {
     x: GRID.marginLeft,
-    y: GRID.contentTop,
-    w: 5.1,
-    h: 1.95,
-    fill: { color: C_BG_CARD },
-    line: { color: C_BORDER, width: 1 },
+    y: 1.7,
+    w: 4.4,
+    h: 3.3,
+    fill: { color: 'F0FDF4' },
+    line: { color: 'BBF7D0', width: 1 },
     rectRadius: 0.08,
   })
-
   const ciasPropList =
     data.ciasApresentaramProposta && data.ciasApresentaramProposta.length > 0
       ? data.ciasApresentaramProposta
@@ -849,16 +850,15 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Card Cias em análise ou não apresentaram
-  s7.addShape(pptxgen.ShapeType.roundRect, {
-    x: GRID.marginLeft,
-    y: 3.15,
-    w: 5.1,
-    h: 1.95,
-    fill: { color: C_BG_CARD },
-    line: { color: C_BORDER, width: 1 },
+  s7.addShape(shapeRoundRect, {
+    x: 5.2,
+    y: 1.7,
+    w: 4.2,
+    h: 3.3,
+    fill: { color: 'FEF2F2' },
+    line: { color: 'FECACA', width: 1 },
     rectRadius: 0.08,
   })
-
   const ciasSemPropList =
     data.ciasEmAnaliseOuNaoApresentaram && data.ciasEmAnaliseOuNaoApresentaram.length > 0
       ? data.ciasEmAnaliseOuNaoApresentaram
@@ -1100,7 +1100,7 @@ export async function generateEstudoMercadoPptx(
       },
     ]
 
-    s8.addChart(pptxgen.ChartType.bar, chartData, {
+    s8.addChart(chartBar, chartData, {
       x: GRID.marginLeft,
       y: 2.85,
       w: 4.6,
@@ -1127,7 +1127,7 @@ export async function generateEstudoMercadoPptx(
   }
 
   // Bloco técnico lateral: Risco Relativo vs Risco Absoluto e Destaque
-  s8.addShape(pptxgen.ShapeType.roundRect, {
+  s8.addShape(shapeRoundRect, {
     x: 5.4,
     y: 2.85,
     w: 4.0,
@@ -1668,7 +1668,7 @@ export async function generateEstudoMercadoPptx(
   )
 
   // Barra Navy no rodapé
-  s12.addShape(pptxgen.ShapeType.rect, {
+  s12.addShape(shapeRect, {
     x: 0,
     y: 5.5,
     w: 10,
