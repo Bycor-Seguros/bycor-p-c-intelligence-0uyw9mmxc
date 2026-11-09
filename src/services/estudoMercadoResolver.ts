@@ -67,11 +67,28 @@ export function extrairParcelamentoECondicoes(
     }
   } else if (/sem\s+juros/i.test(forma)) {
     // Tem "sem juros" genérico; tenta capturar número de parcelas
-    const m = forma.match(/(\d+)\s*x/i) || forma.match(/(\d+)\s*parcelas?/i)
+    const m = forma.match(/(\d+)\s*[xX]\b/i) || forma.match(/(\d+)\s*parcelas?/i)
     if (m && m[1]) {
       const qtd = Number(m[1])
       parcelamentoSemJurosTexto = `${qtd}x sem juros`
       numeroParcelasSemJuros = qtd
+    }
+  } else {
+    // Não menciona "sem juros":
+    // (a) Formato como "6x BOLETO BANCARIO" (número seguido de "x" ou "X" — Porto Seguro) -> extrai "6x"
+    const matchX =
+      forma.match(/(?:^|\b)(\d+)\s*[xX]\b/i) || forma.match(/(?:^|\b)(\d+)\s*parcelas?\b/i)
+    if (matchX && matchX[1]) {
+      const qtd = Number(matchX[1])
+      if (!isNaN(qtd) && qtd > 0) {
+        parcelamentoSemJurosTexto = `${qtd}x`
+        numeroParcelasSemJuros = qtd
+      }
+    } else if (!isNaN(numParc) && numParc > 0) {
+      // (b) Quando o texto da forma_pagamento não indicar parcelamento (ex: "Boleto bancário", numero_parcelas=4),
+      // usa numero_parcelas da proposta como fallback e imprime "Nx" simples (sem dizer "sem juros")
+      parcelamentoSemJurosTexto = `${numParc}x`
+      numeroParcelasSemJuros = numParc
     }
   }
 
