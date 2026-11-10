@@ -72,6 +72,10 @@ interface EmpreendimentoOpt {
   sinistros_ultimos_5anos?: string
   detalhe_sinistros?: string
   faturamento_12m_rs: number
+  // Bloco 11 — contatos de inspeção persistidos por empreendimento
+  contato_inspecao_nome?: string
+  contato_inspecao_telefone?: string
+  contato_inspecao_email?: string
 }
 
 interface PropostaOption {
@@ -388,15 +392,88 @@ export default function ApresentacaoPage() {
     (selectedProp as any)?.numero_parcelas,
   ])
 
-  // Ao trocar o empreendimento selecionado, limpa os campos editáveis de Bloco 11
-  // dependentes do risco — nunca carregar dados de outro empreendimento;
-  // o cossegurado é reposto a partir do cadastro real, quando houver.
+  // Bloco 11 — persistência dos contatos de inspeção POR EMPREENDIMENTO.
+  // Os campos são gravados no cadastro do empreendimento (com debounce) e
+  // recarregados do banco ao montar a tela e ao trocar de empreendimento.
+  const selectedEmpIdRef = React.useRef<string>('')
+  selectedEmpIdRef.current = selectedEmp?.id || ''
+  const saveContatosTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingContatosRef = React.useRef<{
+    empId: string
+    values: {
+      contato_inspecao_nome?: string
+      contato_inspecao_telefone?: string
+      contato_inspecao_email?: string
+    }
+  } | null>(null)
+
+  const flushContatosInspecao = React.useCallback(async () => {
+    if (saveContatosTimerRef.current) {
+      clearTimeout(saveContatosTimerRef.current)
+      saveContatosTimerRef.current = null
+    }
+    const pend = pendingContatosRef.current
+    pendingContatosRef.current = null
+    if (!pend || !pend.empId) return
+    try {
+      await pb.collection('empreendimentos').update(pend.empId, pend.values)
+      setEmpreendimentos((prev) =>
+        prev.map((e) => (e.id === pend.empId ? { ...e, ...pend.values } : e)),
+      )
+    } catch (err) {
+      console.warn('Aviso: falha ao salvar contatos de inspeção no empreendimento:', err)
+    }
+  }, [])
+
+  // Descarrega gravações pendentes ao desmontar a tela
   useEffect(() => {
+    return () => {
+      if (saveContatosTimerRef.current) clearTimeout(saveContatosTimerRef.current)
+      const pend = pendingContatosRef.current
+      if (pend?.empId) {
+        pb.collection('empreendimentos')
+          .update(pend.empId, pend.values)
+          .catch(() => {})
+      }
+    }
+  }, [])
+
+  const handleChangeFormState = (field: keyof EstudoMercadoFormState, val: string) => {
+    setEstudoForm((p) => ({ ...p, [field]: val }))
+    const campoContato =
+      field === 'contatoInspecaoNome'
+        ? 'contato_inspecao_nome'
+        : field === 'contatoInspecaoTel'
+          ? 'contato_inspecao_telefone'
+          : field === 'contatoInspecaoEmail'
+            ? 'contato_inspecao_email'
+            : null
+    if (!campoContato) return
+    const empId = selectedEmpIdRef.current
+    if (!empId) return
+    const prevPend =
+      pendingContatosRef.current?.empId === empId ? pendingContatosRef.current.values : {}
+    pendingContatosRef.current = {
+      empId,
+      values: { ...prevPend, [campoContato]: val },
+    }
+    if (saveContatosTimerRef.current) clearTimeout(saveContatosTimerRef.current)
+    saveContatosTimerRef.current = setTimeout(() => {
+      saveContatosTimerRef.current = null
+      void flushContatosInspecao()
+    }, 600)
+  }
+
+  // Ao trocar o empreendimento selecionado, recarrega os campos editáveis de
+  // Bloco 11 a partir do cadastro persistido — nunca dados de outro
+  // empreendimento; o cossegurado é reposto a partir do cadastro real.
+  useEffect(() => {
+    void flushContatosInspecao()
     setEstudoForm((prev) => ({
       ...prev,
-      contatoInspecaoNome: '',
-      contatoInspecaoTel: '',
-      contatoInspecaoEmail: '',
+      contatoInspecaoNome: selectedEmp?.contato_inspecao_nome || '',
+      contatoInspecaoTel: selectedEmp?.contato_inspecao_telefone || '',
+      contatoInspecaoEmail: selectedEmp?.contato_inspecao_email || '',
       cosseguradoContratacao: montarCosseguradoContratacao(selectedEmp),
       objetivoTexto: selectedEmp?.nome_empreendimento
         ? `Estudo de transição, para proteção patrimonial de ${selectedEmp.nome_empreendimento}${
@@ -540,12 +617,17 @@ export default function ApresentacaoPage() {
     if (!selectedProp) return null
     const emp = await carregarEmpreendimentoDaProposta(selectedProp)
     return montarDadosPedidoEmissao(selectedProp as any, emp as any, {
-      contatoInspecaoNome: estudoForm.contatoInspecaoNome,
-      contatoInspecaoTel: estudoForm.contatoInspecaoTel,
-      contatoInspecaoEmail: estudoForm.contatoInspecaoEmail,
+      // Bloco 11 persistido; fallback ao que já foi gravado no Pedido de
+      // Emissão (nunca sobrescrever em branco um contato existente).
+      contatoInspecaoNome:
+        estudoForm.contatoInspecaoNome || (pedidoEmissaoRec as any)?.inspecao_responsavel || '',
+      contatoInspecaoTel:
+        estudoForm.contatoInspecaoTel || (pedidoEmissaoRec as any)?.inspecao_telefone || '',
+      contatoInspecaoEmail:
+        estudoForm.contatoInspecaoEmail || (pedidoEmissaoRec as any)?.inspecao_email || '',
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProp?.id, selectedEmp?.id, estudoForm])
+  }, [selectedProp?.id, selectedEmp?.id, estudoForm, pedidoEmissaoRec])
   const [dadosPedido, setDadosPedido] = useState<Awaited<
     ReturnType<typeof montarDadosPedidoEmissao>
   > | null>(null)
@@ -558,6 +640,38 @@ export default function ApresentacaoPage() {
       cancelled = true
     }
   }, [dadosPedidoEmissao])
+
+  // Recuperação única: Pedidos de Emissão antigos têm contatos de inspeção
+  // gravados, mas o cadastro do empreendimento ainda não — propaga para o
+  // empreendimento e para o Bloco 11, sem nunca apagar o que já existe.
+  useEffect(() => {
+    const rec = pedidoEmissaoRec as any
+    const emp = selectedEmp as any
+    if (!rec || !emp?.id) return
+    const updates: Record<string, string> = {}
+    if (rec.inspecao_responsavel && !emp.contato_inspecao_nome)
+      updates.contato_inspecao_nome = rec.inspecao_responsavel
+    if (rec.inspecao_telefone && !emp.contato_inspecao_telefone)
+      updates.contato_inspecao_telefone = rec.inspecao_telefone
+    if (rec.inspecao_email && !emp.contato_inspecao_email)
+      updates.contato_inspecao_email = rec.inspecao_email
+    if (Object.keys(updates).length === 0) return
+    ;(async () => {
+      try {
+        await pb.collection('empreendimentos').update(emp.id, updates)
+        setEmpreendimentos((prev) => prev.map((e) => (e.id === emp.id ? { ...e, ...updates } : e)))
+        setEstudoForm((prev) => ({
+          ...prev,
+          contatoInspecaoNome: prev.contatoInspecaoNome || updates.contato_inspecao_nome || '',
+          contatoInspecaoTel: prev.contatoInspecaoTel || updates.contato_inspecao_telefone || '',
+          contatoInspecaoEmail: prev.contatoInspecaoEmail || updates.contato_inspecao_email || '',
+        }))
+      } catch (err) {
+        console.warn('Aviso: falha ao propagar contatos do Pedido para o empreendimento:', err)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoEmissaoRec, selectedEmp?.id])
 
   // Prepara lista de propostas ativas comparadas na mesa (todas as cias/opções ativas)
   const propostasParaEstudo: PropostaInputEstudo[] = React.useMemo(() => {
@@ -794,7 +908,7 @@ export default function ApresentacaoPage() {
       {/* Seção Estudo de Mercado F1 (Campos Editáveis & Pré-visualização) */}
       <SecaoEstudoMercado
         formState={estudoForm}
-        onChangeFormState={(field, val) => setEstudoForm((p) => ({ ...p, [field]: val }))}
+        onChangeFormState={handleChangeFormState}
         onExportarPptx={handleExportEstudoMercadoPptx}
         isExporting={exportingEstudoPptx}
         empreendimentoNome={selectedEmp?.nome_empreendimento || 'Empreendimento Selecionado'}

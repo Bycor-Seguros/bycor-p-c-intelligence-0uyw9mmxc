@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T03:39:53.668Z",
+  "generatedAt": "2026-11-10T03:57:46.549Z",
   "collections": [
     {
       "name": "users",
@@ -499,6 +499,24 @@
         {
           "name": "protecoes_raw_json",
           "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contato_inspecao_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contato_inspecao_telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contato_inspecao_email",
+          "type": "text",
           "required": false,
           "system": false
         }
