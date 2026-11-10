@@ -61,6 +61,8 @@ export interface DadosPropostaVencedora {
   arquivoProposta: string
   arquivoPropostaNome: string
   seguradoraNome: string
+  /** E-mail da seguradora no cadastro (vazio quando não cadastrado). */
+  seguradoraEmail: string
   opcao: number
   versao: number
 }
@@ -82,7 +84,7 @@ type PropostaExpandida = {
   arquivo_tipo?: string
   status?: string
   expand?: {
-    seguradora?: { id?: string; nome?: string }
+    seguradora?: { id?: string; nome?: string; contatos?: unknown }
     rfq?: { conta_empreendimento?: string }
   }
 }
@@ -128,9 +130,27 @@ export function montarDadosPedidoEmissao(
     arquivoProposta: prop.arquivo || '',
     arquivoPropostaNome: prop.arquivo_nome || '',
     seguradoraNome: segNome,
+    seguradoraEmail: extrairEmailSeguradora(prop.expand?.seguradora?.contatos),
     opcao: opNum,
     versao: vNum,
   }
+}
+
+/** Extrai o e-mail da seguradora do campo `contatos` (JSON string ou objeto). */
+export function extrairEmailSeguradora(contatos: unknown): string {
+  let rec: Record<string, unknown> | null = null
+  if (typeof contatos === 'string' && contatos.trim()) {
+    try {
+      rec = JSON.parse(contatos) as Record<string, unknown>
+    } catch {
+      rec = null
+    }
+  } else if (typeof contatos === 'object' && contatos !== null) {
+    rec = contatos as Record<string, unknown>
+  }
+  if (!rec) return ''
+  const email = typeof rec.email === 'string' ? rec.email.trim() : ''
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : ''
 }
 
 /** Salva (cria ou atualiza) o Pedido de Emissão da proposta vencedora. */

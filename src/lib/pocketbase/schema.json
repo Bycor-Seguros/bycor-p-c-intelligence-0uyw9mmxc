@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T01:47:47.890Z",
+  "generatedAt": "2026-11-10T02:10:14.259Z",
   "collections": [
     {
       "name": "users",
@@ -44,6 +44,12 @@
           "required": false,
           "system": false,
           "selectValues": ["analista", "corretor", "admin"]
+        },
+        {
+          "name": "assinatura_imagem",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

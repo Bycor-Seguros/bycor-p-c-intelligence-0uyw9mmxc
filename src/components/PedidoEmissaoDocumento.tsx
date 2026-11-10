@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { FileText, Paperclip, Loader2, Printer, Save, FileDown } from 'lucide-react'
+import { FileText, Paperclip, Loader2, Printer, Save, FileDown, Mail, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { toast } from '@/hooks/use-toast'
@@ -9,6 +9,14 @@ import {
   PedidoEmissaoRecord,
   salvarPedidoEmissao,
 } from '@/services/pedidoEmissaoService'
+import { useAssinaturaImagem } from '@/hooks/useAssinaturaImagem'
+import {
+  baixarAnexoBase64,
+  criarRascunhoPedidoEmissao,
+  getEstadoOutlook,
+} from '@/services/pedidoEmissaoEmailService'
+import { ConnectorButton } from '@/components/skip/ConnectorButton'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface Props {
   dados: DadosPropostaVencedora
@@ -29,6 +37,9 @@ export default function PedidoEmissaoDocumento({
   onSalvo,
   onFechar,
 }: Props) {
+  const { user: usuario, perfil } = useAuth()
+  const usuarioNome = (perfil as any)?.nome || usuario?.name || usuario?.email?.split('@')[0] || ''
+
   const [form, setForm] = useState({
     dataPedido: dados.dataPedido,
     corretora: dados.corretora,
@@ -37,7 +48,6 @@ export default function PedidoEmissaoDocumento({
     seguradoCnpj: dados.seguradoCnpj,
     coseguradoNome: dados.coseguradoNome || '',
     coseguradoCnpj: dados.coseguradoCnpj || '',
-    coseguradoParticipacao: dados.coseguradoParticipacao || '',
     localRisco: dados.localRisco,
     premioBruto: dados.premioBruto,
     premioLiquido: dados.premioLiquido,
@@ -46,6 +56,20 @@ export default function PedidoEmissaoDocumento({
   })
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [salvando, setSalvando] = useState(false)
+
+  // E-mail (rascunho Outlook) — Para vem do cadastro da seguradora; CC é o próprio usuário (editável).
+  const [emailPara, setEmailPara] = useState(dados.seguradoraEmail || '')
+  const [emailCc, setEmailCc] = useState(usuario?.email || '')
+  const [enviandoEmail, setEnviandoEmail] = useState(false)
+  const [estadoOutlook, setEstadoOutlook] =
+    useState<Awaited<ReturnType<typeof getEstadoOutlook>>>(undefined)
+
+  const assinatura = useAssinaturaImagem()
+  const [novaAssinatura, setNovaAssinatura] = useState<File | null>(null)
+
+  useEffect(() => {
+    void getEstadoOutlook().then(setEstadoOutlook)
+  }, [])
 
   useEffect(() => {
     setForm({
@@ -56,10 +80,6 @@ export default function PedidoEmissaoDocumento({
       seguradoCnpj: pedidoExistente?.segurado_cnpj || dados.seguradoCnpj,
       coseguradoNome: pedidoExistente?.cosegurado_nome ?? dados.coseguradoNome ?? '',
       coseguradoCnpj: pedidoExistente?.cosegurado_cnpj ?? dados.coseguradoCnpj ?? '',
-      coseguradoParticipacao:
-        pedidoExistente?.cosegurado_participacao ??
-        dados.coseguradoParticipacao ??
-        (dados.coseguradoNome ? '100%' : ''),
       localRisco: pedidoExistente?.local_risco || dados.localRisco,
       premioBruto: Number(pedidoExistente?.premio_bruto ?? dados.premioBruto ?? 0),
       premioLiquido: Number(pedidoExistente?.premio_liquido ?? dados.premioLiquido ?? 0),
@@ -275,15 +295,6 @@ export default function PedidoEmissaoDocumento({
             />
           </div>
           <div>
-            <label className={label}>Participação do Co-segurado (%)</label>
-            <input
-              className={campo}
-              placeholder="Ex: 100%"
-              value={form.coseguradoParticipacao}
-              onChange={(e) => setForm((f) => ({ ...f, coseguradoParticipacao: e.target.value }))}
-            />
-          </div>
-          <div>
             <label className={label}>Local do Risco</label>
             <input
               className={campo}
@@ -380,11 +391,22 @@ export default function PedidoEmissaoDocumento({
           />
         </div>
 
-        {/* Campo para assinatura da Bycor */}
+        {/* Rodapé de assinatura (com imagem digitalizada, quando houver) */}
         <div className="pt-8 border-t text-center text-xs text-gray-600">
-          <div className="border-b w-56 mx-auto mb-1"></div>
-          <strong>BYCOR Seguros</strong>
-          <p className="text-[11px] text-gray-400">Assinatura da Corretora — Bycor</p>
+          {assinatura.url ? (
+            <img
+              src={assinatura.url}
+              alt="Assinatura digitalizada"
+              className="h-14 mx-auto mb-1 object-contain"
+            />
+          ) : (
+            <div className="border-b w-56 mx-auto mb-1"></div>
+          )}
+          <strong>{usuarioNome || 'BYCOR Seguros'}</strong>
+          <p className="text-[11px] text-gray-400">BYCOR Seguros</p>
+          <p className="text-[10px] text-gray-400 italic">
+            Assinatura digitalizada (imagem) — não substitui certificado digital ICP-Brasil.
+          </p>
         </div>
 
         {form.dataPedido && (
