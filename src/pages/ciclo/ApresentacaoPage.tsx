@@ -539,9 +539,13 @@ export default function ApresentacaoPage() {
   const dadosPedidoEmissao = useMemo(async () => {
     if (!selectedProp) return null
     const emp = await carregarEmpreendimentoDaProposta(selectedProp)
-    return montarDadosPedidoEmissao(selectedProp as any, emp as any)
+    return montarDadosPedidoEmissao(selectedProp as any, emp as any, {
+      contatoInspecaoNome: estudoForm.contatoInspecaoNome,
+      contatoInspecaoTel: estudoForm.contatoInspecaoTel,
+      contatoInspecaoEmail: estudoForm.contatoInspecaoEmail,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProp?.id, selectedEmp?.id])
+  }, [selectedProp?.id, selectedEmp?.id, estudoForm])
   const [dadosPedido, setDadosPedido] = useState<Awaited<
     ReturnType<typeof montarDadosPedidoEmissao>
   > | null>(null)

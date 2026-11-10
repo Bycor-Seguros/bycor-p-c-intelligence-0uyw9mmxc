@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T02:23:00.512Z",
+  "generatedAt": "2026-11-10T03:39:53.668Z",
   "collections": [
     {
       "name": "users",
@@ -2728,6 +2728,30 @@
         },
         {
           "name": "cosegurado_participacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "parcelamento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "inspecao_responsavel",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "inspecao_telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "inspecao_email",
           "type": "text",
           "required": false,
           "system": false

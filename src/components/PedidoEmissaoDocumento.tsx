@@ -79,6 +79,10 @@ export default function PedidoEmissaoDocumento({
     premioLiquido: dados.premioLiquido,
     comissaoTrabalhada: dados.comissaoTrabalhada,
     observacoes: dados.observacoes || '',
+    parcelamento: dados.parcelamento || '',
+    inspecaoResponsavel: dados.inspecaoResponsavel || '',
+    inspecaoTelefone: dados.inspecaoTelefone || '',
+    inspecaoEmail: dados.inspecaoEmail || '',
   })
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -109,9 +113,12 @@ export default function PedidoEmissaoDocumento({
       pedido: pedidoExistente,
       usuarioNome: usuarioNome || 'BYCOR Seguros',
       usuarioEmail: usuario?.email || '',
-      vigencia: '',
+      vigencia: dados.vigencia || '',
       premioTotal: formatCurrency(form.premioBruto),
-      parcelamento: '',
+      parcelamento: form.parcelamento,
+      inspecaoResponsavel: form.inspecaoResponsavel,
+      inspecaoTelefone: form.inspecaoTelefone,
+      inspecaoEmail: form.inspecaoEmail,
     }),
     [
       dados,
@@ -121,6 +128,10 @@ export default function PedidoEmissaoDocumento({
       form.seguradoNome,
       form.seguradoCnpj,
       form.premioBruto,
+      form.parcelamento,
+      form.inspecaoResponsavel,
+      form.inspecaoTelefone,
+      form.inspecaoEmail,
     ],
   )
   const assuntoEmail = useMemo(() => montarAssuntoEmail(contextoEmail.dados), [contextoEmail.dados])
@@ -220,6 +231,24 @@ export default function PedidoEmissaoDocumento({
         pedidoExistente?.comissao_trabalhada ?? dados.comissaoTrabalhada ?? 0,
       ),
       observacoes: pedidoExistente?.observacoes || dados.observacoes || '',
+      parcelamento:
+        pedidoExistente?.parcelamento !== undefined && pedidoExistente?.parcelamento !== null
+          ? pedidoExistente.parcelamento
+          : dados.parcelamento || '',
+      inspecaoResponsavel:
+        pedidoExistente?.inspecao_responsavel !== undefined &&
+        pedidoExistente?.inspecao_responsavel !== null
+          ? pedidoExistente.inspecao_responsavel
+          : dados.inspecaoResponsavel || '',
+      inspecaoTelefone:
+        pedidoExistente?.inspecao_telefone !== undefined &&
+        pedidoExistente?.inspecao_telefone !== null
+          ? pedidoExistente.inspecao_telefone
+          : dados.inspecaoTelefone || '',
+      inspecaoEmail:
+        pedidoExistente?.inspecao_email !== undefined && pedidoExistente?.inspecao_email !== null
+          ? pedidoExistente.inspecao_email
+          : dados.inspecaoEmail || '',
     })
     setArquivo(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,6 +304,11 @@ export default function PedidoEmissaoDocumento({
           premioBruto: form.premioBruto,
           premioLiquido: form.premioLiquido,
           comissaoTrabalhada: form.comissaoTrabalhada,
+          parcelamento: form.parcelamento,
+          vigencia: dados.vigencia,
+          inspecaoResponsavel: form.inspecaoResponsavel,
+          inspecaoTelefone: form.inspecaoTelefone,
+          inspecaoEmail: form.inspecaoEmail,
           observacoes: form.observacoes,
           arquivoProposta: dados.arquivoProposta,
           arquivoPropostaNome: dados.arquivoPropostaNome,
@@ -500,6 +534,73 @@ export default function PedidoEmissaoDocumento({
             <span className="text-[10px] text-gray-400">
               {formatComissaoPct(form.comissaoTrabalhada)}
             </span>
+          </div>
+        </div>
+
+        {/* Parcelamento e vigência — preenchidos a partir da proposta vencedora, editáveis */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={label}>Parcelamento</label>
+            <input
+              className={campo}
+              placeholder="Ex: 4x sem juros"
+              value={form.parcelamento}
+              onChange={(e) => setForm((f) => ({ ...f, parcelamento: e.target.value }))}
+            />
+            <span className="text-[10px] text-gray-400">
+              Preenchido com o maior nº de parcelas sem juros da proposta vencedora. Editável.
+            </span>
+          </div>
+          <div>
+            <label className={label}>Vigência</label>
+            <input
+              className={`${campo} bg-gray-50 text-gray-500`}
+              value={dados.vigencia || '—'}
+              readOnly
+            />
+            <span className="text-[10px] text-gray-400">
+              Derivada da proposta vencedora (somente leitura no documento).
+            </span>
+          </div>
+        </div>
+
+        {/* Contatos para Inspeção/Vistoria — originados do Bloco 11 (Opção de Contratação), editáveis */}
+        <div className="border rounded-lg p-4 bg-gray-50/60 space-y-3">
+          <div>
+            <h4 className="text-xs font-bold text-gray-800">Contatos para Inspeção/Vistoria</h4>
+            <p className="text-[10px] text-gray-500">
+              Preenchidos automaticamente a partir do Bloco 11 — Opção de Contratação. Editáveis.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className={label}>Responsável</label>
+              <input
+                className={campo}
+                placeholder="Quem receberá o inspetor/vistoriador"
+                value={form.inspecaoResponsavel}
+                onChange={(e) => setForm((f) => ({ ...f, inspecaoResponsavel: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className={label}>Telefone</label>
+              <input
+                className={campo}
+                placeholder="(00) 00000-0000"
+                value={form.inspecaoTelefone}
+                onChange={(e) => setForm((f) => ({ ...f, inspecaoTelefone: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className={label}>E-mail</label>
+              <input
+                type="email"
+                className={campo}
+                placeholder="nome@empresa.com.br"
+                value={form.inspecaoEmail}
+                onChange={(e) => setForm((f) => ({ ...f, inspecaoEmail: e.target.value }))}
+              />
+            </div>
           </div>
         </div>
 

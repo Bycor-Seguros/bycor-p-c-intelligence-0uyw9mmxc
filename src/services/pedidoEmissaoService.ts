@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { extrairParcelamentoECondicoes } from '@/services/estudoMercadoResolver'
 
 /** Chave de identidade de uma proposta dentro do RFQ: seguradora + Opção + Versão. */
 export function chaveProposta(p: { seguradora: string; opcao?: number; versao?: number }): string {
@@ -28,6 +29,10 @@ export interface PedidoEmissaoRecord {
   cosegurado_nome?: string
   cosegurado_cnpj?: string
   cosegurado_participacao?: string
+  parcelamento?: string
+  inspecao_responsavel?: string
+  inspecao_telefone?: string
+  inspecao_email?: string
   local_risco: string
   premio_bruto: number
   premio_liquido: number
@@ -64,6 +69,14 @@ export interface DadosPropostaVencedora {
   seguradoraEmail: string
   opcao: number
   versao: number
+  /** Texto de parcelamento da proposta vencedora (maior nº de parcelas sem juros quando houver). */
+  parcelamento: string
+  /** Vigência da proposta vencedora (texto formatado, ex.: "01/11/2026 a 01/11/2027"). */
+  vigencia: string
+  /** Contatos do segurado para inspeção/vistoria (originados no Bloco 11). */
+  inspecaoResponsavel: string
+  inspecaoTelefone: string
+  inspecaoEmail: string
 }
 
 type PropostaExpandida = {
@@ -74,6 +87,8 @@ type PropostaExpandida = {
   versao?: number
   premio_bruto?: number
   premio_liquido?: number
+  forma_pagamento?: string
+  numero_parcelas?: number
   comissao_trabalhada?: number
   data_proposta?: string
   vigencia_inicio?: string
@@ -88,24 +103,65 @@ type PropostaExpandida = {
   }
 }
 
+/** Texto de vigência (ex.: "01.11.2026 a 01.11.2027 (365 dias)") a partir das datas da proposta. */
+function montarVigenciaTextoLocal(inicio?: string, fim?: string): string {
+  const fmt = (iso?: string): string => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+  }
+  const i = fmt(inicio)
+  const f = fmt(fim)
+  if (!i && !f) return ''
+  if (i && f && inicio && fim) {
+    const dias = Math.max(
+      0,
+      Math.round((new Date(fim).getTime() - new Date(inicio).getTime()) / 86400000),
+    )
+    return `${i} a ${f} (${dias} dias)`
+  }
+  return i || f
+}
+
 /** Monta os dados do Pedido de Emissão a partir da proposta vencedora (dados já cadastrados). */
 export function montarDadosPedidoEmissao(
   prop: PropostaExpandida,
   emp?: {
     id?: string
-    nome_empreendimento?: string
     razao_social?: string
+    nome_empreendimento?: string
     cnpj?: string
     cossegurado_nome?: string
     cossegurado_cnpj?: string
+    endereco?: string
     cidade?: string
     uf?: string
-    endereco?: string
+  } | null,
+  bloco11?: {
+    contatoInspecaoNome?: string
+    contatoInspecaoTel?: string
+    contatoInspecaoEmail?: string
   },
 ): DadosPropostaVencedora {
   const segNome = prop.expand?.seguradora?.nome || 'Seguradora'
   const opNum = Number(prop.opcao || 1)
   const vNum = Number(prop.versao || 1)
+
+  // Parcelamento: maior número de parcelas sem juros da proposta vencedora
+  // (reaproveita o extrator da tabulação; fallback: texto integral da forma de pagamento).
+  const { parcelamentoSemJurosTexto, condicoesPagamentoTexto } = extrairParcelamentoECondicoes(
+    prop.forma_pagamento,
+    prop.numero_parcelas,
+  )
+  const parcelamento =
+    parcelamentoSemJurosTexto ||
+    (typeof condicoesPagamentoTexto === 'string' && condicoesPagamentoTexto.trim()
+      ? condicoesPagamentoTexto.trim()
+      : '')
+
+  // Vigência da proposta vencedora (usada também no corpo do e-mail).
+  const vigencia = montarVigenciaTextoLocal(prop.vigencia_inicio, prop.vigencia_fim)
 
   const localRisco = [emp?.endereco, emp?.cidade, emp?.uf].filter(Boolean).join(' • ')
 
@@ -131,6 +187,11 @@ export function montarDadosPedidoEmissao(
     seguradoraEmail: extrairEmailSeguradora(prop.expand?.seguradora?.contatos),
     opcao: opNum,
     versao: vNum,
+    parcelamento,
+    vigencia,
+    inspecaoResponsavel: bloco11?.contatoInspecaoNome || '',
+    inspecaoTelefone: bloco11?.contatoInspecaoTel || '',
+    inspecaoEmail: bloco11?.contatoInspecaoEmail || '',
   }
 }
 
@@ -177,6 +238,10 @@ export async function salvarPedidoEmissao(
   formData.append('premio_bruto', String(dados.premioBruto ?? 0))
   formData.append('premio_liquido', String(dados.premioLiquido ?? 0))
   formData.append('comissao_trabalhada', String(dados.comissaoTrabalhada ?? 0))
+  formData.append('parcelamento', dados.parcelamento || '')
+  formData.append('inspecao_responsavel', dados.inspecaoResponsavel || '')
+  formData.append('inspecao_telefone', dados.inspecaoTelefone || '')
+  formData.append('inspecao_email', dados.inspecaoEmail || '')
   formData.append('observacoes', dados.observacoes || '')
   if (arquivoNovo) formData.append('arquivo_proposta', arquivoNovo)
 

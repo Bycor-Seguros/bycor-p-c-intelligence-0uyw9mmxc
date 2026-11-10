@@ -23,6 +23,10 @@ export interface ContextoEmailPedido {
   /** Prêmio total (bruto) e parcelamento (texto formatado). */
   premioTotal: string
   parcelamento: string
+  /** Contatos do segurado para inspeção/vistoria (Bloco 11 — Opção de Contratação). */
+  inspecaoResponsavel?: string
+  inspecaoTelefone?: string
+  inspecaoEmail?: string
 }
 
 export interface ResultadoEmailPedido {
@@ -87,6 +91,20 @@ export function montarCorpoEmail(ctx: ContextoEmailPedido): string {
       }`
     : ''
 
+  const respInspecao = ctx.inspecaoResponsavel || ctx.pedido?.inspecao_responsavel || ''
+  const telInspecao = ctx.inspecaoTelefone || ctx.pedido?.inspecao_telefone || ''
+  const emailInspecao = ctx.inspecaoEmail || ctx.pedido?.inspecao_email || ''
+  const temInspecao = Boolean(respInspecao || telInspecao || emailInspecao)
+  const contatosInspecao = temInspecao
+    ? [
+        ``,
+        `Contatos para inspeção/vistoria (segurado):`,
+        `• Responsável: ${respInspecao || '—'}`,
+        `• Telefone: ${telInspecao || '—'}`,
+        `• E-mail: ${emailInspecao || '—'}`,
+      ].join('\n')
+    : ''
+
   return [
     `Prezados,`,
     ``,
@@ -100,7 +118,7 @@ export function montarCorpoEmail(ctx: ContextoEmailPedido): string {
     `• Prêmio total: ${ctx.premioTotal}`,
     `• Parcelamento: ${ctx.parcelamento || '—'}`,
     `• Vigência: ${ctx.vigencia || '—'}`,
-    ``,
+    ...(contatosInspecao ? [contatosInspecao, ``] : []),
     `Solicitamos, gentilmente, a emissão da apólice conforme as condições aprovadas, permanecemos à disposição para os encaminhamentos necessários.`,
     ``,
     `Atenciosamente,`,
