@@ -32,10 +32,10 @@ export interface ResultadoEmailPedido {
 }
 
 const TOOL_STATUS = 'OUTLOOK_CREATE_DRAFT'
-const TOOL_ANEXO = 'OUTLOOK_CREATE_MESSAGE_ATTACHMENT'
+const TOOL_ANEXO = 'OUTLOOK_ADD_MAIL_ATTACHMENT'
 
-/** Busca, via conector, o PDF da proposta vencedora em base64. */
-async function baixarAnexoBase64(
+/** Busca, via conector, o PDF da proposta vencedora em base64 (também usado pela tela de conferência). */
+export async function baixarAnexoBase64(
   pedido: PedidoEmissaoRecord | null,
   dados: DadosPropostaVencedora,
 ): Promise<{ nome: string; base64: string } | null> {
@@ -136,12 +136,13 @@ export async function criarRascunhoPedidoEmissao(params: {
   const assunto = montarAssuntoEmail(ctx.dados)
   const corpo = montarCorpoEmail(ctx)
 
-  // "Para": seguradora da proposta eleita; se não houver e-mail cadastrado, avisa.
+  // "Para": seguradora da proposta eleita; se não houver e-mail cadastrado,
+  // a tela deixa o campo vazio e o usuário preenche manualmente.
   if (!emailSeguradora) {
     return {
       ok: false,
       mensagem:
-        'A seguradora da proposta eleita não tem e-mail cadastrado no sistema. Preencha o destinatário manualmente ou cadastre o e-mail da seguradora.',
+        'Informe o destinatário (Para): a seguradora da proposta eleita não tem e-mail cadastrado no sistema.',
       anexoOk: false,
     }
   }
@@ -178,8 +179,8 @@ export async function criarRascunhoPedidoEmissao(params: {
           message_id: messageId,
           name: anexo.nome,
           odata_type: '#microsoft.graph.fileAttachment',
-          content_bytes: anexo.base64,
-          content_type: 'application/pdf',
+          contentBytes: anexo.base64,
+          contentType: 'application/pdf',
         })
         anexoOk = resAnexo.successful
       }

@@ -34,6 +34,8 @@ import { toast } from '@/hooks/use-toast'
 import { usePedidoEmissao } from '@/hooks/usePedidoEmissao'
 import PedidoEmissaoDocumento from '@/components/PedidoEmissaoDocumento'
 import { montarDadosPedidoEmissao } from '@/services/pedidoEmissaoService'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAssinaturaImagem } from '@/hooks/useAssinaturaImagem'
 
 interface EmpreendimentoOpt {
   id: string
@@ -241,6 +243,11 @@ function montarCosseguradoContratacao(emp?: EmpreendimentoOpt): string {
 }
 
 export default function ApresentacaoPage() {
+  // Usuário logado + sua assinatura digitalizada (Minuta A4, bloco de assinaturas)
+  const { user: usuario } = useAuth()
+  const assinatura = useAssinaturaImagem()
+  const assinaturaImagemUrl = assinatura.url
+
   const [empreendimentos, setEmpreendimentos] = useState<EmpreendimentoOpt[]>([])
   const [propostas, setPropostas] = useState<PropostaOption[]>([])
   const [selectedEmpId, setSelectedEmpId] = useState<string>('')
@@ -1095,9 +1102,21 @@ export default function ApresentacaoPage() {
         {/* Signatures Footer */}
         <div className="pt-8 border-t grid grid-cols-2 gap-8 text-center text-xs text-gray-600 print:break-inside-avoid print:pt-6">
           <div>
+            {assinaturaImagemUrl && (
+              <img
+                src={assinaturaImagemUrl}
+                alt="Assinatura digitalizada do corretor"
+                className="h-14 mx-auto mb-1 object-contain"
+              />
+            )}
             <div className="border-b w-48 mx-auto mb-1"></div>
-            <strong>BYCOR Seguros</strong>
+            <strong>{usuario?.name || 'BYCOR Seguros'}</strong>
             <p className="text-[11px] text-gray-400">Consultoria Técnica P&C</p>
+            {assinaturaImagemUrl && (
+              <p className="text-[10px] text-gray-400 italic">
+                Assinatura digitalizada (imagem) — não substitui certificado digital ICP-Brasil.
+              </p>
+            )}
           </div>
           <div>
             <div className="border-b w-48 mx-auto mb-1"></div>

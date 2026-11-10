@@ -1,7 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
-import { FileText, Paperclip, Loader2, Printer, Save, FileDown, Mail, Plug } from 'lucide-react'
+import {
+  FileText,
+  Paperclip,
+  Loader2,
+  Printer,
+  Save,
+  FileDown,
+  Mail,
+  Upload,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { toast } from '@/hooks/use-toast'
 import {
@@ -17,6 +38,11 @@ import {
 } from '@/services/pedidoEmissaoEmailService'
 import { ConnectorButton } from '@/components/skip/ConnectorButton'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  montarAssuntoEmail,
+  montarCorpoEmail,
+  type ContextoEmailPedido,
+} from '@/services/pedidoEmissaoEmailService'
 
 interface Props {
   dados: DadosPropostaVencedora
@@ -37,8 +63,8 @@ export default function PedidoEmissaoDocumento({
   onSalvo,
   onFechar,
 }: Props) {
-  const { user: usuario, perfil } = useAuth()
-  const usuarioNome = (perfil as any)?.nome || usuario?.name || usuario?.email?.split('@')[0] || ''
+  const { user: usuario } = useAuth()
+  const usuarioNome = usuario?.name || usuario?.email?.split('@')[0] || ''
 
   const [form, setForm] = useState({
     dataPedido: dados.dataPedido,
@@ -57,19 +83,126 @@ export default function PedidoEmissaoDocumento({
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [salvando, setSalvando] = useState(false)
 
-  // E-mail (rascunho Outlook) — Para vem do cadastro da seguradora; CC é o próprio usuário (editável).
+  // E-mail (rascunho Outlook) — Para vem do cadastro da seguradora (editável na conferência);
+  // CC é o próprio usuário (editável). Nada é enviado automaticamente.
   const [emailPara, setEmailPara] = useState(dados.seguradoraEmail || '')
   const [emailCc, setEmailCc] = useState(usuario?.email || '')
   const [enviandoEmail, setEnviandoEmail] = useState(false)
-  const [estadoOutlook, setEstadoOutlook] =
-    useState<Awaited<ReturnType<typeof getEstadoOutlook>>>(undefined)
+  const [dialogEmailAberto, setDialogEmailAberto] = useState(false)
+  const [estadoOutlook, setEstadoOutlook] = useState<
+    Awaited<ReturnType<typeof getEstadoOutlook>> | undefined
+  >(undefined)
 
   const assinatura = useAssinaturaImagem()
-  const [novaAssinatura, setNovaAssinatura] = useState<File | null>(null)
+  const inputAssinaturaRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void getEstadoOutlook().then(setEstadoOutlook)
   }, [])
+
+  const outlookConectada = estadoOutlook?.status === 'connected'
+
+  // Corpo/assunto de pré-visualização na conferência pré-envio (reflete os campos editáveis).
+  const contextoEmail: ContextoEmailPedido = useMemo(
+    () => ({
+      dados: { ...dados, seguradoNome: form.seguradoNome, seguradoCnpj: form.seguradoCnpj },
+      pedido: pedidoExistente,
+      usuarioNome: usuarioNome || 'BYCOR Seguros',
+      usuarioEmail: usuario?.email || '',
+      vigencia: '',
+      premioTotal: formatCurrency(form.premioBruto),
+      parcelamento: '',
+    }),
+    [
+      dados,
+      pedidoExistente,
+      usuarioNome,
+      usuario?.email,
+      form.seguradoNome,
+      form.seguradoCnpj,
+      form.premioBruto,
+    ],
+  )
+  const assuntoEmail = useMemo(() => montarAssuntoEmail(contextoEmail.dados), [contextoEmail.dados])
+  const corpoEmail = useMemo(() => montarCorpoEmail(contextoEmail), [contextoEmail])
+
+  const abrirDialogEmail = async () => {
+    setDialogEmailAberto(true)
+    try {
+      setEstadoOutlook(await getEstadoOutlook())
+    } catch {
+      // Estado fica indefinido; a conferência avisa que a conta não está conectada.
+    }
+  }
+
+  const handleConfirmarEnviarEmail = async () => {
+    setEnviandoEmail(true)
+    try {
+      const anexo = await baixarAnexoBase64(pedidoExistente, dados)
+      const resultado = await criarRascunhoPedidoEmissao({
+        ctx: contextoEmail,
+        emailSeguradora: emailPara.trim(),
+        cc: emailCc.trim(),
+        anexo,
+      })
+      if (resultado.ok) {
+        toast({ title: 'Rascunho criado no Outlook', description: resultado.mensagem })
+        setDialogEmailAberto(false)
+      } else {
+        toast({
+          title: 'Não foi possível criar o rascunho',
+          description: resultado.mensagem,
+          variant: 'destructive',
+        })
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast({
+        title: 'Erro ao preparar o e-mail',
+        description: err?.message || 'Falha ao montar o rascunho no Outlook.',
+        variant: 'destructive',
+      })
+    } finally {
+      setEnviandoEmail(false)
+    }
+  }
+
+  const handleSelecionarAssinatura = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!/^image\/(png|jpe?g)$/i.test(file.type)) {
+      toast({
+        title: 'Formato não suportado',
+        description: 'Selecione uma imagem PNG ou JPG para a assinatura digitalizada.',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: 'Arquivo muito grande',
+        description: 'A assinatura deve ter no máximo 2 MB.',
+        variant: 'destructive',
+      })
+      return
+    }
+    const url = await assinatura.salvarAssinatura(file)
+    if (url) {
+      toast({ title: 'Assinatura salva', description: 'Imagem gravada no seu usuário.' })
+    } else if (assinatura.error) {
+      toast({
+        title: 'Erro ao salvar a assinatura',
+        description: assinatura.error,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleRemoverAssinatura = async () => {
+    await assinatura.removerAssinatura()
+    toast({ title: 'Assinatura removida' })
+  }
 
   useEffect(() => {
     setForm({
@@ -138,7 +271,6 @@ export default function PedidoEmissaoDocumento({
           seguradoCnpj: form.seguradoCnpj,
           coseguradoNome: form.coseguradoNome,
           coseguradoCnpj: form.coseguradoCnpj,
-          coseguradoParticipacao: form.coseguradoParticipacao,
           localRisco: form.localRisco,
           premioBruto: form.premioBruto,
           premioLiquido: form.premioLiquido,
@@ -147,6 +279,7 @@ export default function PedidoEmissaoDocumento({
           arquivoProposta: dados.arquivoProposta,
           arquivoPropostaNome: dados.arquivoPropostaNome,
           seguradoraNome: dados.seguradoraNome,
+          seguradoraEmail: dados.seguradoraEmail,
           opcao: dados.opcao,
           versao: dados.versao,
         },
@@ -212,6 +345,35 @@ export default function PedidoEmissaoDocumento({
             Fechar
           </Button>
         </div>
+      </div>
+
+      {/* Barra de e-mail: estado da conta Outlook + botão Enviar por e-mail (rascunho, nunca envio automático) */}
+      <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-2.5 border-b bg-white print:hidden">
+        {estadoOutlook === undefined ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando conta Outlook…
+          </span>
+        ) : outlookConectada ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Conta Outlook conectada
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Conta Outlook não conectada
+          </span>
+        )}
+        <ConnectorButton toolkit="outlook" name="Outlook" className="inline-flex" />
+        <Button
+          size="sm"
+          className="h-8 text-xs bg-[#16578B] hover:bg-[#0F2B46] text-white"
+          onClick={abrirDialogEmail}
+          disabled={enviandoEmail}
+        >
+          <Mail className="w-3.5 h-3.5 mr-1" />
+          Enviar por e-mail
+        </Button>
       </div>
 
       {/* Corpo A4 do documento */}
@@ -407,6 +569,48 @@ export default function PedidoEmissaoDocumento({
           <p className="text-[10px] text-gray-400 italic">
             Assinatura digitalizada (imagem) — não substitui certificado digital ICP-Brasil.
           </p>
+
+          {/* Upload/gerência da assinatura — somente tela (não sai na impressão) */}
+          <div className="mt-4 flex flex-col items-center gap-1.5 print:hidden">
+            <input
+              ref={inputAssinaturaRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              className="hidden"
+              onChange={handleSelecionarAssinatura}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] border-gray-300"
+                onClick={() => inputAssinaturaRef.current?.click()}
+                disabled={assinatura.saving}
+              >
+                {assinatura.saving ? (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <Upload className="w-3 h-3 mr-1" />
+                )}
+                {assinatura.url ? 'Substituir assinatura' : 'Enviar assinatura (PNG/JPG)'}
+              </Button>
+              {assinatura.url && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={handleRemoverAssinatura}
+                  disabled={assinatura.saving}
+                >
+                  <Trash2 className="w-3 h-3 mr-1" /> Remover
+                </Button>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400">
+              A assinatura é uma imagem digitalizada (não é certificado ICP-Brasil) e aparece no
+              rodapé do Pedido de Emissão e na Minuta A4.
+            </p>
+          </div>
         </div>
 
         {form.dataPedido && (
@@ -416,6 +620,116 @@ export default function PedidoEmissaoDocumento({
           </p>
         )}
       </div>
+
+      {/* Dialog de conferência pré-envio — cria um RASCUNHO no Outlook; nada é enviado automaticamente */}
+      <Dialog open={dialogEmailAberto} onOpenChange={setDialogEmailAberto}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-[#16578B]" />
+              Enviar por e-mail — conferência do rascunho
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-600">
+              Ao confirmar, um <strong>rascunho</strong> é criado na sua caixa Outlook com o PDF da
+              proposta anexado. Nada é enviado automaticamente — revise e envie no Outlook.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-xs">
+            {!outlookConectada && (
+              <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-amber-800">
+                <strong>Aviso:</strong> sua conta Outlook não está conectada. Use o botão de conexão
+                acima e tente novamente — o rascunho é criado na SUA caixa de entrada.
+              </div>
+            )}
+            {anexoInfo ? (
+              <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50/60 p-2.5 text-emerald-800">
+                <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate" title={anexoInfo.nome}>
+                  Anexo: {anexoInfo.nome}
+                </span>
+              </div>
+            ) : (
+              <div className="rounded border border-amber-200 bg-amber-50/70 p-2.5 text-amber-800">
+                Sem anexo disponível: nenhum PDF de proposta encontrado para este pedido.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Para (e-mail da seguradora)</label>
+                <input
+                  type="email"
+                  className={campo}
+                  placeholder="Cadastrar e-mail da seguradora ou informe aqui"
+                  value={emailPara}
+                  onChange={(e) => setEmailPara(e.target.value)}
+                />
+                {!dados.seguradoraEmail && (
+                  <p className="text-[10px] text-amber-700 mt-0.5">
+                    A seguradora não tem e-mail cadastrado — preencha o destinatário acima.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className={label}>CC (cópia)</label>
+                <input
+                  type="email"
+                  className={campo}
+                  value={emailCc}
+                  onChange={(e) => setEmailCc(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={label}>Assunto</label>
+              <input className={campo} value={assuntoEmail} readOnly />
+            </div>
+
+            <div>
+              <label className={label}>Corpo do e-mail</label>
+              <Textarea
+                className="min-h-[180px] font-mono text-[11px]"
+                value={corpoEmail}
+                readOnly
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs border-gray-300"
+              onClick={() => setDialogEmailAberto(false)}
+              disabled={enviandoEmail}
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs bg-[#16578B] hover:bg-[#0F2B46] text-white"
+              onClick={handleConfirmarEnviarEmail}
+              disabled={enviandoEmail || !outlookConectada || !emailPara.trim()}
+              title={
+                !outlookConectada
+                  ? 'Conecte sua conta Outlook para criar o rascunho'
+                  : !emailPara.trim()
+                    ? 'Informe o destinatário (Para)'
+                    : undefined
+              }
+            >
+              {enviandoEmail ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <Mail className="w-3.5 h-3.5 mr-1" />
+              )}
+              Criar rascunho no Outlook
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

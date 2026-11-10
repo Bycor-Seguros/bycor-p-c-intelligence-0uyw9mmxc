@@ -52,7 +52,6 @@ export interface DadosPropostaVencedora {
   seguradoCnpj: string
   coseguradoNome: string
   coseguradoCnpj: string
-  coseguradoParticipacao: string
   localRisco: string
   premioBruto: number
   premioLiquido: number
@@ -121,7 +120,6 @@ export function montarDadosPedidoEmissao(
     seguradoCnpj: emp?.cnpj || '',
     coseguradoNome: emp?.cossegurado_nome || '',
     coseguradoCnpj: emp?.cossegurado_cnpj || '',
-    coseguradoParticipacao: emp?.cossegurado_nome ? '100%' : '',
     localRisco: localRisco || '—',
     premioBruto: Number(prop.premio_bruto || 0),
     premioLiquido: Number(prop.premio_liquido || 0),
@@ -175,7 +173,6 @@ export async function salvarPedidoEmissao(
   formData.append('segurado_cnpj', dados.seguradoCnpj)
   formData.append('cosegurado_nome', dados.coseguradoNome || '')
   formData.append('cosegurado_cnpj', dados.coseguradoCnpj || '')
-  formData.append('cosegurado_participacao', dados.coseguradoParticipacao || '')
   formData.append('local_risco', dados.localRisco)
   formData.append('premio_bruto', String(dados.premioBruto ?? 0))
   formData.append('premio_liquido', String(dados.premioLiquido ?? 0))
