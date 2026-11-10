@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T22:37:35.932Z",
+  "generatedAt": "2026-11-10T01:47:47.890Z",
   "collections": [
     {
       "name": "users",
@@ -2707,6 +2707,24 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "cosegurado_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cosegurado_cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cosegurado_participacao",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

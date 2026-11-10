@@ -453,13 +453,18 @@ export default function ApresentacaoPage() {
     prop: PropostaOption,
   ): Promise<EmpreendimentoOpt | undefined> => {
     try {
-      const rfqId = prop.rfq || prop.expand?.rfq?.conta_empreendimento
-      if (!rfqId) return selectedEmp
-      const rfqRec: any = await pb.collection('rfq').getOne(rfqId, {
-        expand: 'conta_empreendimento',
-      })
-      const emp = rfqRec?.expand?.conta_empreendimento
-      if (emp) return emp as EmpreendimentoOpt
+      // Se a proposta já traz rfq expandido com conta_empreendimento
+      const empExpandido = prop.expand?.rfq?.expand?.conta_empreendimento
+      if (empExpandido) return empExpandido as EmpreendimentoOpt
+
+      const rfqId = prop.rfq
+      if (rfqId) {
+        const rfqRec: any = await pb.collection('rfq').getOne(rfqId, {
+          expand: 'conta_empreendimento',
+        })
+        const emp = rfqRec?.expand?.conta_empreendimento
+        if (emp) return emp as EmpreendimentoOpt
+      }
     } catch {
       // ignora — usa o empreendimento selecionado na tela como fallback
     }

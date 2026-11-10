@@ -35,6 +35,9 @@ export default function PedidoEmissaoDocumento({
     seguroContratado: dados.seguroContratado,
     seguradoNome: dados.seguradoNome,
     seguradoCnpj: dados.seguradoCnpj,
+    coseguradoNome: dados.coseguradoNome || '',
+    coseguradoCnpj: dados.coseguradoCnpj || '',
+    coseguradoParticipacao: dados.coseguradoParticipacao || '',
     localRisco: dados.localRisco,
     premioBruto: dados.premioBruto,
     premioLiquido: dados.premioLiquido,
@@ -51,6 +54,12 @@ export default function PedidoEmissaoDocumento({
       seguroContratado: pedidoExistente?.seguro_contratado || dados.seguroContratado,
       seguradoNome: pedidoExistente?.segurado_nome || dados.seguradoNome,
       seguradoCnpj: pedidoExistente?.segurado_cnpj || dados.seguradoCnpj,
+      coseguradoNome: pedidoExistente?.cosegurado_nome ?? dados.coseguradoNome ?? '',
+      coseguradoCnpj: pedidoExistente?.cosegurado_cnpj ?? dados.coseguradoCnpj ?? '',
+      coseguradoParticipacao:
+        pedidoExistente?.cosegurado_participacao ??
+        dados.coseguradoParticipacao ??
+        (dados.coseguradoNome ? '100%' : ''),
       localRisco: pedidoExistente?.local_risco || dados.localRisco,
       premioBruto: Number(pedidoExistente?.premio_bruto ?? dados.premioBruto ?? 0),
       premioLiquido: Number(pedidoExistente?.premio_liquido ?? dados.premioLiquido ?? 0),
@@ -63,13 +72,36 @@ export default function PedidoEmissaoDocumento({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoExistente?.id])
 
-  const arquivoAtual = pedidoExistente?.arquivo_proposta || dados.arquivoProposta || ''
-  const nomeArquivoAtual = pedidoExistente?.arquivo_proposta_nome || dados.arquivoPropostaNome || ''
-
-  const baseUrl = useMemo(
-    () => ((pb as any).buildURL ? (pb as any).buildURL('') : (pb as any).baseUrl),
-    [],
-  )
+  // Resolve o arquivo de anexo:
+  // Se o próprio registro de pedido_emissao já tiver upload próprio (arquivo_proposta), usa ele.
+  // Caso contrário, usa o arquivo original da proposta vencedora (propostas.arquivo).
+  const anexoInfo = useMemo(() => {
+    if (pedidoExistente?.arquivo_proposta) {
+      return {
+        url: pb.files.getURL(pedidoExistente as any, pedidoExistente.arquivo_proposta),
+        nome: pedidoExistente.arquivo_proposta_nome || pedidoExistente.arquivo_proposta,
+        origem: 'pedido' as const,
+      }
+    }
+    if (dados.arquivoProposta && dados.propostaId) {
+      return {
+        url: pb.files.getURL(
+          { id: dados.propostaId, collectionName: 'propostas' } as any,
+          dados.arquivoProposta,
+        ),
+        nome: dados.arquivoPropostaNome || dados.arquivoProposta,
+        origem: 'proposta' as const,
+      }
+    }
+    return null
+  }, [
+    pedidoExistente?.id,
+    pedidoExistente?.arquivo_proposta,
+    pedidoExistente?.arquivo_proposta_nome,
+    dados.arquivoProposta,
+    dados.arquivoPropostaNome,
+    dados.propostaId,
+  ])
 
   const handleSalvar = async () => {
     setSalvando(true)
@@ -84,13 +116,16 @@ export default function PedidoEmissaoDocumento({
           seguroContratado: form.seguroContratado,
           seguradoNome: form.seguradoNome,
           seguradoCnpj: form.seguradoCnpj,
+          coseguradoNome: form.coseguradoNome,
+          coseguradoCnpj: form.coseguradoCnpj,
+          coseguradoParticipacao: form.coseguradoParticipacao,
           localRisco: form.localRisco,
           premioBruto: form.premioBruto,
           premioLiquido: form.premioLiquido,
           comissaoTrabalhada: form.comissaoTrabalhada,
           observacoes: form.observacoes,
-          arquivoProposta: arquivoAtual,
-          arquivoPropostaNome: nomeArquivoAtual,
+          arquivoProposta: dados.arquivoProposta,
+          arquivoPropostaNome: dados.arquivoPropostaNome,
           seguradoraNome: dados.seguradoraNome,
           opcao: dados.opcao,
           versao: dados.versao,
@@ -222,6 +257,33 @@ export default function PedidoEmissaoDocumento({
             />
           </div>
           <div>
+            <label className={label}>Co-segurado (Razão Social / Nome)</label>
+            <input
+              className={campo}
+              placeholder="Ex: BT SÃO CAETANO HOTÉIS LTDA"
+              value={form.coseguradoNome}
+              onChange={(e) => setForm((f) => ({ ...f, coseguradoNome: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className={label}>CNPJ do Co-segurado</label>
+            <input
+              className={campo}
+              placeholder="00.000.000/0000-00"
+              value={form.coseguradoCnpj}
+              onChange={(e) => setForm((f) => ({ ...f, coseguradoCnpj: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className={label}>Participação do Co-segurado (%)</label>
+            <input
+              className={campo}
+              placeholder="Ex: 100%"
+              value={form.coseguradoParticipacao}
+              onChange={(e) => setForm((f) => ({ ...f, coseguradoParticipacao: e.target.value }))}
+            />
+          </div>
+          <div>
             <label className={label}>Local do Risco</label>
             <input
               className={campo}
@@ -271,25 +333,31 @@ export default function PedidoEmissaoDocumento({
         {/* Anexo da proposta vencedora da cia */}
         <div className="border rounded-lg p-4 bg-gray-50/60 space-y-2">
           <label className={label}>Proposta vencedora da cia (anexo)</label>
-          {arquivoAtual ? (
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-2 text-gray-700">
-                <Paperclip className="w-3.5 h-3.5 text-gray-400" />
-                {nomeArquivoAtual || arquivoAtual}
+          {anexoInfo && anexoInfo.url ? (
+            <div className="flex items-center justify-between text-xs bg-white border rounded px-3 py-2">
+              <span className="flex items-center gap-2 text-gray-700 truncate max-w-md">
+                <Paperclip className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <span className="truncate" title={anexoInfo.nome}>
+                  {anexoInfo.nome}
+                </span>
+                <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                  {anexoInfo.origem === 'pedido' ? 'Anexo do Pedido' : 'PDF Original da Proposta'}
+                </span>
               </span>
               <a
-                className="text-[#16578B] font-semibold hover:underline flex items-center gap-1"
-                href={`${baseUrl}/api/files/pedido_emissao/${pedidoExistente?.id}/${arquivoAtual}`}
+                className="text-[#16578B] font-semibold hover:underline flex items-center gap-1 shrink-0 ml-2"
+                href={anexoInfo.url}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 <FileDown className="w-3.5 h-3.5" /> Abrir anexo
               </a>
             </div>
           ) : (
-            <p className="text-xs text-gray-400">
-              Nenhum arquivo anexado ainda à proposta vencedora.
-            </p>
+            <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800">
+              <strong>Aviso:</strong> Nenhum arquivo de anexo PDF disponível para esta proposta
+              vencedora. Você pode selecionar um arquivo abaixo para anexar ao documento.
+            </div>
           )}
           <input
             type="file"
