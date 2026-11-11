@@ -411,16 +411,23 @@ export default function Layout() {
         role="dialog"
         aria-label="Assistente Bycor"
       >
-        <ChatAssistente compacto />
+        <ChatAssistente compacto onFechar={() => setChatAberto(false)} />
       </div>
 
-      {/* Botão flutuante para abrir/fechar o painel do chat */}
+      {/* Botão flutuante para abrir/fechar o painel do chat.
+          Painel fechado: canto inferior direito (abre).
+          Painel aberto: desliza para a esquerda da borda do drawer (fecha),
+          para nunca cobrir a barra de entrada (campo + Enviar). Em mobile,
+          onde o drawer ocupa a largura total, ele some — o fechamento é pelo
+          X no cabeçalho do painel. */}
       <button
         type="button"
         onClick={() => setChatAberto((v) => !v)}
         title={chatAberto ? 'Fechar assistente' : 'Abrir assistente'}
         aria-label={chatAberto ? 'Fechar assistente' : 'Abrir assistente'}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-[#0F2B46] to-[#16578B] text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center print:hidden"
+        className={`fixed bottom-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-[#0F2B46] to-[#16578B] text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center print:hidden ${
+          chatAberto ? 'hidden sm:block sm:right-[calc(28rem+0.25rem)]' : 'right-6'
+        }`}
       >
         {chatAberto ? <X className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
       </button>

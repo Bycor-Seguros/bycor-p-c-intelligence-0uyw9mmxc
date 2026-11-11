@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Bot, Send, User, Loader2, Compass, AlertCircle, Plus } from 'lucide-react'
+import { Bot, Send, User, Loader2, Compass, AlertCircle, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -19,9 +19,11 @@ import {
 interface ChatAssistenteProps {
   /** Modo compacto (drawer lateral): cabeçalho e mensagens mais enxutos. */
   compacto?: boolean
+  /** Callback para fechar o drawer — exibe um X no cabeçalho (usado no mobile, onde o painel ocupa a largura total). */
+  onFechar?: () => void
 }
 
-export default function ChatAssistente({ compacto = false }: ChatAssistenteProps) {
+export default function ChatAssistente({ compacto = false, onFechar }: ChatAssistenteProps) {
   const {
     user,
     messages,
@@ -116,18 +118,33 @@ export default function ChatAssistente({ compacto = false }: ChatAssistenteProps
             </p>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={novaConversa}
-          disabled={sending}
-          title="Inicia uma conversa nova (o histórico anterior é mantido)"
-          className="h-8 text-[11px] px-2.5 border-gray-300 text-gray-700 hover:text-[#16578B] hover:border-[#16578B] shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5 mr-1" />
-          Nova conversa
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={novaConversa}
+            disabled={sending}
+            title="Inicia uma conversa nova (o histórico anterior é mantido)"
+            className="h-8 text-[11px] px-2.5 border-gray-300 text-gray-700 hover:text-[#16578B] hover:border-[#16578B] shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Nova conversa
+          </Button>
+          {compacto && onFechar && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onFechar}
+              title="Fechar assistente"
+              aria-label="Fechar assistente"
+              className="sm:hidden h-8 w-8 text-gray-500 hover:text-[#16578B] hover:bg-gray-100 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Mensagens */}
