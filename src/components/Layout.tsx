@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { getDaysRemaining } from '@/lib/formatters'
 import { ApoliceMinima, buildMapaSucessao } from '@/services/apoliceStatusService'
+import ChatAssistente from '@/components/ChatAssistente'
 
 interface NavGroup {
   title?: string
@@ -55,6 +56,7 @@ export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
   const [alertCount, setAlertCount] = useState<number>(0)
+  const [chatAberto, setChatAberto] = useState(false)
 
   // Fetch count of renewals for the notification badge
   useEffect(() => {
@@ -400,6 +402,28 @@ export default function Layout() {
           </span>
         </footer>
       </div>
+
+      {/* Chat IA — painel lateral retrátil global (acompanha a navegação) */}
+      <div
+        className={`fixed inset-y-0 right-0 z-40 w-full max-w-md transform transition-transform duration-200 ease-in-out shadow-2xl print:hidden ${
+          chatAberto ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        role="dialog"
+        aria-label="Assistente Bycor"
+      >
+        <ChatAssistente compacto />
+      </div>
+
+      {/* Botão flutuante para abrir/fechar o painel do chat */}
+      <button
+        type="button"
+        onClick={() => setChatAberto((v) => !v)}
+        title={chatAberto ? 'Fechar assistente' : 'Abrir assistente'}
+        aria-label={chatAberto ? 'Fechar assistente' : 'Abrir assistente'}
+        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-[#0F2B46] to-[#16578B] text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center print:hidden"
+      >
+        {chatAberto ? <X className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
+      </button>
     </div>
   )
 }

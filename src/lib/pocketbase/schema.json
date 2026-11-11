@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T03:57:46.549Z",
+  "generatedAt": "2026-11-11T22:46:29.179Z",
   "collections": [
     {
       "name": "users",
@@ -2068,9 +2068,17 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "conversation_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": []
+      "indexes": [
+        "CREATE INDEX `idx_chat_messages_user_created` ON `chat_messages` (user) WHERE created"
+      ]
     },
     {
       "name": "contas",
