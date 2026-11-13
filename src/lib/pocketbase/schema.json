@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T22:41:18.184Z",
+  "generatedAt": "2026-11-13T23:35:05.488Z",
   "collections": [
     {
       "name": "users",
@@ -547,6 +547,12 @@
         {
           "name": "qar_imported_by",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_is_pretendida_json",
+          "type": "json",
           "required": false,
           "system": false
         }
@@ -2958,6 +2964,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tipo_valor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "importancia_segurada_pretendida",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

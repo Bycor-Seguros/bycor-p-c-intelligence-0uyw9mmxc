@@ -52,6 +52,8 @@ import { formatDate, formatCurrency } from '@/lib/formatters'
 import { ApoliceUploadModal } from '@/components/ApoliceUploadModal'
 import { ModalPortalDuploC1 } from '@/components/ModalPortalDuploC1'
 import { TipoPortaEntrada } from '@/services/portalC1Service'
+import { processarQarPdfVinculado, type QarUploadResultado } from '@/services/qarUploadFlow'
+>>>>>>>
 
 interface DocumentRecord {
   id: string
@@ -156,6 +158,18 @@ export default function RecebimentoPage() {
   const [manualData, setManualData] = useState(new Date().toISOString().slice(0, 10))
   const [manualFile, setManualFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
+  // Vínculo do documento ao cliente/empreendimento (e ciclo, quando houver) no upload
+  const [manualEmpreendimentoId, setManualEmpreendimentoId] = useState('')
+  const [manualRfqId, setManualRfqId] = useState('')
+  const [empreendimentoOptions, setEmpreendimentoOptions] = useState<
+    Array<{ id: string; nome_empreendimento: string; cnpj?: string }>
+  >([])
+  const [rfqOptions, setRfqOptions] = useState<
+    Array<{ id: string; status: string; created: string; empreendimentoId?: string }>
+  >([])
+  const [qarResultado, setQarResultado] = useState<QarUploadResultado | null>(null)
+  const [qarWarning, setQarWarning] = useState('')
 
   const fetchDocuments = async () => {
     try {
@@ -175,6 +189,44 @@ export default function RecebimentoPage() {
   useEffect(() => {
     fetchDocuments()
   }, [])
+
+  // Carrega empreendimentos e ciclos (RFQs) quando o modal de upload abre —
+  // o documento nasce vinculado ao cliente/empreendimento (e ciclo) escolhidos.
+  useEffect(() => {
+    if (!uploadModalOpen) return
+    const load = async () => {
+      try {
+        const [emps, rfqs] = await Promise.all([
+          pb.collection('empreendimentos').getFullList<{
+            id: string
+            nome_empreendimento: string
+            cnpj?: string
+          }>({ fields: 'id,nome_empreendimento,cnpj', sort: 'nome_empreendimento' }),
+          pb.collection('rfq').getFullList<{
+            id: string
+            status: string
+            created: string
+            conta_empreendimento: string
+          }>({ fields: 'id,status,created,conta_empreendimento', sort: '-created' }),
+>>>>>>>
+        ])
+        setEmpreendimentoOptions(emps)
+        setRfqOptions(
+          rfqs.map((r) => ({
+            id: r.id,
+            status: String(r.status || ''),
+            created: String(r.created || ''),
+            empreendimentoId: r.conta_empreendimento || undefined,
+          })),
+        )
+      } catch (err) {
+        console.warn('Erro ao carregar empreendimentos/ciclos:', err)
+      }
+    }
+    load()
+  }, [uploadModalOpen])
+>>>>>>>
+>>>>>>>
 
   // Risk Card Processing Handlers
   const handleRiskCardFileDrop = (e: React.DragEvent) => {
