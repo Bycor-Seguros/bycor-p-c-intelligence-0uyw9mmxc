@@ -1479,6 +1479,9 @@ export async function runAllSuites() {
   // =========================================================================
   // SUITE D: AUDITORIA CARTÃO × APÓLICE — CASAMENTO POR CATEGORIA EXATA
   // (caso real BTT Anália Franco, 13/11/2026)
+  // Nota (v0.0.176): guard 'Hóspedes' > 'Qualificado' já vive no leitor
+  // (riskCardReader.ts, matchCanonicalCategory) e é travado pelas asserções 1
+  // e 2 do teste abaixo + o teste estrutural do Estudo de Mercado.
   // =========================================================================
   runTest(
     'C3 Equivalências',
