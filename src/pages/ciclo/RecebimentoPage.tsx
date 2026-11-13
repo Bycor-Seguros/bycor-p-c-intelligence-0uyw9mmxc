@@ -52,8 +52,8 @@ import { formatDate, formatCurrency } from '@/lib/formatters'
 import { ApoliceUploadModal } from '@/components/ApoliceUploadModal'
 import { ModalPortalDuploC1 } from '@/components/ModalPortalDuploC1'
 import { TipoPortaEntrada } from '@/services/portalC1Service'
-import { processarQarPdfVinculado, type QarUploadResultado } from '@/services/qarUploadFlow'
->>>>>>>
+import { processarQarPdfVinculado } from '@/services/qarUploadFlow'
+import type { QarUploadResultado } from '@/services/qarPersistencia'
 
 interface DocumentRecord {
   id: string
@@ -208,7 +208,6 @@ export default function RecebimentoPage() {
             created: string
             conta_empreendimento: string
           }>({ fields: 'id,status,created,conta_empreendimento', sort: '-created' }),
->>>>>>>
         ])
         setEmpreendimentoOptions(emps)
         setRfqOptions(
@@ -225,8 +224,16 @@ export default function RecebimentoPage() {
     }
     load()
   }, [uploadModalOpen])
->>>>>>>
->>>>>>>
+
+  // Reabertura do modal: estado limpo (vínculo, resultado do QAR, avisos)
+  useEffect(() => {
+    if (!uploadModalOpen) return
+    setManualEmpreendimentoId('')
+    setManualRfqId('')
+    setQarResultado(null)
+    setQarWarning('')
+    setManualFile(null)
+  }, [uploadModalOpen])
 
   // Risk Card Processing Handlers
   const handleRiskCardFileDrop = (e: React.DragEvent) => {
@@ -517,14 +524,66 @@ export default function RecebimentoPage() {
   const handleManualUpload = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!manualFile) return
+    const isQar = manualTipo === 'QAR'
+    if (isQar && !manualEmpreendimentoId) {
+      alert('Para um QAR, selecione o cliente/empreendimento ao qual o documento será vinculado.')
+      return
+    }
 
     try {
       setUploading(true)
+      setQarResultado(null)
+      setQarWarning('')
+
+      if (isQar) {
+        // QAR: fluxo dedicado — grava o documento E extrai o item 21 para
+        // qar_declarados, vinculado ao empreendimento/ciclo escolhidos.
+        setUploadProgress('Processando o Leitor de QAR...')
+        const formData = new FormData()
+        formData.append('arquivo', manualFile)
+        formData.append('tipo', manualTipo)
+        formData.append('versao', manualVersao)
+        formData.append('data', manualData)
+        formData.append('vinculado_empreendimento', manualEmpreendimentoId)
+        if (manualRfqId) formData.append('rfq', manualRfqId)
+        await pb.collection('documentos').create(formData)
+
+        setUploadProgress('Extraindo dados declarados do QAR (item 21)...')
+        const res = await processarQarPdfVinculado(
+          {
+            file: manualFile,
+            empreendimentoId: manualEmpreendimentoId,
+            ...(manualRfqId ? { rfqId: manualRfqId } : {}),
+            usuarioEmail: user?.email || 'admin@bycor.com.br',
+          },
+          (msg) => setUploadProgress(msg),
+        )
+        setQarResultado(res)
+        if (res.errors.length > 0) {
+          setQarWarning(res.errors.join(' '))
+        } else if (!res.isPretendidaGravada) {
+          setQarWarning(
+            'Nenhuma Importância Segurada pretendida foi identificada no item 21 do QAR.',
+          )
+        }
+        if (res.success) {
+          setManualFile(null)
+        }
+        fetchDocuments()
+        return
+      }
+
       const formData = new FormData()
       formData.append('arquivo', manualFile)
       formData.append('tipo', manualTipo)
       formData.append('versao', manualVersao)
       formData.append('data', manualData)
+      if (manualEmpreendimentoId) {
+        formData.append('vinculado_empreendimento', manualEmpreendimentoId)
+      }
+      if (manualRfqId) {
+        formData.append('rfq', manualRfqId)
+      }
 
       await pb.collection('documentos').create(formData)
       setUploadModalOpen(false)
@@ -534,6 +593,7 @@ export default function RecebimentoPage() {
       alert('Erro no envio do documento: ' + (err as Error).message)
     } finally {
       setUploading(false)
+      setUploadProgress('')
     }
   }
 
@@ -541,6 +601,8 @@ export default function RecebimentoPage() {
     if (filterTipo === 'todos') return true
     return doc.tipo.toLowerCase() === filterTipo.toLowerCase()
   })
+
+  const isQarTipo = manualTipo === 'QAR'
 
   return (
     <div className="space-y-6">
@@ -2030,6 +2092,62 @@ export default function RecebimentoPage() {
               </select>
             </div>
 
+            {/* VÍNCULO AO CLIENTE/EMPREENDIMENTO (E CICLO, QUANDO HOUVER) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-700">
+                Cliente / Empreendimento
+                {isQarTipo && <span className="text-red-500 ml-0.5">*</span>}
+              </Label>
+              <select
+                value={manualEmpreendimentoId}
+                onChange={(e) => {
+                  setManualEmpreendimentoId(e.target.value)
+                  // Ciclo: auto-seleciona o RFQ mais recente daquele empreendimento
+                  const rfq = rfqOptions.find((r) => r.empreendimentoId === e.target.value)
+                  setManualRfqId(rfq ? rfq.id : '')
+                }}
+                className="w-full text-xs h-9 rounded-md border border-gray-300 bg-white px-3 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+              >
+                <option value="">— Sem vínculo (documento avulso) —</option>
+                {empreendimentoOptions.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.nome_empreendimento}
+                    {emp.cnpj ? ` (${emp.cnpj})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-700">Ciclo / RFQ (opcional)</Label>
+              <select
+                value={manualRfqId}
+                onChange={(e) => setManualRfqId(e.target.value)}
+                className="w-full text-xs h-9 rounded-md border border-gray-300 bg-white px-3 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+              >
+                <option value="">— Sem ciclo —</option>
+                {rfqOptions
+                  .filter(
+                    (r) =>
+                      !manualEmpreendimentoId ||
+                      !r.empreendimentoId ||
+                      r.empreendimentoId === manualEmpreendimentoId,
+                  )
+                  .map((r) => {
+                    const empNome = empreendimentoOptions.find(
+                      (x) => x.id === r.empreendimentoId,
+                    )?.nome_empreendimento
+                    return (
+                      <option key={r.id} value={r.id}>
+                        RFQ {r.created ? formatDate(r.created) : r.id}
+                        {r.status ? ` — ${r.status}` : ''}
+                        {empNome ? ` — ${empNome}` : ''}
+                      </option>
+                    )
+                  })}
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-gray-700">Versão</Label>
@@ -2052,9 +2170,13 @@ export default function RecebimentoPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-700">Arquivo (até 20MB)</Label>
+              <Label className="text-xs font-semibold text-gray-700">
+                Arquivo (até 20MB)
+                {isQarTipo && <span className="text-gray-500 font-normal"> — PDF do QAR</span>}
+              </Label>
               <Input
                 type="file"
+                accept={isQarTipo ? 'application/pdf' : undefined}
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
                     setManualFile(e.target.files[0])
@@ -2065,6 +2187,68 @@ export default function RecebimentoPage() {
               />
             </div>
 
+            {uploading && uploadProgress && (
+              <div className="flex items-center gap-2 text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#16578B]" />
+                <span>{uploadProgress}</span>
+              </div>
+            )}
+
+            {qarWarning && !uploading && (
+              <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+                <span>{qarWarning}</span>
+              </div>
+            )}
+
+            {qarResultado && !uploading && (
+              <div
+                className={`rounded-md border px-3 py-2.5 space-y-1.5 text-xs ${
+                  qarResultado.success
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : 'bg-red-50 border-red-200'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-semibold">
+                  {qarResultado.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                  )}
+                  <span className={qarResultado.success ? 'text-emerald-800' : 'text-red-800'}>
+                    Leitor de QAR —{' '}
+                    {qarResultado.success ? 'dados declarados gravados' : 'gravação com erros'}
+                  </span>
+                </div>
+                <div className="text-gray-700">
+                  {qarResultado.coberturasGravadas} coberturas declaradas lidas (
+                  {qarResultado.created} gravadas, {qarResultado.updated} atualizadas,{' '}
+                  {qarResultado.unchanged} já iguais)
+                  {qarResultado.sugestoesIgnoradas > 0
+                    ? `; ${qarResultado.sugestoesIgnoradas} sugestões do formulário ignoradas`
+                    : ''}
+                  .
+                </div>
+                {qarResultado.isPretendidaGravada && (
+                  <div className="text-gray-700">
+                    Importância Segurada pretendida e LMGs marcados vinculados ao empreendimento.
+                  </div>
+                )}
+                {qarResultado.lmgsMarcados.length > 0 && (
+                  <div className="text-gray-600">
+                    LMGs marcados: {qarResultado.lmgsMarcados.join(', ')}
+                  </div>
+                )}
+                {qarResultado.errors.length > 0 && (
+                  <div className="text-red-700">
+                    {qarResultado.errors.map((e, i) => (
+                      <div key={i}>• {e}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="pt-3 flex justify-end gap-2">
               <Button
                 type="button"
@@ -2072,16 +2256,18 @@ export default function RecebimentoPage() {
                 onClick={() => setUploadModalOpen(false)}
                 className="text-xs h-9"
               >
-                Cancelar
+                {qarResultado ? 'Fechar' : 'Cancelar'}
               </Button>
-              <Button
-                type="submit"
-                disabled={uploading}
-                className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-xs h-9"
-              >
-                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-                Salvar documento
-              </Button>
+              {!qarResultado && (
+                <Button
+                  type="submit"
+                  disabled={uploading}
+                  className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-xs h-9"
+                >
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+                  Salvar documento
+                </Button>
+              )}
             </div>
           </form>
         </DialogContent>

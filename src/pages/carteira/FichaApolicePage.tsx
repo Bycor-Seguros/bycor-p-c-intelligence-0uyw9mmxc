@@ -1821,10 +1821,22 @@ export default function FichaApolicePage() {
                 className="h-8 text-xs mt-1"
               />
             </div>
+            {apolice.id_empreendimento && (
+              <div>
+                <Label className="text-[11px] font-semibold text-gray-700">
+                  Cliente / Empreendimento
+                </Label>
+                <div className="w-full h-8 border rounded px-2 bg-gray-50 mt-1 flex items-center text-gray-700">
+                  {apolice.expand?.id_empreendimento?.nome_empreendimento ||
+                    apolice.id_empreendimento}
+                </div>
+              </div>
+            )}
             <div>
               <Label className="text-[11px] font-semibold text-gray-700">Arquivo</Label>
               <Input
                 type="file"
+                accept={docTipo === 'QAR' ? 'application/pdf' : undefined}
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
                     setDocFile(e.target.files[0])
