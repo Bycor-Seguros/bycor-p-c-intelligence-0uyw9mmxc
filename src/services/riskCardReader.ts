@@ -308,15 +308,24 @@ export function matchCanonicalCategory(rawName: string): string {
   ) {
     return 'Demolição e Desentulho'
   }
-  if (norm.includes('tubulacoes') || norm.includes('hidraulicas') || norm.includes('rompimento')) {
+  // Regra de produto (caso Danos por Água): três coberturas com categorias
+  // DISTINTAS — não agrupar em "Danos por Água / Sprinklers".
+  // - Danos por Água: dano por água em geral (ex.: rompimento de encanamento interno)
+  // - Derrame/Vazamento de Sprinklers: chuveiros automáticos
+  // - Vazamento/Rompimento de Tanques e Tubulações: tanques, tubulações, hidráulicas
+  // A ordem é crítica: Tanques/Tubulações e Derrame (Sprinklers) devem ser testados
+  // ANTES do termo genérico "danos por agua".
+  if (norm.includes('tanques') || norm.includes('tubulacoes') || norm.includes('hidraulicas')) {
     return 'Vazamento/Rompimento de Tanques e Tubulações'
   }
-  if (
-    norm.includes('chuveiros automaticos') ||
-    norm.includes('sprinklers') ||
-    norm.includes('danos por agua')
-  ) {
-    return 'Danos por Água / Sprinklers'
+  if (norm.includes('chuveiros automaticos') || norm.includes('sprinklers') || norm.includes('derrame')) {
+    return 'Derrame/Vazamento de Sprinklers'
+  }
+  if (norm.includes('rompimento') || norm.includes('vazamento')) {
+    return 'Vazamento/Rompimento de Tanques e Tubulações'
+  }
+  if (norm.includes('danos por agua') || norm.includes('danos de agua')) {
+    return 'Danos por Água'
   }
   if (norm.includes('quebra de maquinas')) {
     return 'Quebra de Máquinas'
