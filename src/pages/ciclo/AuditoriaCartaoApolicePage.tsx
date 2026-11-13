@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import {
@@ -124,6 +124,51 @@ export default function AuditoriaCartaoApolicePage() {
     })
   }, [])
 
+  /**
+   * RECORTE ÚNICO (convergência de dados gravados antes da regra de produto):
+   * para cada empreendimento com exatamente UMA rodada cuja apólice de referência ainda
+   * é do ciclo ANTERIOR (vigência encerrada antes do fim da vigência do Cartão), recalcula
+   * automaticamente contra a apólice do ciclo atual emitida — mesmo comportamento do botão
+   * "Recalcular". Rodadas múltiplas do mesmo empreendimento (intervenção humana) e qualquer
+   * caso já apontando para a apólice corrente não são tocados.
+   */
+  const autoRecalculoConcluidoRef = useRef(false)
+  useEffect(() => {
+    if (loading || autoRecalculoConcluidoRef.current || canonicas.length === 0) return
+    const candidatos = new Map<string, AuditoriaRodadaRecord>()
+    for (const r of rodadas) {
+      const apoliceRefId = r.apolice_referencia_real || r.apolice || ''
+      if (!apoliceRefId) continue
+      const apoliceRef = r.expand?.apolice
+      const vigFimApolice = apoliceRef ? String(apoliceRef.data_fim || '') : ''
+      const vigFimCartao = r.snapshot_comparativo?.identificacao?.cartao?.vigenciaFim || ''
+      // Ciclo anterior: a vigência da apólice de referência termina ANTES do fim da
+      // vigência do Cartão (o Cartão pede o ciclo seguinte ao da apólice antecessora)
+      if (
+        vigFimApolice &&
+        vigFimCartao &&
+        new Date(vigFimApolice.slice(0, 10)).getTime() <
+          new Date(vigFimCartao.slice(0, 10)).getTime()
+      ) {
+        candidatos.set(r.empreendimento, r)
+      }
+    }
+    // Só converte empreendimentos com UMA única rodada afetada (sem histórico humano a preservar)
+    const alvos = Array.from(candidatos.values())
+    if (alvos.length === 0) return
+    autoRecalculoConcluidoRef.current = true
+    ;(async () => {
+      for (const alvo of alvos) {
+        try {
+          await recalcularRodada(alvo.id)
+        } catch (err) {
+          console.error('Erro no recálculo automático de auditoria:', err)
+        }
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, rodadas, canonicas])
+
   // Lista única de empreendimentos para o filtro
   const empreendimentosList = useMemo(() => {
     const map = new Map<string, string>()
@@ -156,21 +201,32 @@ export default function AuditoriaCartaoApolicePage() {
     })
   }
 
+  /**
+   * Recalcula uma rodada contra a apólice do ciclo atual emitida e registra uma nova
+   * rodada no histórico. Usado pelo botão "Recalcular" e pelo recalculo automático
+   * de uma única rodada por empreendimento (auditorias gravadas antes da regra de
+   * produto: comparativo contra o ciclo atual, nunca o ciclo anterior).
+   */
+  const recalcularRodada = async (rodadaId: string): Promise<AuditoriaRodadaRecord | null> => {
+    const [canList, sinList] = await Promise.all([
+      listarTaxonomiaCanonicas().catch(() => []),
+      listarSinonimos().catch(() => []),
+    ])
+    const novaRodada = await recalcularRodadaAuditoria(rodadaId, {
+      canonicas: canList,
+      sinonimos: sinList,
+    })
+    setActiveRodada(novaRodada)
+    setRodadas((prev) => [novaRodada, ...prev])
+    return novaRodada
+  }
+
   const handleRecalcular = async () => {
     if (!activeRodada) return
     try {
       setRecalculando(true)
       setErroRecalculo(null)
-      const [canList, sinList] = await Promise.all([
-        listarTaxonomiaCanonicas().catch(() => []),
-        listarSinonimos().catch(() => []),
-      ])
-      const novaRodada = await recalcularRodadaAuditoria(activeRodada.id, {
-        canonicas: canList,
-        sinonimos: sinList,
-      })
-      setActiveRodada(novaRodada)
-      setRodadas((prev) => [novaRodada, ...prev])
+      await recalcularRodada(activeRodada.id)
       setConfirmRecalcOpen(false)
     } catch (err) {
       setErroRecalculo((err as Error).message || 'Erro ao recalcular a rodada')
@@ -234,7 +290,11 @@ export default function AuditoriaCartaoApolicePage() {
 
           {activeRodada?.apolice && (
             <Button
-              onClick={() => navigate(`/carteira/${activeRodada.apolice}`)}
+              onClick={() =>
+                navigate(
+                  `/carteira/${activeRodada.apolice_referencia_real || activeRodada.apolice}`,
+                )
+              }
               className="bg-[#0F2B46] hover:bg-[#1B3C5D] text-white text-xs font-semibold h-9 px-3.5 shadow-sm flex items-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5 text-blue-300" />
@@ -345,6 +405,8 @@ export default function AuditoriaCartaoApolicePage() {
                   r.snapshot_comparativo?.identificacao?.cartao?.segurado ||
                   'Empreendimento'
                 const apolNumero =
+                  // Apólice de referência real do comparativo (do ciclo atual emitida),
+                  // com fallback ao snapshot legado
                   r.expand?.apolice?.numero_apolice ||
                   r.snapshot_comparativo?.identificacao?.apolice?.numeroApolice ||
                   'Apólice Vigente'
@@ -443,7 +505,7 @@ export default function AuditoriaCartaoApolicePage() {
                         disabled={recalculando}
                         variant="outline"
                         className="text-xs font-semibold h-9 border-gray-300 hover:bg-gray-50 flex items-center gap-1.5"
-                        title="Recalcula o comparativo a partir dos dados vigentes do banco (apólice antecessora real), preservando as ressalvas já marcadas"
+                        title="Recalcula o comparativo a partir dos dados vigentes do banco contra a apólice do ciclo atual emitida"
                       >
                         {recalculando ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-[#16578B]" />
@@ -1314,11 +1376,13 @@ export default function AuditoriaCartaoApolicePage() {
             <DialogDescription className="text-xs leading-relaxed">
               O Relatório Comparativo será recalculado a partir dos{' '}
               <strong>dados vigentes do banco</strong>: coberturas atuais do Cartão de Risco do
-              processo (já higienizadas) e coberturas da <strong>apólice antecessora real</strong>{' '}
-              (mesmo empreendimento, mesmo ramo, vigência imediatamente anterior) — nunca o registro
-              prospect criado pelo próprio Cartão. A rodada atual é preservada no histórico e uma
-              nova rodada é gravada. As ressalvas C5 já marcadas são mantidas quando o item
-              correspondente continuar existindo.
+              processo (já higienizadas) e coberturas da{' '}
+              <strong>apólice do ciclo atual emitida</strong> (mesmo empreendimento, mesmo ramo,
+              vigência corrente do ciclo do Cartão) — nunca o registro prospect criado pelo próprio
+              Cartão e nunca a apólice do ciclo anterior. A rodada atual é preservada no histórico e
+              uma nova rodada é gravada. As ressalvas C5 da rodada anterior{' '}
+              <strong>não são migradas</strong>: a nova rodada começa com 0 ressalvas para
+              reavaliação.
             </DialogDescription>
           </DialogHeader>
           {erroRecalculo && (

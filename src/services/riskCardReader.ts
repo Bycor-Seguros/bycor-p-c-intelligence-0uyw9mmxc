@@ -1768,8 +1768,9 @@ export async function saveRiskCardToDatabase(
       const { buildAuditoriaSnapshot, createAuditoriaRodada, resolverApoliceReferenciaReal } =
         await import('@/services/auditoriaCartaoApoliceService')
 
-      // REGRA: o comparativo usa SEMPRE a apólice antecessora REAL (emitida, mesmo empreendimento,
-      // mesmo ramo, vigência imediatamente anterior) — nunca o registro prospect criado pelo Cartão.
+      // REGRA (regra de produto permanente): o comparativo usa SEMPRE a apólice do ciclo atual
+      // EMITIDA (mesmo empreendimento, mesmo ramo, vigência corrente do ciclo do Cartão) —
+      // nunca o registro prospect criado pelo Cartão e nunca a apólice do ciclo anterior.
       let apoliceReferenciaReal = apoliceRecordParaAuditoria
       if (apoliceRecordParaAuditoria) {
         const statusApol = String(apoliceRecordParaAuditoria.status || '')
@@ -1792,7 +1793,7 @@ export async function saveRiskCardToDatabase(
             })) as unknown as Array<Record<string, unknown>>
             coberturasApoliceVigente = coberturasReal
             onProgress?.(
-              `Comparativo ancorado na apólice antecessora real (${
+              `Comparativo ancorado na apólice do ciclo atual emitida (${
                 String(real.numero_apolice || real.id_apolice || '—') || '—'
               }).`,
             )

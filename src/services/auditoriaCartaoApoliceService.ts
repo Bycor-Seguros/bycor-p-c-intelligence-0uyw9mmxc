@@ -298,6 +298,8 @@ export interface AuditoriaRodadaRecord {
       seguradora?: string
       ramo?: string
       status?: string
+      data_inicio?: string
+      data_fim?: string
     }
   }
 }
@@ -844,13 +846,15 @@ export function buildAuditoriaSnapshot(
 }
 
 /**
- * Determina a apólice de referência REAL do comparativo (apólice antecessora emitida,
- * nunca o registro prospect criado pelo próprio Cartão de Risco).
+ * Determina a apólice de referência REAL do comparativo (apólice do ciclo atual EMITIDA,
+ * nunca o registro prospect criado pelo próprio Cartão de Risco e nunca a apólice do
+ * ciclo anterior).
  *
- * Critério: mesmo empreendimento + mesmo ramo normalizado (sucessão), status emitido
- * (ativa/renovada/vencida/a vencer) ou número de apólice oficial não-prospect, e
- * vigência imediatamente anterior à vigência do Cartão (data_fim <= início do Cartão
- * quando houver; fallback: mais recente).
+ * Critério (regra de produto permanente): mesmo empreendimento + mesmo ramo normalizado
+ * (sucessão), status emitido (ativa/renovada/vencida/a vencer) ou número de apólice
+ * oficial não-prospect. Preferência pela vigência CORRENTE do ciclo do Cartão (início do
+ * Cartão dentro do intervalo [data_inicio, data_fim]); sem datas no Cartão, a mais
+ * recente emitida. Comparar com a apólice antecessora não faz sentido para o usuário.
  */
 export async function resolverApoliceReferenciaReal(params: {
   empreendimentoId: string
@@ -895,16 +899,19 @@ export async function resolverApoliceReferenciaReal(params: {
       if (porRamo.length > 0) candidatas = porRamo
     }
 
-    // Vigência imediatamente anterior (data_fim <= início do Cartão), fallback mais recente
+    // Vigência CORRENTE do ciclo do Cartão: início do Cartão dentro do intervalo da apólice
+    // (regra de produto: comparar com a apólice do ciclo atual emitida, nunca a antecessora)
     const refMs = dataInicioCartao ? new Date(dataInicioCartao.slice(0, 10)).getTime() : NaN
     if (!isNaN(refMs)) {
-      const antesRef = candidatas.find((ap) => {
+      const vigente = candidatas.find((ap) => {
+        const ini = String(ap.data_inicio || '')
         const fim = String(ap.data_fim || '')
-        if (!fim) return false
+        if (!ini || !fim) return false
+        const iniMs = new Date(ini.slice(0, 10)).getTime()
         const fimMs = new Date(fim.slice(0, 10)).getTime()
-        return !isNaN(fimMs) && fimMs <= refMs
+        return !isNaN(iniMs) && !isNaN(fimMs) && refMs >= iniMs && refMs <= fimMs
       })
-      if (antesRef) return antesRef
+      if (vigente) return vigente
     }
 
     return candidatas[0] || null
@@ -916,8 +923,8 @@ export async function resolverApoliceReferenciaReal(params: {
 
 /**
  * Recalcula o snapshot comparativo de uma rodada de auditoria a partir dos dados VIGENTES do banco
- * (coberturas da apólice de referência real + Cartão de Risco persistido), preservando
- * ressalvas já marcadas pelo analista.
+ * (coberturas da apólice do ciclo atual emitida + Cartão de Risco persistido). Ressalvas de
+ * rodadas anteriores NÃO migram — a rodada recalculada nasce com 0 ressalvas para reavaliação.
  */
 export async function recalcularRodadaAuditoria(
   rodadaId: string,
@@ -945,7 +952,7 @@ export async function recalcularRodadaAuditoria(
 
   if (!apoliceReal) {
     throw new Error(
-      'Nenhuma apólice antecessora real (emitida) encontrada para este empreendimento/ramo. O comparativo não pode ser recalculado.',
+      'Nenhuma apólice do ciclo atual emitida encontrada para este empreendimento/ramo. O comparativo não pode ser recalculado.',
     )
   }
 
@@ -1078,24 +1085,17 @@ export async function recalcularRodadaAuditoria(
     {
       produtoCartao: idCartaoSnap?.ramo || '',
       ramoCanonicaCartao: ramoReferencia || undefined,
-      ressalvasIniciais: rodada.ressalvas_marcadas || [],
+      // Regra de produto: ressalvas de rodadas anteriores NÃO migram — a rodada recalculada
+      // começa com 0 ressalvas para o analista reavaliar contra a apólice do ciclo atual.
+      ressalvasIniciais: [],
       canonicas: (canonicas || []) as CoberturaCanonicaRecord[],
       sinonimos: (sinonimos || []) as CoberturaSinonimoRecord[],
     },
   )
 
-  // 6. Recalcula totais (ressalvas preservadas: IDs marcados que ainda existem no novo snapshot)
-  const ressalvasAnteriores = new Set(rodada.ressalvas_marcadas || [])
+  // 6. Recalcula totais — ressalvas NÃO migram: a rodada recalculada nasce com 0 ressalvas
+  //    (regra de produto: o analista reavalia do zero contra a apólice do ciclo atual)
   const ressalvasPreservadas: string[] = []
-  novoSnapshot.coberturas.casadas.forEach((c) => {
-    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
-  })
-  novoSnapshot.coberturas.soNoCartao.forEach((c) => {
-    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
-  })
-  novoSnapshot.coberturas.soNaApolice.forEach((c) => {
-    if (ressalvasAnteriores.has(c.id) && c.candidatoRessalvaC5) ressalvasPreservadas.push(c.id)
-  })
 
   const totalDivergencias =
     novoSnapshot.identificacao.divergenciasIdentificacao.length +
@@ -1118,9 +1118,9 @@ export async function recalcularRodadaAuditoria(
     total_ressalvas_c5: ressalvasPreservadas.length,
     snapshot_comparativo: novoSnapshot,
     ressalvas_marcadas: ressalvasPreservadas,
-    observacoes: `Recalculada a partir dos dados vigentes do banco (apólice de referência: ${String(
+    observacoes: `Recalculada a partir dos dados vigentes do banco contra a apólice do ciclo atual emitida (ref.: ${String(
       apoliceReal.numero_apolice || apoliceReal.id_apolice || '—',
-    )}). Histórico da rodada #${rodada.numero_rodada} preservado.`,
+    )}). Ressalvas da rodada anterior não migradas — reavaliar. Histórico da rodada #${rodada.numero_rodada} preservado.`,
   })
 
   return record as unknown as AuditoriaRodadaRecord
