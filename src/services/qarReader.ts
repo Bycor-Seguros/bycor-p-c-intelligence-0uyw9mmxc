@@ -92,6 +92,9 @@ function parseNumeroPtBr(raw: string): number | null {
     normalizado = soNumeros.replace(/\./g, '').replace(',', '.')
   } else if (temVirgula) {
     normalizado = soNumeros.replace(',', '.')
+  } else if (temPonto && /^\d{1,3}(\.\d{3})+$/.test(soNumeros)) {
+    // Só pontos: todos são separadores de milhar (ex.: "2.000.000")
+    normalizado = soNumeros.replace(/\./g, '')
   } else {
     normalizado = soNumeros
   }
@@ -126,13 +129,18 @@ function parseQarLinhaCobertura(
   // Índice de início do valor: primeiro de % ou R$ na linha
   const idxPct = texto.search(/\d{1,3}(?:[.,]\d+)?\s*%/)
   const idxValor = texto.indexOf('R$')
-  const cortes = [idxPct, idxValor].filter((i) => i >= 0)
+  // Número de milhar sem R$ nem % (ex.: "Portões Automáticos 100.000"):
+  // também é corte de valor declarado — não é sugestão do formulário.
+  const idxMilhar = texto.search(/\b\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?\b/)
+  const cortes = [idxPct, idxValor, idxMilhar].filter((i) => i >= 0)
   if (cortes.length === 0) return null
   const corte = Math.min(...cortes)
 
   const nomeBruto = texto.slice(0, corte).trim()
   const nome = nomeBruto
     .replace(/^[\s•\-–—*.:;]+/, '')
+    // "X" de marcação que gruda no nome no PDF (ex.: "Colisão ... X")
+    .replace(/\s+[xX]\s*$/, '')
     .replace(/[\s\-–—:;,.(]+$/, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -148,7 +156,9 @@ function parseQarLinhaCobertura(
     if (mVal) valorPretendido = parseValorQar(mVal[0])
   }
   if (valorPretendido === null && !mPct) {
-    // Número solto com separador de milhar (ex.: "2.000.000" sem R$)
+    // Número solto com separador de milhar (ex.: "2.000.000" sem R$).
+    // Com % declarado na linha, o % É o valor da cobertura — a milhar vinda
+    // depois (coluna da tabela) nunca sobrescreve o % (regra do formulário).
     const mMilhar = trechoValor.match(/\b\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?\b/)
     if (mMilhar) valorPretendido = parseValorQar(mMilhar[0])
   }

@@ -40,6 +40,14 @@ export interface QarUploadResultado {
   errors: string[]
 }
 
+/** "1 km" => 1 ; "1,5 km" => 1.5 ; null => null (campo distancia_km numérico). */
+function parseNumeroQarKm(detalheKm: string | null): number | null {
+  if (!detalheKm) return null
+  const m = detalheKm.match(/(\d+(?:[.,]\d+)?)/)
+  if (!m) return null
+  return Number(m[1].replace(',', '.'))
+}
+
 function identicalQar(rec: Record<string, unknown>, payload: Record<string, unknown>): boolean {
   const eq = (a: unknown, b: unknown) => String(a ?? '') === String(b ?? '')
   return (
@@ -47,7 +55,7 @@ function identicalQar(rec: Record<string, unknown>, payload: Record<string, unkn
     eq(rec.tipo_valor, payload.tipo_valor) &&
     eq(rec.percentual_is_pretendida, payload.percentual_is_pretendida) &&
     eq(rec.valor_pretendido_rs, payload.valor_pretendido_rs) &&
-    eq(rec.detalhe_km, payload.detalhe_km) &&
+    eq(rec.distancia_km, payload.distancia_km) &&
     eq(rec.lmg_marcado, payload.lmg_marcado) &&
     eq(rec.lmg_index, payload.lmg_index) &&
     eq(rec.importancia_segurada_pretendida, payload.importancia_segurada_pretendida)
@@ -150,7 +158,7 @@ export async function salvarQarDeclarado(
       tipo_valor: cob.tipoValor,
       percentual_is_pretendida: cob.percentual,
       valor_pretendido_rs: cob.valorPretendido,
-      detalhe_km: cob.detalheKm,
+      distancia_km: parseNumeroQarKm(cob.detalheKm),
       lmg_marcado: cob.lmgMarcado,
       lmg_index: cob.lmgIndex,
       linha_original: cob.linhaOriginal,

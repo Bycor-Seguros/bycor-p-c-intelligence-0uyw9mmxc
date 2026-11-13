@@ -119,6 +119,38 @@ describe('qarReader — item 21 (formulário padrão, fixture sintético)', () =
     expect(parsePercentualQar('5%')).toBe(5)
   })
 
+  it('milhar sem R$ é corte de valor, X gruda no nome é removido e km vai no detalhe', () => {
+    const brutas = parseQar21([
+      '21. LIMITE MÁXIMO DE GARANTIA (LMG) POR COBERTURA - marcar e informar',
+      'Colisão de Veículos de Terceiros Compreensiva 2.000.000',
+      'Portões Automáticos 100.000',
+      'Percurso entre o estabelecimento e a garagem 2.000.000 (1 KM)',
+      'Guarda de Veículos de Terceiros Parcial',
+      'Transporte de pessoas em veículos terrestres de terceiros',
+      '22. Observações',
+    ])
+    const pega = (p: RegExp) => brutas.coberturas.find((c) => p.test(c.cobertura))
+    const colisao = pega(/Colis/i)
+    expect(colisao?.cobertura).toBe('Colisão de Veículos de Terceiros Compreensiva')
+    expect(colisao?.valorPretendido).toBe(2_000_000)
+    const portoes = pega(/Port.es Autom/i)
+    expect(portoes?.cobertura).toBe('Portões Automáticos')
+    expect(portoes?.valorPretendido).toBe(100_000)
+    const percurso = pega(/Percurso/i)
+    expect(percurso?.cobertura).toBe('Percurso entre o estabelecimento e a garagem')
+    expect(percurso?.valorPretendido).toBe(2_000_000)
+    expect(percurso?.detalheKm).toBe('1 km')
+    // Sem marcação nem valor do formulário: continua sugestão (ignorada)
+    expect(brutas.sugestoesIgnoradas).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Guarda de Ve/),
+        expect.stringMatching(/Transporte de pessoas/),
+      ]),
+    )
+    expect(brutas.coberturas.every((c) => !/Guarda de Ve/.test(c.cobertura))).toBe(true)
+    expect(brutas.coberturas.every((c) => !/Transporte de pessoas/.test(c.cobertura))).toBe(true)
+  })
+
   it('item 21 ausente => extração vazia (sem throw)', () => {
     const vazio = parseQar21(['texto qualquer', 'sem item 21'])
     expect(vazio.coberturas).toHaveLength(0)
