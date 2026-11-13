@@ -1157,9 +1157,12 @@ export async function recalcularRodadaAuditoria(
     coberturas: coberturasCartaoFinal.map((c, idx) => ({
       numero: idx + 1,
       nomeOriginal: String(c.nome_cobertura || ''),
-      categoriaNormalizada:
-        String(c.categoria_normalizada || '') ||
-        matchCanonicalCategory(String(c.nome_cobertura || '')),
+      // REGRA DE PRODUTO (dupla camada 1): a categoria gravada no banco pode ser LEGADA
+      // (gravada antes de correções do categorizador — ex.: 'Roubo/Furto Qualificado de
+      // Bens de Hóspedes' gravado como 'Roubo/Furto de Bens do Segurado' porque
+      // 'Qualificado' venceu 'Hóspedes'). O NOME é a fonte da verdade: a categoria é
+      // sempre re-derivada pelo nome vigente do categorizador, nunca herdada do banco.
+      categoriaNormalizada: matchCanonicalCategory(String(c.nome_cobertura || '')),
       isAtual: null,
       isAtualizada: null,
       isEscolhida:
