@@ -99,6 +99,74 @@ export function encontrarLmiApoliceCorrespondente(
     ? matchCartao.eventosEfetivos
     : derivarEventosTipicosPadrao(nomeCartao)
 
+  // 0. PRIORIDADE: CATEGORIA NORMALIZADA EXATA (regra de produto permanente)
+  //    Quando o Cartão traz uma categoria normalizada válida e existe cobertura na
+  //    apólice com a MESMA categoria, o casamento é essa cobertura — nunca uma
+  //    cobertura de outra categoria (ex.: nunca casar "Bens de Hóspedes" com
+  //    "Valores em Trânsito" só porque os eventos de roubo se sobrepõem).
+  //    Similaridade de texto e eventos são apenas FALLBACK para quando não há
+  //    candidata na categoria exata.
+  const catCartao = itemCartao.categoriaNormalizada?.trim() || ''
+  const catNorm = (v: string | undefined | null) => (v || '').trim().toLowerCase()
+  if (catCartao) {
+    const mesmaCategoria = candidatosApolice.filter((cand) => {
+      const catAp = catNorm(cand.categoriaNormalizada || cand.categoria_normalizada)
+      return catAp !== '' && catAp === catNorm(catCartao)
+    })
+    if (mesmaCategoria.length > 0) {
+      // Desempate dentro da categoria exata: maior similaridade textual; LMI mais
+      // próxima como critério secundário. Sem nome no cartão, fica a primeira.
+      let escolhida = mesmaCategoria[0]
+      let melhorTie = -1
+      for (const cand of mesmaCategoria) {
+        const nomeAp = (
+          cand.nomeApolice ||
+          cand.nome_cobertura ||
+          cand.categoriaNormalizada ||
+          cand.categoria_normalizada ||
+          ''
+        ).trim()
+        const tieTexto = nomeCartao && nomeAp ? calcularSimilaridadeTexto(nomeCartao, nomeAp) : 0
+        const lmiAp =
+          typeof cand.lmiApolice === 'number'
+            ? cand.lmiApolice
+            : typeof cand.lmi_rs === 'number'
+              ? cand.lmi_rs
+              : null
+        const tieLmi =
+          tieTexto > 0 && lmiAp !== null && typeof itemCartao.lmiCartao === 'number'
+            ? 1 - Math.min(Math.abs((lmiAp - (itemCartao.lmiCartao || 0)) / 100000), 1)
+            : 0
+        const score = tieTexto + tieLmi
+        if (score > melhorTie) {
+          melhorTie = score
+          escolhida = cand
+        }
+      }
+      const lmi =
+        typeof escolhida.lmiApolice === 'number'
+          ? escolhida.lmiApolice
+          : typeof escolhida.lmi_rs === 'number'
+            ? escolhida.lmi_rs
+            : null
+      const nome =
+        escolhida.nomeApolice || escolhida.nome_cobertura || escolhida.categoriaNormalizada
+      const franquiaCrua = escolhida.franquiaApolice || escolhida.franquia_pos || ''
+      const franquiaFormatada = franquiaCrua
+        ? formatFranquiaPadrao(parseFranquiaEstruturada(franquiaCrua))
+        : ''
+      return {
+        temCorrespondencia: true,
+        lmiApolice: lmi,
+        lmiTexto: lmi !== null ? formatCurrency(lmi) : 'R$ 0,00',
+        nomeApolice: nome,
+        franquiaApolice: franquiaFormatada || franquiaCrua,
+        detalhe: `Correspondência por categoria normalizada exata: ${catCartao}`,
+        tipoEquivalencia: 'canonica',
+      }
+    }
+  }
+
   let melhorCandidato: (typeof candidatosApolice)[0] | null = null
   let melhorScore = 0
   let tipoEquiv: 'sinonimo' | 'canonica' | 'evento' | 'similaridade' = 'similaridade'
@@ -475,6 +543,26 @@ export function buildAuditoriaSnapshot(
     })
   })
 
+  // Candidatas a "correspondência de fallback" para itens só-no-cartão (REGRA DE
+  // PRODUTO): só coberturas da apólice cuja categoria NÃO tenha representante do
+  // cartão naquele grupo. Se a categoria da cobertura da apólice tem item do cartão
+  // (casado em outro grupo), não pode servir de correspondência — casar
+  // "Bens de Hóspedes" com "Valores em Trânsito" é o falso positivo do Anália.
+  const categoriasComRepresentanteCartao = new Set<string>()
+  for (const item of cardCobItems)
+    categoriasComRepresentanteCartao.add((item.categoriaNormalizada || '').trim().toLowerCase())
+  const candidatosFallbackApolice = apCobItems
+    .filter(
+      (a) =>
+        !categoriasComRepresentanteCartao.has((a.categoriaNormalizada || '').trim().toLowerCase()),
+    )
+    .map((a) => ({
+      nomeApolice: a.nomeOriginal,
+      categoriaNormalizada: a.categoriaNormalizada,
+      lmiApolice: a.lmi,
+      franquiaApolice: a.franquia,
+    }))
+
   // Agrupa coberturas por categoria normalizada
   const cardByCat = new Map<string, CardCobItem[]>()
   for (const item of cardCobItems) {
@@ -504,11 +592,34 @@ export function buildAuditoriaSnapshot(
 
     if (cItems.length > 0 && aItems.length > 0) {
       // Casadas (pode haver mais de uma no mesmo grupo, pareamos 1:1)
-      const maxCount = Math.max(cItems.length, aItems.length)
-      for (let i = 0; i < maxCount; i++) {
+      // Pareamento DENTRO da categoria: cada item do cartão casa com a cobertura da
+      // apólice mais parecida ainda não usada (similaridade de texto, desempate por
+      // LMI mais próxima) — nunca 1:1 cega por índice.
+      const aItemsDisponiveis = [...aItems]
+      for (let i = 0; i < cItems.length; i++) {
         itemCounter++
-        const ci = cItems[i]
-        const ai = aItems[i]
+        let ci = cItems[i]
+        let ai: ApCobItem | undefined
+        if (aItemsDisponiveis.length > 0) {
+          let melhorIdx = 0
+          let melhorScore = -1
+          for (let j = 0; j < aItemsDisponiveis.length; j++) {
+            const cand = aItemsDisponiveis[j]
+            const sim = calcularSimilaridadeTexto(ci.nomeOriginal, cand.nomeOriginal)
+            const lmiAp = cand.lmi
+            const lmiC = ci.lmi
+            const proxLmi =
+              lmiAp !== null && lmiC !== null && lmiAp > 0
+                ? 1 - Math.min(Math.abs((lmiAp - lmiC) / 100000), 1)
+                : 0
+            const score = sim * 2 + proxLmi
+            if (score > melhorScore) {
+              melhorScore = score
+              melhorIdx = j
+            }
+          }
+          ai = aItemsDisponiveis.splice(melhorIdx, 1)[0]
+        }
 
         if (ci && ai) {
           const lmiC = ci.lmi
@@ -573,12 +684,7 @@ export function buildAuditoriaSnapshot(
               categoriaNormalizada: cat,
               lmiCartao: ci.lmi,
             },
-            apCobItems.map((a) => ({
-              nomeApolice: a.nomeOriginal,
-              categoriaNormalizada: a.categoriaNormalizada,
-              lmiApolice: a.lmi,
-              franquiaApolice: a.franquia,
-            })),
+            candidatosFallbackApolice.map((a) => ({ ...a })),
             {
               seguradora: String(apolice.seguradora || ''),
               canonicas: options?.canonicas,
@@ -638,12 +744,7 @@ export function buildAuditoriaSnapshot(
             categoriaNormalizada: cat,
             lmiCartao: ci.lmi,
           },
-          apCobItems.map((a) => ({
-            nomeApolice: a.nomeOriginal,
-            categoriaNormalizada: a.categoriaNormalizada,
-            lmiApolice: a.lmi,
-            franquiaApolice: a.franquia,
-          })),
+          candidatosFallbackApolice.map((a) => ({ ...a })),
           {
             seguradora: String(apolice.seguradora || ''),
             canonicas: options?.canonicas,

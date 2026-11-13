@@ -1477,6 +1477,86 @@ export async function runAllSuites() {
   )
 
   // =========================================================================
+  // SUITE D: AUDITORIA CARTÃO × APÓLICE — CASAMENTO POR CATEGORIA EXATA
+  // (caso real BTT Anália Franco, 13/11/2026)
+  // =========================================================================
+  runTest(
+    'C3 Equivalências',
+    'Auditoria Cartão × Apólice: casamento prioriza CATEGORIA NORMALIZADA EXATA (Hóspedes R$ 100.000 não casa com Valores em Trânsito R$ 5.000 — caso Anália Franco)',
+    async () => {
+      const { encontrarLmiApoliceCorrespondente } = await import('../auditoriaCartaoApoliceService')
+      const { matchCanonicalCategory } = await import('../riskCardReader')
+
+      // 1. O leitor do cartão NÃO classifica "…Bens de Hóspedes" como "Bens do Segurado"
+      //    ("hóspedes" tem prioridade sobre o termo genérico "qualificado de bens")
+      assertEqual(
+        matchCanonicalCategory('Roubo/Furto Qualificado de Bens de Hóspedes'),
+        'Roubo/Furto de Bens/Valores de Hóspedes',
+        'Cartão "Qualificado de Bens de Hóspedes" deve cair na categoria de Hóspedes',
+      )
+      assertEqual(
+        matchCanonicalCategory('Roubo E/ou Furto Qualificado de Bens'),
+        'Roubo/Furto de Bens do Segurado',
+        'Cartão sem "hóspedes" continua na categoria de Bens do Segurado',
+      )
+
+      // 2. Cenário real (dados da apólice 2026 do Anália, id u6c6idcyqivb2vd):
+      //    a apólice TEM a cobertura de Hóspedes com LMI 100.000 — o casamento deve ser
+      //    ela (categoria exata), nunca "Valores em Trânsito" (R$ 5.000) por similaridade
+      const candidatosApolice = [
+        {
+          nomeApolice: 'Roubo De Valores Em Trânsito Em Mãos De Portadores',
+          categoriaNormalizada: 'Roubo/Furto de Valores (Interior/Trânsito)',
+          lmiApolice: 5000,
+          franquiaApolice: '',
+        },
+        {
+          nomeApolice: 'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes',
+          categoriaNormalizada: 'Roubo/Furto de Bens/Valores de Hóspedes',
+          lmiApolice: 100000,
+          franquiaApolice: '',
+        },
+      ]
+      const res = encontrarLmiApoliceCorrespondente(
+        {
+          nomeCartao: 'Roubo/Furto Qualificado de Bens de Hóspedes',
+          categoriaNormalizada: 'Roubo/Furto de Bens/Valores de Hóspedes',
+          lmiCartao: 100000,
+        },
+        candidatosApolice,
+        {},
+      )
+      assert(res.temCorrespondencia, 'Deve encontrar correspondência na categoria exata')
+      assertEqual(
+        res.lmiApolice,
+        100000,
+        'LMI casada deve ser a da cobertura de Hóspedes (R$ 100.000), não a de Trânsito (R$ 5.000)',
+      )
+      assertEqual(
+        res.nomeApolice,
+        'Roubo E/Ou Furto Qualificado De Bens Dos Hóspedes',
+        'Nome casado deve ser a cobertura de Hóspedes da apólice',
+      )
+
+      // 3. Fallback (sem categoria no cartão): nunca casar "Bens de Hóspedes" com
+      //    "Valores em Trânsito" quando existe cobertura da MESMA categoria do cartão
+      const semCategoria = encontrarLmiApoliceCorrespondente(
+        {
+          nomeCartao: 'Roubo/Furto Qualificado de Bens de Hóspedes',
+          lmiCartao: 100000,
+        },
+        candidatosApolice,
+        {},
+      )
+      assert(
+        !semCategoria.temCorrespondencia ||
+          semCategoria.nomeApolice !== 'Roubo De Valores Em Trânsito Em Mãos De Portadores',
+        'Fallback não deve casar Bens de Hóspedes com Valores (Interior/Trânsito) — falso positivo do Anália',
+      )
+    },
+  )
+
+  // =========================================================================
   // TESTE ESTRUTURAL DO ESTUDO DE MERCADO F1 (PPTX 12 SLIDES & 42 COBERTURAS)
   // =========================================================================
   runTest(

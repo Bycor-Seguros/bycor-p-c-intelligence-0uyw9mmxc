@@ -269,14 +269,19 @@ export function matchCanonicalCategory(rawName: string): string {
   if (norm.includes('recomposicao de registros') || norm.includes('documentos')) {
     return 'Recomposição de Registros/Documentos'
   }
+  // ORDEM CRÍTICA (regra de produto): coberturas de BENS DE HÓSPEDES devem ser
+  // testadas ANTES do termo genérico "qualificado de bens" — o nome típico do cartão
+  // ("Roubo/Furto Qualificado de Bens de Hóspedes") CONTÉM "qualificado de bens" e,
+  // sem essa ordem, é classificado como "Bens do Segurado" e casado errado na
+  // auditoria Cartão × Apólice com "Roubo de Valores (Interior/Trânsito)".
+  if (norm.includes('hospedes') || norm.includes('hospede')) {
+    return 'Roubo/Furto de Bens/Valores de Hóspedes'
+  }
   if (
     norm.includes('roubo') &&
     (norm.includes('segurado') || norm.includes('qualificado de bens'))
   ) {
     return 'Roubo/Furto de Bens do Segurado'
-  }
-  if (norm.includes('hospedes') || norm.includes('hospede')) {
-    return 'Roubo/Furto de Bens/Valores de Hóspedes'
   }
   if (
     norm.includes('valores') &&
