@@ -318,7 +318,11 @@ export function matchCanonicalCategory(rawName: string): string {
   if (norm.includes('tanques') || norm.includes('tubulacoes') || norm.includes('hidraulicas')) {
     return 'Vazamento/Rompimento de Tanques e Tubulações'
   }
-  if (norm.includes('chuveiros automaticos') || norm.includes('sprinklers') || norm.includes('derrame')) {
+  if (
+    norm.includes('chuveiros automaticos') ||
+    norm.includes('sprinklers') ||
+    norm.includes('derrame')
+  ) {
     return 'Derrame/Vazamento de Sprinklers'
   }
   if (norm.includes('rompimento') || norm.includes('vazamento')) {
