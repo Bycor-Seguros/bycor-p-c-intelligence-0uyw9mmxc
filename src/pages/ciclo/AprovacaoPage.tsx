@@ -162,6 +162,11 @@ export default function AprovacaoPage() {
                 await pb.collection('historico').create({
                   registro_id: rel.antecessora.id,
                   tabela: 'apolices',
+                  empreendimento: apoliceAprovada.id_empreendimento,
+                  apolice: apoliceAprovada.id,
+                  assunto: `Renovação homologada — ${selectedAudit.expand?.apolice?.seguradora || 'Seguradora'}`,
+                  categoria: 'Renovação',
+                  data_fato: `${dataRenovacao.slice(0, 10)} 00:00:00.000Z`,
                   data: now.slice(0, 10),
                   cia: selectedAudit.expand?.apolice?.seguradora || 'Seguradora',
                   texto: `RENOVAÇÃO HOMOLOGADA EM C6: Apólice renovada pela nova apólice oficial nº ${
@@ -183,6 +188,11 @@ export default function AprovacaoPage() {
         await pb.collection('historico').create({
           registro_id: selectedAudit.id,
           tabela: 'auditoria_aprovacao',
+          empreendimento: selectedAudit.empreendimento,
+          apolice: selectedAudit.apolice || null,
+          assunto: 'Aprovação técnica — base oficial',
+          categoria: 'Decisão de Cobertura',
+          data_fato: `${now.slice(0, 10)} 00:00:00.000Z`,
           data: now.slice(0, 10),
           cia: selectedAudit.expand?.apolice?.seguradora || 'Seguradora',
           texto: `APROVAÇÃO TÉCNICA REALIZADA: Apólice nº ${selectedAudit.expand?.apolice?.numero_apolice} confirmada na base oficial por ${analistaNome}.`,
@@ -200,6 +210,11 @@ export default function AprovacaoPage() {
         await pb.collection('historico').create({
           registro_id: selectedAudit.id,
           tabela: 'auditoria_aprovacao',
+          empreendimento: selectedAudit.empreendimento,
+          apolice: selectedAudit.apolice || null,
+          assunto: 'Aprovação rejeitada — retornada ao C5',
+          categoria: 'Decisão de Cobertura',
+          data_fato: `${now.slice(0, 10)} 00:00:00.000Z`,
           data: now.slice(0, 10),
           cia: selectedAudit.expand?.apolice?.seguradora || 'Seguradora',
           texto: `APROVAÇÃO REJEITADA: Retornada para correção no Módulo C5 por ${analistaNome}.`,

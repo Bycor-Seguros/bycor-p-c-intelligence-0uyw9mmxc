@@ -127,7 +127,59 @@ interface HistoricoItem {
   data: string
   cia: string
   texto: string
+  assunto?: string
+  categoria?: string
+  data_fato?: string
+  empreendimento?: string
+  apolice?: string
+  registro_id?: string
+  tabela?: string
   autor?: string
+  created?: string
+  expand?: {
+    apolice?: {
+      id: string
+      numero_apolice?: string
+      data_inicio?: string
+      data_fim?: string
+      seguradora?: string
+    }
+  }
+}
+
+// Pró-Memória do cliente: categorias e cores da linha do tempo
+const CATEGORIAS_HIST = [
+  'Negociação',
+  'Sinistro',
+  'Endosso',
+  'Renovação',
+  'Decisão de Cobertura',
+] as const
+
+const CORES_CATEGORIA_HIST: Record<string, { badge: string; dot: string }> = {
+  Negociação: { badge: 'bg-blue-50 text-[#16578B] border-blue-200', dot: 'bg-[#16578B]' },
+  Sinistro: { badge: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500' },
+  Endosso: { badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  Renovação: { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  'Decisão de Cobertura': {
+    badge: 'bg-violet-50 text-violet-700 border-violet-200',
+    dot: 'bg-violet-500',
+  },
+}
+
+// Rótulo de ciclo (vigência) + nº da apólice, ex.: "Ciclo 2026/27 · 02852.2026..."
+function cicloLabelApolice(
+  a?: {
+    data_inicio?: string
+    data_fim?: string
+    numero_apolice?: string
+  } | null,
+): string {
+  const y1 = a?.data_inicio?.slice(0, 4) || ''
+  const y2 = a?.data_fim?.slice(0, 4) || ''
+  const ciclo = y1 && y2 ? (y1 === y2 ? `Ciclo ${y1}` : `Ciclo ${y1}/${y2.slice(2)}`) : ''
+  const num = (a?.numero_apolice || '').replace(/^Nº da apólice\s*:?\s*/i, '').trim()
+  return [ciclo, num].filter(Boolean).join(' · ')
 }
 
 interface DocumentoItem {
@@ -170,11 +222,14 @@ export default function FichaApolicePage() {
   // Renovation cycle modal
   const [renovacaoModalOpen, setRenovacaoModalOpen] = useState(false)
 
-  // Histórico editing
+  // Pró-Memória do cliente (linha do tempo contínua por empreendimento)
+  const [newHistAssunto, setNewHistAssunto] = useState('')
+  const [newHistCategoria, setNewHistCategoria] = useState<string>('Negociação')
   const [newHistData, setNewHistData] = useState(new Date().toISOString().slice(0, 10))
-  const [newHistCia, setNewHistCia] = useState('')
   const [newHistTexto, setNewHistTexto] = useState('')
   const [addingHist, setAddingHist] = useState(false)
+  const [filtroHistCategoria, setFiltroHistCategoria] = useState('')
+  const [filtroHistAno, setFiltroHistAno] = useState('')
 
   // Document upload
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -234,10 +289,15 @@ export default function FichaApolicePage() {
       })
       setSinistros(sins)
 
-      // Fetch historico
+      // Pró-Memória do cliente: linha do tempo completa do EMPREENDIMENTO
+      // (todas as apólices/ciclos), não apenas desta apólice.
+      const histFilter = ap.id_empreendimento
+        ? `empreendimento="${ap.id_empreendimento}"`
+        : `registro_id="${id}" && tabela="apolices"`
       const hists = await pb.collection('historico').getFullList<HistoricoItem>({
-        filter: `registro_id="${id}" && tabela="apolices"`,
-        sort: '-data',
+        filter: histFilter,
+        sort: '-data_fato,-created',
+        expand: 'apolice',
       })
       setHistoricoList(hists)
 
@@ -258,24 +318,32 @@ export default function FichaApolicePage() {
     fetchApoliceFull()
   }, [id])
 
-  // Save new history row
+  // Save new history row (Pró-Memória: ancorado no empreendimento)
   const handleAddHistorico = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!apolice || !newHistTexto.trim()) return
+    if (!apolice || !newHistAssunto.trim() || !newHistTexto.trim()) return
 
     try {
       setAddingHist(true)
       const payload = {
         registro_id: apolice.id,
         tabela: 'apolices',
+        empreendimento: apolice.id_empreendimento,
+        apolice: apolice.id,
+        assunto: newHistAssunto.trim(),
+        categoria: newHistCategoria,
+        data_fato: `${newHistData} 00:00:00.000Z`,
         data: newHistData,
-        cia: newHistCia.trim() || apolice.seguradora,
+        cia: apolice.seguradora,
         texto: newHistTexto.trim(),
         autor: user?.id,
         timestamp: new Date().toISOString(),
       }
       await pb.collection('historico').create(payload)
+      setNewHistAssunto('')
       setNewHistTexto('')
+      setNewHistData(new Date().toISOString().slice(0, 10))
+      setNewHistCategoria('Negociação')
       fetchApoliceFull()
     } catch (err: unknown) {
       alert('Erro ao salvar histórico: ' + (err as Error).message)
@@ -321,7 +389,7 @@ export default function FichaApolicePage() {
 
   // Delete history row
   const handleDeleteHistorico = async (histId: string) => {
-    if (!confirm('Deseja excluir este registro de histórico?')) return
+    if (!confirm('Deseja excluir este registro da Pró-Memória?')) return
     try {
       await pb.collection('historico').delete(histId)
       fetchApoliceFull()
@@ -353,6 +421,22 @@ export default function FichaApolicePage() {
     })
     return duplicateList
   }
+
+  // ---- Pró-Memória: filtros por categoria e por ano ----
+  const anosDisponiveisHist = Array.from(
+    new Set(
+      historicoList
+        .map((h) => (h.data_fato || h.data || '').slice(0, 4))
+        .filter((y) => y.length === 4),
+    ),
+  ).sort((a, b) => b.localeCompare(a))
+
+  const historicoFiltrado = historicoList.filter((h) => {
+    const dFato = (h.data_fato || h.data || '').slice(0, 10)
+    if (filtroHistCategoria && (h.categoria || '') !== filtroHistCategoria) return false
+    if (filtroHistAno && dFato.slice(0, 4) !== filtroHistAno) return false
+    return true
+  })
 
   const duplicateGroups = getDuplicateCoverageGroups()
   const totalDuplicateRecordsToRemove = duplicateGroups.reduce(
@@ -724,7 +808,7 @@ export default function FichaApolicePage() {
           {[
             { id: 'dados', label: 'Dados & Subseguro' },
             { id: 'documentos', label: `Documentos (${documentos.length})` },
-            { id: 'historico', label: `Histórico Operacional (${historicoList.length})` },
+            { id: 'historico', label: `Pró-Memória do Cliente (${historicoList.length})` },
             { id: 'coberturas', label: `Coberturas (${coberturas.length})` },
             { id: 'sinistros', label: `Sinistros (${sinistros.length})` },
           ].map((tab) => (
@@ -990,17 +1074,49 @@ export default function FichaApolicePage() {
         </div>
       )}
 
-      {/* 3. HISTÓRICO EDITÁVEL COM AUDITORIA */}
+      {/* 3. PRÓ-MEMÓRIA DO CLIENTE (linha do tempo contínua por empreendimento) */}
       {activeTab === 'historico' && (
         <div className="bg-white rounded-xl border border-[#E4E9F0] p-6 shadow-sm space-y-6">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">
-              Histórico de Sinistralidade & Negociações
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Tabela editável com autoria e data, utilizada na composição do pacote de renovação
-              para as seguradoras.
-            </p>
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
+                Pró-Memória do Cliente —{' '}
+                {apolice.expand?.id_empreendimento?.nome_empreendimento ||
+                  apolice.segurado_na_apolice}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
+                Linha do tempo contínua do cliente: todos os fatos, negociações e decisões
+                registrados ao longo dos anos, em todos os ciclos/apólices do empreendimento — o
+                porquê de cada cobertura retirada, incluída ou redesenhada. A apólice desta ficha
+                está destacada.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <select
+                value={filtroHistCategoria}
+                onChange={(e) => setFiltroHistCategoria(e.target.value)}
+                className="h-8 text-xs bg-white border border-gray-300 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+              >
+                <option value="">Todas as categorias</option>
+                {CATEGORIAS_HIST.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filtroHistAno}
+                onChange={(e) => setFiltroHistAno(e.target.value)}
+                className="h-8 text-xs bg-white border border-gray-300 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+              >
+                <option value="">Todos os anos</option>
+                {anosDisponiveisHist.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* New row form */}
@@ -1009,11 +1125,36 @@ export default function FichaApolicePage() {
             className="p-4 rounded-xl bg-gray-50 border space-y-3"
           >
             <span className="text-xs font-semibold text-gray-700">
-              Registrar nova ocorrência / nota:
+              Registrar novo fato / nota na Pró-Memória:
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <Label className="text-[11px] text-gray-500">Assunto</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Retirada da cobertura de Vento por custo elevado"
+                  value={newHistAssunto}
+                  onChange={(e) => setNewHistAssunto(e.target.value)}
+                  className="h-8 text-xs bg-white"
+                  required
+                />
+              </div>
               <div>
-                <Label className="text-[11px] text-gray-500">Data</Label>
+                <Label className="text-[11px] text-gray-500">Categoria</Label>
+                <select
+                  value={newHistCategoria}
+                  onChange={(e) => setNewHistCategoria(e.target.value)}
+                  className="h-8 text-xs bg-white border border-gray-300 rounded-md px-2 w-full text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#16578B]"
+                >
+                  {CATEGORIAS_HIST.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-[11px] text-gray-500">Data do fato</Label>
                 <Input
                   type="date"
                   value={newHistData}
@@ -1022,21 +1163,11 @@ export default function FichaApolicePage() {
                   required
                 />
               </div>
-              <div>
-                <Label className="text-[11px] text-gray-500">Cia Seguradora</Label>
+              <div className="sm:col-span-4">
+                <Label className="text-[11px] text-gray-500">Relato / Observações</Label>
                 <Input
                   type="text"
-                  placeholder={apolice.seguradora}
-                  value={newHistCia}
-                  onChange={(e) => setNewHistCia(e.target.value)}
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-[11px] text-gray-500">Histórico / Observações</Label>
-                <Input
-                  type="text"
-                  placeholder="Ex: Sinistro de tubulação liquidado sem pendências..."
+                  placeholder="Ex: Negociação com a cia resultou na retirada da cobertura X e inclusão de Y..."
                   value={newHistTexto}
                   onChange={(e) => setNewHistTexto(e.target.value)}
                   className="h-8 text-xs bg-white"
@@ -1055,36 +1186,75 @@ export default function FichaApolicePage() {
                 ) : (
                   <Plus className="w-3.5 h-3.5 mr-1" />
                 )}
-                Adicionar ao histórico
+                Adicionar à Pró-Memória
               </Button>
             </div>
           </form>
 
-          {/* History table */}
-          {historicoList.length === 0 ? (
+          {/* Timeline */}
+          {historicoFiltrado.length === 0 ? (
             <div className="p-8 text-center text-xs text-gray-400 border border-dashed rounded-lg">
-              Nenhuma entrada no histórico ainda. Registre acima as anotações do analista.
+              {historicoList.length === 0
+                ? 'Nenhum fato registrado ainda. Registre acima a primeira anotação da Pró-Memória deste cliente.'
+                : 'Nenhum registro corresponde aos filtros selecionados.'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
-                  <tr>
-                    <th className="py-2.5 px-3 w-32">Data</th>
-                    <th className="py-2.5 px-3 w-48">Cia</th>
-                    <th className="py-2.5 px-3">Histórico / Nota</th>
-                    <th className="py-2.5 px-3 text-right w-20">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {historicoList.map((h) => (
-                    <tr key={h.id} className="hover:bg-gray-50">
-                      <td className="py-2.5 px-3 font-medium text-gray-700 whitespace-nowrap">
-                        {formatDate(h.data)}
-                      </td>
-                      <td className="py-2.5 px-3 text-gray-800 font-medium">{h.cia || '—'}</td>
-                      <td className="py-2.5 px-3 text-gray-600 leading-relaxed">{h.texto}</td>
-                      <td className="py-2.5 px-3 text-right">
+            <ol className="relative border-l-2 border-gray-200 space-y-5 pl-6 ml-2">
+              {historicoFiltrado.map((h) => {
+                const ehDaFicha = h.apolice === apolice.id || h.registro_id === apolice.id
+                const cat = h.categoria || 'Negociação'
+                const cor = CORES_CATEGORIA_HIST[cat] || CORES_CATEGORIA_HIST['Negociação']
+                const refApolice = h.expand?.apolice
+                const rotuloCiclo = refApolice
+                  ? cicloLabelApolice(refApolice)
+                  : ehDaFicha
+                    ? cicloLabelApolice(apolice)
+                    : 'Sem apólice vinculada'
+                return (
+                  <li key={h.id} className="relative">
+                    <span
+                      className={`absolute -left-[29px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow ${cor.dot}`}
+                    />
+                    <div
+                      className={`p-4 rounded-xl border ${
+                        ehDaFicha
+                          ? 'border-[#16578B] bg-blue-50/40 shadow-sm'
+                          : 'border-gray-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span className="text-xs font-bold text-gray-900 tabular-nums">
+                          {formatDate(h.data_fato || h.data)}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded border text-[10px] font-semibold ${cor.badge}`}
+                        >
+                          {cat}
+                        </span>
+                        {ehDaFicha && (
+                          <span className="px-2 py-0.5 rounded bg-[#0F2B46] text-white text-[10px] font-bold">
+                            ★ Apólice desta ficha
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded border text-[10px] font-medium ${
+                            ehDaFicha
+                              ? 'bg-white border-[#16578B] text-[#16578B]'
+                              : 'bg-gray-50 border-gray-200 text-gray-500'
+                          }`}
+                        >
+                          {rotuloCiclo || '—'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-semibold text-gray-800">
+                        {h.assunto || '(sem assunto)'}
+                      </div>
+                      <div className="text-xs text-gray-600 leading-relaxed mt-0.5">{h.texto}</div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[10px] text-gray-400">
+                          {h.cia ? `${h.cia}` : ''}
+                          {h.created ? ` · registrado em ${formatDate(h.created)}` : ''}
+                        </span>
                         <button
                           onClick={() => handleDeleteHistorico(h.id)}
                           className="text-red-500 hover:text-red-700 p-1"
@@ -1092,12 +1262,12 @@ export default function FichaApolicePage() {
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
           )}
         </div>
       )}

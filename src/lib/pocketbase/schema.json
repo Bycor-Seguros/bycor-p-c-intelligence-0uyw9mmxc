@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T00:54:43.328Z",
+  "generatedAt": "2026-11-13T01:50:16.306Z",
   "collections": [
     {
       "name": "users",
@@ -2017,11 +2017,46 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "empreendimento",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "apolice",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "apolices"
+        },
+        {
+          "name": "assunto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "categoria",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Negociação", "Sinistro", "Endosso", "Renovação", "Decisão de Cobertura"]
+        },
+        {
+          "name": "data_fato",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_hist_reg ON historico (registro_id)",
-        "CREATE INDEX idx_hist_tab ON historico (tabela)"
+        "CREATE INDEX idx_hist_tab ON historico (tabela)",
+        "CREATE INDEX `idx_hist_empreendimento` ON `historico` (empreendimento)",
+        "CREATE INDEX `idx_hist_apolice` ON `historico` (apolice)"
       ]
     },
     {

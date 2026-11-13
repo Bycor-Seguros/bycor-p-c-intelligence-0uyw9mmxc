@@ -776,6 +776,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
         await pb.collection('historico').create({
           registro_id: savedApoliceId,
           tabela: 'apolices',
+          empreendimento: empIdToLink,
+          apolice: savedApoliceId,
+          assunto: `Apólice emitida — ${nomeSeguradoraCanonica}`,
+          categoria: 'Renovação',
+          data_fato: `${new Date().toISOString().slice(0, 10)} 00:00:00.000Z`,
           data: new Date().toISOString().slice(0, 10),
           cia: nomeSeguradoraCanonica,
           texto: `Apólice emitida e registrada via leitor de PDF (Vigência: ${formatDate(vigenciaInicio)} a ${formatDate(vigenciaFim)}; Prêmio: ${formatCurrency(pTot || 0)}).`,
@@ -806,6 +811,11 @@ export function ApoliceUploadModal({ open, onOpenChange, onSuccess }: ApoliceUpl
           await pb.collection('historico').create({
             registro_id: antecessoraIdentificada.id,
             tabela: 'apolices',
+            empreendimento: antecessoraIdentificada.id_empreendimento,
+            apolice: savedApoliceId,
+            assunto: `Renovação concluída — ${nomeSeguradoraCanonica}`,
+            categoria: 'Renovação',
+            data_fato: dataRenovacaoEvento,
             data: new Date().toISOString().slice(0, 10),
             cia: nomeSeguradoraCanonica,
             texto: `RENOVAÇÃO CONCLUÍDA: Apólice renovada pela sucessora nº ${numeroApolice.trim()} (ID ${savedApoliceId}) com vigência a partir de ${formatDate(vigenciaInicio)}.`,

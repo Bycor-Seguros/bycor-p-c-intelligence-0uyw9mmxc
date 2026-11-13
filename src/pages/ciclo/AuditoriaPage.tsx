@@ -259,6 +259,11 @@ export default function AuditoriaPage() {
       await pb.collection('historico').create({
         registro_id: activeAudit.id,
         tabela: 'auditoria',
+        empreendimento: activeAudit.empreendimento,
+        apolice: activeAudit.apolice || null,
+        assunto: `Auditoria técnica — ${finalStatus}`,
+        categoria: 'Decisão de Cobertura',
+        data_fato: `${new Date().toISOString().slice(0, 10)} 00:00:00.000Z`,
         data: new Date().toISOString().slice(0, 10),
         cia: activeAudit.expand?.apolice?.seguradora || 'Seguradora',
         texto: `Auditoria técnica finalizada com status: ${finalStatus} (${activeAudit.itens.filter((i) => i.status === 'desvio').length} desvios).`,
