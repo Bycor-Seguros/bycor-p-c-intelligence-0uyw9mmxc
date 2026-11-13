@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T21:16:26.839Z",
+  "generatedAt": "2026-11-13T22:14:30.121Z",
   "collections": [
     {
       "name": "users",
@@ -516,6 +516,36 @@
         },
         {
           "name": "contato_inspecao_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_is_pretendida",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_lmgs",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_fonte_arquivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_imported_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "qar_imported_by",
           "type": "text",
           "required": false,
           "system": false
@@ -2821,6 +2851,119 @@
       "indexes": [
         "CREATE INDEX idx_pedido_emissao_rfq ON pedido_emissao (rfq)",
         "CREATE UNIQUE INDEX idx_pedido_emissao_proposta ON pedido_emissao (proposta)"
+      ]
+    },
+    {
+      "name": "qar_declarados",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empreendimento",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empreendimentos"
+        },
+        {
+          "name": "rfq",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rfq"
+        },
+        {
+          "name": "cobertura",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "cobertura_normalizada",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "percentual_is_pretendida",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_pretendido_rs",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "distancia_km",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmg_marcado",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmg_index",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linha_original",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fonte_arquivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "usuario_upload",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "usuario_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_qar_declarados_emp ON qar_declarados (empreendimento)",
+        "CREATE INDEX idx_qar_declarados_rfq ON qar_declarados (rfq)",
+        "CREATE UNIQUE INDEX idx_qar_declarados_emp_cob ON qar_declarados (empreendimento, cobertura)"
       ]
     }
   ]

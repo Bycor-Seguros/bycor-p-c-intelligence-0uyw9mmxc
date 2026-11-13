@@ -16,6 +16,7 @@ import {
   ExtractedApoliceCobertura,
 } from '../apoliceReader'
 import { extractAxaDetails } from '../propostaReader'
+import { parseQar21, QAR_LMGS_PADRAO } from '../qarReader'
 import { calcularFluxoPremios, ALIQUOTA_IOF_PADRAO } from '../rfqPropostasService'
 import { compararVrdEstagnado } from '../analiticoCarteiraService'
 import type { PdfPageText } from '../pdfTextExtractor'
@@ -1793,6 +1794,109 @@ export async function runAllSuites() {
       true,
       'Diferença de centavos por ruído de ponto flutuante não gera falso negativo',
     )
+  })
+
+  // =========================================================================
+  // SUITE: LEITOR DE QAR — ITEM 21 (FORMULÁRIO PADRÃO BYCOR)
+  // =========================================================================
+  // Caso inaugural: BTT Anália Franco. O PDF real do QAR é documento de
+  // evidência do caso — NENHUM dado dele é embutido aqui. O fixture abaixo é
+  // sintético, no layout padrão fixo do formulário; a validação com o PDF real
+  // ocorre no Mac do usuário. Asserções intocáveis (pacto anti-regressão).
+  console.log('SUITE: Leitor de QAR — Item 21 (LMG por cobertura de RC)')
+  const QAR_LINHAS_FIXTURE: string[] = [
+    'QAR - Questionário de Avaliação de Risco RCG',
+    'Segurado: Empresa Exemplo Ltda',
+    'CNPJ: 00.000.000/0001-00',
+    'Importância Segurada Pretendida: 20.000.000,00',
+    '',
+    '21. LIMITE MÁXIMO DE GARANTIA (LMG) POR COBERTURA - marcar e informar',
+    'Indicar LMG pretendido por cobertura de RC (em % da IS pretendida ou valor)',
+    'RC Operações (Estabelecimentos Comerciais/Industriais)   5%                    1.000.000,00',
+    'RC Danos Morais                                          2%                    400.000,00',
+    'RC Empregador                                            1%                    200.000,00',
+    'RC Produtos e Trabalhos Concluídos                       3%                    600.000,00',
+    'Poluição Súbita e Acidental                              0,5%                  100.000,00',
+    'Percurso estabelecimento-garagem           1 km          X                     2.000.000,00',
+    'Alagamento/Inundação                                     2%',
+    'Danos por Água                                           1%',
+    'Despesas de Salvamento e Contenção                       1%',
+    'Colisão de Veículos de Terceiros Compreensiva            X                     2.000.000,00',
+    'Portões Automáticos                                      X                     100.000,00',
+    'RC Guarda de Veículos de Terceiros                       (sugestão)',
+    'RC Síndico                                               (sugestão)',
+    'Perda/Pagamento de Aluguel                               (sugestão)',
+    '22. Observações',
+    'Nada a observar',
+  ]
+  const qarRes = parseQar21(QAR_LINHAS_FIXTURE)
+  const qarCob = (pattern: RegExp) => qarRes.coberturas.find((c) => pattern.test(c.cobertura))
+
+  runTest('QAR', 'IS pretendida extraída do formulário', () => {
+    assertEqual(qarRes.importanciaSeguradaPretendida, 20000000, 'IS pretendida')
+  })
+
+  runTest('QAR', 'Os 4 LMGs padrão marcados no item 21', () => {
+    assertEqual(qarRes.lmgsMarcados.length, 4, 'Total de LMGs marcados')
+    for (const lmg of QAR_LMGS_PADRAO) {
+      assert(qarRes.lmgsMarcados.includes(lmg), `LMG "${lmg}" deve estar entre os marcados`)
+    }
+  })
+
+  runTest('QAR', 'Poluição Súbita e Acidental extraída como declarada', () => {
+    const c = qarCob(/Polui/i)
+    assert(c !== undefined, 'Poluição Súbita e Acidental deve ser extraída')
+    assertEqual(c.percentual, 0.5, 'Poluição — % da IS pretendida')
+  })
+
+  runTest('QAR', 'Percurso estabelecimento-garagem (R$ 2.000.000, 1 km)', () => {
+    const c = qarCob(/Percurso/i)
+    assert(c !== undefined, 'Percurso estabelecimento-garagem deve ser extraído')
+    assertEqual(c.valorPretendido, 2000000, 'Percurso — valor declarado')
+    assertEqual(c.detalheKm, '1 km', 'Percurso — distância declarada')
+  })
+
+  runTest('QAR', 'Alagamento/Inundação extraído como declarado (2% da IS)', () => {
+    const c = qarCob(/Alagamento/i)
+    assert(c !== undefined, 'Alagamento/Inundação deve ser extraído')
+    assertEqual(c.percentual, 2, 'Alagamento — % da IS pretendida')
+    assertEqual(c.valorPretendido, null, 'Alagamento — sem valor fixo declarado')
+  })
+
+  runTest('QAR', 'Colisão de Veículos de Terceiros Compreensiva — R$ 2.000.000 exato', () => {
+    const c = qarCob(/Colis/i)
+    assert(c !== undefined, 'Colisão de Veículos de Terceiros deve ser extraída')
+    assertEqual(c.valorPretendido, 2000000, 'Colisão — valor exato')
+    assertEqual(c.tipoValor, 'fixo', 'Colisão — tipo valor fixo')
+  })
+
+  runTest('QAR', 'Portões Automáticos — R$ 100.000 exato', () => {
+    const c = qarCob(/Port.es Autom/i)
+    assert(c !== undefined, 'Portões Automáticos deve ser extraído')
+    assertEqual(c.valorPretendido, 100000, 'Portões — valor exato')
+  })
+
+  runTest('QAR', 'Coberturas de property ficam FORA do leitor', () => {
+    assert(
+      qarRes.coberturas.every((c) => !/danos por agua/i.test(c.cobertura)),
+      '"Danos por Água" (property) deve ficar fora da extração',
+    )
+    assert(
+      qarRes.coberturas.every((c) => !/salvamento/i.test(c.cobertura)),
+      '"Despesas de Salvamento e Contenção" (property) deve ficar fora da extração',
+    )
+  })
+
+  runTest('QAR', 'Sugestões do formulário (sem % ou valor) são ignoradas', () => {
+    assert(
+      qarRes.coberturas.every((c) => !/Sindico/i.test(c.cobertura)),
+      'Cobertura sugerida sem % ou valor não entra na extração',
+    )
+    assert(
+      qarRes.coberturas.every((c) => !/Guarda de Ve/i.test(c.cobertura)),
+      'Sugestão "RC Guarda de Veículos de Terceiros" não entra na extração',
+    )
+    assert(qarRes.sugestoesIgnoradas.length === 3, 'Três sugestões do fixture ignoradas')
   })
 
   // =========================================================================
