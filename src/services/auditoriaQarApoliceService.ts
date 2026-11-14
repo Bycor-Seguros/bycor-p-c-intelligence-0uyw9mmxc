@@ -44,6 +44,8 @@ export interface QarDeclaradoLinha {
   importanciaSeguradaPretendida: number | null
   distanciaKm: number | null
   lmgMarcado: boolean
+  /** Guarda de re-upload (migration 0046): correção humana prevalece. */
+  lmgEditadoPeloAnalista?: boolean
 }
 
 /** Cobertura da apólice atual emitida, no formato comparável ao QAR. */
