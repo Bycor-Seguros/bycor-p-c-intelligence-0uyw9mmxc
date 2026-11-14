@@ -51,6 +51,56 @@ import {
   CoberturaCanonicaRecord,
   CoberturaSinonimoRecord,
 } from '@/services/equivalenciaCoberturasService'
+import {
+  montarAuditoriaQarApolice,
+  type QarDeclaradoLinha,
+  type QarApoliceCoberturaLinha,
+  type QarAuditoriaNivel,
+} from '@/services/auditoriaQarApoliceService'
+
+/** Registro bruto de qar_declarados (campos da coleção, migrations 0044/0045). */
+interface QarDeclaradoRecord {
+  id: string
+  cobertura?: string
+  cobertura_normalizada?: string
+  tipo_valor?: string
+  percentual_is_pretendida?: number | null
+  valor_pretendido_rs?: number | null
+  distancia_km?: number | null
+  lmg_marcado?: boolean
+  importancia_segurada_pretendida?: number | null
+}
+
+/** Registro bruto de coberturas da apólice (coleção coberturas). */
+interface CoberturaApoliceRecord {
+  id: string
+  nome_cobertura?: string
+  categoria_normalizada?: string
+  lmi_rs?: number | null
+}
+
+/** Badge de classificação do eixo QAR × Apólice (verde/vermelho/âmbar). */
+function QarNivelBadge({ nivel }: { nivel: QarAuditoriaNivel }) {
+  if (nivel === 'APTO') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+        Apto
+      </span>
+    )
+  }
+  if (nivel === 'DIVERGENCIA') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800">
+        Divergência
+      </span>
+    )
+  }
+  return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+      Ponto de atenção
+    </span>
+  )
+}
 
 export default function AuditoriaCartaoApolicePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -68,8 +118,16 @@ export default function AuditoriaCartaoApolicePage() {
   const [filterEmp, setFilterEmp] = useState<string>(searchParams.get('emp') || 'todos')
   const [filterStatus, setFilterStatus] = useState<'todos' | 'com_desvios' | 'sem_desvios'>('todos')
   const [tabAtiva, setTabAtiva] = useState<
-    'coberturas' | 'vrd' | 'identificacao' | 'premios' | 'sinistros'
+    'coberturas' | 'vrd' | 'identificacao' | 'premios' | 'sinistros' | 'qar_apolice'
   >('coberturas')
+
+  // ---- EIXO QAR × APÓLICE ----
+  const [qarLinhas, setQarLinhas] = useState<QarDeclaradoLinha[]>([])
+  const [qarIsPretendida, setQarIsPretendida] = useState<number | null>(null)
+  const [qarCoberturasApolice, setQarCoberturasApolice] = useState<QarApoliceCoberturaLinha[]>([])
+  const [qarLoading, setQarLoading] = useState(false)
+  const [qarErro, setQarErro] = useState<string | null>(null)
+  const qarRodadaIdRef = useRef<string | null>(null)
   const [canonicas, setCanonicas] = useState<CoberturaCanonicaRecord[]>([])
   const [sinonimos, setSinonimos] = useState<CoberturaSinonimoRecord[]>([])
 
@@ -249,6 +307,105 @@ export default function AuditoriaCartaoApolicePage() {
       setTogglingRessalva(null)
     }
   }
+
+  // ---- EIXO QAR × APÓLICE: carga por rodada selecionada ----
+  // Compara o QAR declarado (qar_declarados) contra as coberturas da apólice
+  // ATUAL do ciclo (apolice_referencia_real — nunca a apólice do ciclo anterior).
+  useEffect(() => {
+    if (!activeRodada) return
+    if (qarRodadaIdRef.current === activeRodada.id) return
+    qarRodadaIdRef.current = activeRodada.id
+    let cancelled = false
+    const apoliceRefId = activeRodada.apolice_referencia_real || activeRodada.apolice || ''
+    ;(async () => {
+      setQarLoading(true)
+      setQarErro(null)
+      try {
+        const [recsQar, empRec, recsCob] = await Promise.all([
+          pb.collection('qar_declarados').getFullList<QarDeclaradoRecord>({
+            filter: `empreendimento="${activeRodada.empreendimento}"`,
+            sort: 'cobertura',
+          }),
+          pb
+            .collection('empreendimentos')
+            .getOne(activeRodada.empreendimento)
+            .catch(() => null),
+          apoliceRefId
+            ? pb
+                .collection('coberturas')
+                .getFullList<CoberturaApoliceRecord>({
+                  filter: `id_apolice="${apoliceRefId}"`,
+                })
+                .catch(() => [] as CoberturaApoliceRecord[])
+            : Promise.resolve([] as CoberturaApoliceRecord[]),
+        ])
+        if (cancelled) return
+
+        // IS pretendida global do empreendimento (fallback do eixo, JSON idempotente)
+        let isGlobal: number | null = null
+        const rawIs = (empRec as unknown as Record<string, unknown> | null)?.qar_is_pretendida_json
+        if (rawIs) {
+          try {
+            const parsed = typeof rawIs === 'string' ? JSON.parse(rawIs) : rawIs
+            const v = Number((parsed as Record<string, unknown>)?.is_pretendida)
+            if (Number.isFinite(v) && v > 0) isGlobal = v
+          } catch {
+            /* JSON inválido: segue sem fallback global */
+          }
+        }
+
+        setQarLinhas(
+          recsQar.map((rec) => ({
+            id: rec.id,
+            cobertura: String(rec.cobertura || ''),
+            coberturaNormalizada: String(rec.cobertura_normalizada || rec.cobertura || ''),
+            tipoValor:
+              rec.tipo_valor === 'percentual' ? ('percentual' as const) : ('fixo' as const),
+            percentual:
+              typeof rec.percentual_is_pretendida === 'number'
+                ? rec.percentual_is_pretendida
+                : null,
+            valorPretendido:
+              typeof rec.valor_pretendido_rs === 'number' ? rec.valor_pretendido_rs : null,
+            importanciaSeguradaPretendida:
+              typeof rec.importancia_segurada_pretendida === 'number'
+                ? rec.importancia_segurada_pretendida
+                : null,
+            distanciaKm: typeof rec.distancia_km === 'number' ? rec.distancia_km : null,
+            lmgMarcado: Boolean(rec.lmg_marcado),
+          })),
+        )
+        setQarIsPretendida(isGlobal)
+        setQarCoberturasApolice(
+          recsCob.map((c) => ({
+            id: c.id,
+            nomeApolice: String(c.nome_cobertura || ''),
+            nomeNormalizado: String(c.nome_cobertura || ''),
+            lmiApolice: typeof c.lmi_rs === 'number' ? c.lmi_rs : null,
+            categoriaNormalizada: c.categoria_normalizada || null,
+          })),
+        )
+      } catch (err) {
+        if (!cancelled) {
+          setQarErro(
+            'Erro ao carregar o QAR declarado ou as coberturas da apólice: ' +
+              ((err as Error).message || 'erro desconhecido'),
+          )
+        }
+      } finally {
+        if (!cancelled) setQarLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeRodada])
+
+  // Resultado do eixo QAR × Apólice (leitura — edição do LMG entra em rodada futura)
+  const qarResultado = useMemo(() => {
+    if (!activeRodada || qarLinhas.length === 0) return null
+    return montarAuditoriaQarApolice(qarLinhas, qarCoberturasApolice, qarIsPretendida)
+  }, [activeRodada, qarLinhas, qarCoberturasApolice, qarIsPretendida])
 
   const snap = activeRodada?.snapshot_comparativo
 
@@ -600,6 +757,12 @@ export default function AuditoriaCartaoApolicePage() {
                       {
                         id: 'sinistros',
                         label: `Sinistros Declarados (${snap.sinistros.totalCartao})`,
+                      },
+                      {
+                        id: 'qar_apolice',
+                        label: qarResultado
+                          ? `QAR × Apólice (${qarResultado.totalDivergencia + qarResultado.totalPontoAtencao})`
+                          : 'QAR × Apólice',
                       },
                     ].map((tab) => (
                       <button
@@ -1350,6 +1513,207 @@ export default function AuditoriaCartaoApolicePage() {
                               </tbody>
                             </table>
                           </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 6: EIXO QAR × APÓLICE (leitura; edição do LMG em rodada futura) */}
+                    {tabAtiva === 'qar_apolice' && (
+                      <div className="space-y-4">
+                        {qarLoading ? (
+                          <div className="p-8 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
+                            <Loader2 className="w-5 h-5 animate-spin text-[#16578B]" />
+                            Carregando QAR declarado e coberturas da apólice atual...
+                          </div>
+                        ) : qarErro ? (
+                          <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800 flex items-start gap-2">
+                            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                            <span>{qarErro}</span>
+                          </div>
+                        ) : qarLinhas.length === 0 ? (
+                          <div className="p-8 text-center border border-dashed border-gray-300 rounded-lg space-y-1">
+                            <p className="text-xs font-semibold text-gray-700">
+                              Nenhum QAR declarado para este empreendimento/ciclo — faça o upload do
+                              QAR no C1 Recebimento
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              O leitor de QAR grava as coberturas declaradas do item 21 vinculadas
+                              ao empreendimento do ciclo.
+                            </p>
+                          </div>
+                        ) : !qarResultado ? null : (
+                          <>
+                            {/* Resumo do eixo */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                              <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-center">
+                                <div className="text-base font-bold text-emerald-800">
+                                  {qarResultado.totalApto}
+                                </div>
+                                <div className="text-[10px] font-semibold text-emerald-700 uppercase">
+                                  Apto
+                                </div>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-red-50/70 border border-red-200 text-center">
+                                <div className="text-base font-bold text-red-700">
+                                  {qarResultado.totalDivergencia}
+                                </div>
+                                <div className="text-[10px] font-semibold text-red-700 uppercase">
+                                  Divergência
+                                </div>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-center">
+                                <div className="text-base font-bold text-amber-800">
+                                  {qarResultado.totalPontoAtencao}
+                                </div>
+                                <div className="text-[10px] font-semibold text-amber-700 uppercase">
+                                  Ponto de Atenção
+                                </div>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200 text-center">
+                                <div className="text-sm font-bold font-mono text-gray-900 pt-0.5">
+                                  {qarResultado.importanciaSeguradaUsada !== null
+                                    ? formatCurrency(qarResultado.importanciaSeguradaUsada)
+                                    : '—'}
+                                </div>
+                                <div className="text-[10px] font-semibold text-gray-500 uppercase">
+                                  IS Pretendida
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-gray-500">
+                              % do QAR = % da Importância Segurada pretendida. Divergência quando o
+                              LMG emitido não casa com nenhuma opção idêntica do QAR. Coberturas
+                              property (Danos por Água; Despesas de Salvamento/Contenção) e
+                              sugestões sem %/valor ficam fora deste eixo.
+                            </p>
+
+                            {/* Tabela por cobertura RC (apto/divergência) */}
+                            {qarResultado.itens.filter((i) => i.nivel !== 'PONTO_DE_ATENCAO')
+                              .length === 0 ? (
+                              <div className="p-6 text-center text-xs text-gray-400 border border-dashed rounded-lg">
+                                Nenhuma cobertura RC casada entre QAR e apólice.
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
+                                    <tr>
+                                      <th className="py-2.5 px-3">Cobertura (QAR)</th>
+                                      <th className="py-2.5 px-3 text-right">Declarado no QAR</th>
+                                      <th className="py-2.5 px-3 text-right">LMG Emitido</th>
+                                      <th className="py-2.5 px-3 text-center">Classificação</th>
+                                      <th className="py-2.5 px-3">Observação</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {qarResultado.itens
+                                      .filter((i) => i.nivel !== 'PONTO_DE_ATENCAO')
+                                      .map((i, idx) => (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                          <td className="py-2.5 px-3 font-semibold text-[#16578B]">
+                                            {i.cobertura}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right font-mono text-gray-900">
+                                            {i.valorDeclaradoQar !== null
+                                              ? formatCurrency(i.valorDeclaradoQar)
+                                              : '—'}
+                                            {i.percentualDeclarado !== null && (
+                                              <span className="block text-[10px] text-gray-500 font-sans">
+                                                {i.percentualDeclarado}% da IS pretendida
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right font-mono text-gray-900">
+                                            {i.lmgEmitido !== null
+                                              ? formatCurrency(i.lmgEmitido)
+                                              : '—'}
+                                            {i.nomeApoliceCorrespondente && (
+                                              <span className="block text-[10px] text-gray-400 font-sans">
+                                                {i.nomeApoliceCorrespondente}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            <QarNivelBadge nivel={i.nivel} />
+                                          </td>
+                                          <td className="py-2.5 px-3 text-gray-600">{i.motivo}</td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Pontos de atenção nos dois sentidos */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/60 space-y-2">
+                                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                  <span>
+                                    Só no QAR — sem cobertura correspondente na apólice (
+                                    {qarResultado.soNoQar.length})
+                                  </span>
+                                </div>
+                                {qarResultado.soNoQar.length === 0 ? (
+                                  <p className="text-[11px] text-amber-700">
+                                    Nenhuma — todas as coberturas RC do QAR estão na apólice.
+                                  </p>
+                                ) : (
+                                  <ul className="space-y-1.5">
+                                    {qarResultado.soNoQar.map((i, idx) => (
+                                      <li
+                                        key={idx}
+                                        className="p-2 bg-white rounded border border-amber-200 text-[11px] flex items-center justify-between gap-2"
+                                      >
+                                        <span className="font-semibold text-gray-900">
+                                          {i.cobertura}
+                                        </span>
+                                        <span className="font-mono text-gray-700 shrink-0">
+                                          {i.valorDeclaradoQar !== null
+                                            ? formatCurrency(i.valorDeclaradoQar)
+                                            : '—'}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+
+                              <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/60 space-y-2">
+                                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                  <span>
+                                    Só na apólice — sem declaração correspondente no QAR (
+                                    {qarResultado.soNaApolice.length})
+                                  </span>
+                                </div>
+                                {qarResultado.soNaApolice.length === 0 ? (
+                                  <p className="text-[11px] text-amber-700">
+                                    Nenhuma — todas as coberturas RC da apólice estão no QAR.
+                                  </p>
+                                ) : (
+                                  <ul className="space-y-1.5">
+                                    {qarResultado.soNaApolice.map((i, idx) => (
+                                      <li
+                                        key={idx}
+                                        className="p-2 bg-white rounded border border-amber-200 text-[11px] flex items-center justify-between gap-2"
+                                      >
+                                        <span className="font-semibold text-gray-900">
+                                          {i.cobertura}
+                                        </span>
+                                        <span className="font-mono text-gray-700 shrink-0">
+                                          {i.lmgEmitido !== null
+                                            ? formatCurrency(i.lmgEmitido)
+                                            : '—'}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     )}
