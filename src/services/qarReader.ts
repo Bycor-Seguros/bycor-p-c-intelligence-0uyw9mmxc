@@ -126,15 +126,34 @@ function removerMarcacaoInicio(linha: string): string {
 }
 
 /**
- * Índice do LMG padrão (1..4) para um nome de cobertura — tolerante ao prefixo
- * "RC " que o PDF real nem sempre imprime (ex.: "Danos Morais" = "RC Danos Morais").
- * -1 quando não é LMG padrão.
+ * Chave de casamento de um nome de cobertura com os LMGs padrão: normaliza
+ * (sem acentos, minúsculo), tira o prefixo "RC" que o PDF real nem sempre
+ * imprime, e comprime separadores (espaço, hífen –/—/-, travessão, "e" de
+ * ligação de título partido) — o PDF real quebra títulos em várias linhas e
+ * troca o hífen simples por en-dash (ex.: "Percurso estabelecimento-garagem" /
+ * "Percurso entre o estabelecimento e a garagem" / "RC Produtos e Trabalhos
+ * Concluídos" partido em duas linhas).
+ */
+function chaveLmgPadrao(nome: string): string {
+  return normalizarTermoEquivalenciaQar(nome)
+    .replace(/^rc\b\s*/, '')
+    .replace(/\b(hif|travessao)\b/g, '')
+    .replace(/\s+/g, '')
+}
+
+/**
+ * Índice do LMG padrão (0..3, -1 quando não é LMG padrão) para um nome de
+ * cobertura. Casamento por chave comprimida (exato) com fallback por prefixo:
+ * o título do PDF real pode vir partido em duas linhas (a 2ª linha traz o
+ * restante do título — o nome só casa se COMEÇAR com o LMG padrão).
  */
 function casarLmgPadrao(nome: string): number {
-  const n = normalizarTermoEquivalenciaQar(nome).replace(/^rc\s+/, '')
-  if (!n) return -1
+  const chave = chaveLmgPadrao(nome)
+  if (!chave) return -1
+  const exato = QAR_LMGS_PADRAO.findIndex((lmg) => chaveLmgPadrao(lmg) === chave)
+  if (exato >= 0) return exato
   return QAR_LMGS_PADRAO.findIndex(
-    (lmg) => normalizarTermoEquivalenciaQar(lmg).replace(/^rc\s+/, '') === n,
+    (lmg) => chave.startsWith(chaveLmgPadrao(lmg)) && chave.length > chaveLmgPadrao(lmg).length,
   )
 }
 
@@ -196,8 +215,7 @@ function parseQarLinhaCobertura(
 
 /** "Percurso estabelecimento-garagem" => true (caso Anália: 1 km). */
 export function isCoberturaLmgConhecida(nome: string): boolean {
-  const n = normalizarTermoEquivalenciaQar(nome)
-  return QAR_LMGS_PADRAO.some((lmg) => normalizarTermoEquivalenciaQar(lmg) === n)
+  return casarLmgPadrao(nome) >= 0
 }
 
 /**
@@ -250,8 +268,27 @@ export function parseQar21(linhas: string[]): QarResultado {
   }
 
   const opcoesLmg: Array<{ valor: number; marcada: boolean }> = []
+  // Linhas já consumidas por uma junção de título partido (não reprocessar).
+  const consumidos = new Set<number>()
+
+  /** LMG padrão marcado só com checkbox (linha "RC ... ☒" sem % nem valor). */
+  const parseLmgSoCheckbox = (textoLimpo: string): ReturnType<typeof parseQarLinhaCobertura> => {
+    const nomeCb = textoLimpo
+      .replace(/[\s]*[☒☑☐✓✔×✗✘][\s☒☑☐✓✔×✗✘]*$/u, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    if (!nomeCb || casarLmgPadrao(nomeCb) < 0) return null
+    return {
+      cobertura: nomeCb,
+      tipoValor: 'fixo' as const,
+      percentual: null,
+      valorPretendido: null,
+      detalheKm: null,
+    }
+  }
 
   for (let i = idxInicio + 1; i < idxFim; i++) {
+    if (consumidos.has(i)) continue
     const texto = linhas[i].trim()
     if (!texto || texto.length < 4) continue
     if (/\bLMG\s*\d/i.test(texto)) continue // LMGs capturados à parte
@@ -276,7 +313,28 @@ export function parseQar21(linhas: string[]): QarResultado {
       continue
     }
 
-    const parsed = parseQarLinhaCobertura(textoLimpo)
+    let parsed = parseQarLinhaCobertura(textoLimpo)
+    // LMG padrão com a linha só da marcação (☒ no fim, sem % nem valor) é um
+    // LMG pretendido informado — não sugestão do formulário.
+    if (!parsed) parsed = parseLmgSoCheckbox(textoLimpo)
+    // PDF real: o título da cobertura pode vir PARTIDO em duas linhas com o
+    // %/valor na 2ª ou na 3ª (caso Anália: "Colisão de Veículos de Terceiros
+    // Compreensiva – Incêndio, Roubo e" / "Colisão" / "R$ 2 .000.000,00") —
+    // junta com a(s) linha(s) seguinte(s) até achar o valor; as linhas usadas
+    // na junção ficam consumidas. LMG padrão inteiro e sugestões não se juntam.
+    if (!parsed && !/sugest/i.test(textoLimpo) && casarLmgPadrao(textoLimpo) < 0) {
+      for (let k = 1; k <= 2 && i + k < idxFim; k++) {
+        const partes = [textoLimpo]
+        for (let j = 1; j <= k; j++) partes.push(removerMarcacaoInicio(linhas[i + j].trim()))
+        const juncao = removerMarcacaoInicio(partes.join(' '))
+        const pJuncao = parseQarLinhaCobertura(juncao) || parseLmgSoCheckbox(juncao)
+        if (pJuncao) {
+          parsed = pJuncao
+          for (let j = 1; j <= k; j++) consumidos.add(i + j)
+          break
+        }
+      }
+    }
     if (!parsed) {
       // Sem % nem valor: se a linha tem nome de cobertura, é sugestão do formulário
       const nomeSugestao = textoLimpo
@@ -312,7 +370,15 @@ export function parseQar21(linhas: string[]): QarResultado {
       const n = normalizarTermoEquivalenciaQar(textoLimpo)
       if (!/^(colisao|alagamento|portoes autom|poluicao subita|percurso)/.test(n)) continue
       if (isCoberturaPropertyQar(textoLimpo)) continue
-      const parsed = parseQarLinhaCobertura(textoLimpo)
+      // PDF real: o título pode vir PARTIDO em duas linhas — a 2ª (com %/valor)
+      // não caseia o prefixo sozinha; casa contra "início + 2ª linha" unidas.
+      let textoCompleto = textoLimpo
+      let parsed = parseQarLinhaCobertura(textoLimpo)
+      if (!parsed && i + 1 < linhas.length) {
+        const juncao = removerMarcacaoInicio(`${textoLimpo} ${linhas[i + 1].trim()}`)
+        parsed = parseQarLinhaCobertura(juncao)
+        if (parsed) textoCompleto = juncao
+      }
       if (!parsed) continue
       const chave = normalizarTermoEquivalenciaQar(parsed.cobertura)
       if (res.coberturas.some((c) => normalizarTermoEquivalenciaQar(c.cobertura) === chave)) {
@@ -341,15 +407,29 @@ export function parseQar21(linhas: string[]): QarResultado {
     lmgAdotado = menor
   }
 
-  // Bloco de opções presente => garante os 4 LMGs padrão MARCADOS (lmg_marcado
-  // = true, lmgIndex 1..4). LMG sem linha declarada no formulário recebe o LMG
-  // adotado (a menor opção marcada) como valor.
+  // Bloco de opções presente => os 4 LMGs padrão saem MARCADOS da leitura
+  // (lmg_marcado = true, lmgIndex 1..4): "marcado" significa LMG pretendido
+  // INFORMADO, não checkbox do PDF — na leitura real do caso Anália os 4 LMGs
+  // padrão gravam lmg_marcado=false e o eixo QAR × Apólice perde o LMG
+  // declarado. LMG sem linha declarada no formulário recebe o LMG adotado (a
+  // menor opção marcada) como valor.
+  // Filtro de proteção: coberturas que não são LMG padrão nem coberturas
+  // conhecidas do eixo RC do QAR não entram (a linha fantasma "RC Produtos
+  // e Trabalhos Concluídos" do caso Anália é um LMG padrão criado pelo bloco
+  // de opções; o item real do formulário não existe no PDF).
+  // (vazio: nenhum filtro além do bloco acima)
+
   if (lmgAdotado !== null) {
     QAR_LMGS_PADRAO.forEach((lmg, idx) => {
       const existente = res.coberturas.find((c) => casarLmgPadrao(c.cobertura) === idx)
       if (existente) {
         existente.lmgMarcado = true
         existente.lmgIndex = idx + 1
+        // Reetiqueta com o nome EXATO do LMG padrão: o dedupe do re-upload e o
+        // cruzamento com a apólice casam por nome (caso real Anália:
+        // "Síndico 100%" gravado como cobertura própria separada de
+        // "RC Danos Morais" que também veio no PDF).
+        existente.cobertura = lmg
         if (!res.lmgsMarcados.includes(existente.cobertura)) {
           res.lmgsMarcados.push(existente.cobertura)
         }
