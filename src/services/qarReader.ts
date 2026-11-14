@@ -117,6 +117,27 @@ export function parsePercentualQar(raw: string): number | null {
   return n === null ? null : Math.min(n, 100)
 }
 
+/** Remove marcação de checkbox (☒/☑/☐/✓/✔/×) e bullets do início da linha. */
+function removerMarcacaoInicio(linha: string): string {
+  return linha
+    .replace(/^[\s•\-–—*.:;]*(?:[☒☑☐✓✔×✗✘]+\s*)+/u, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+/**
+ * Índice do LMG padrão (1..4) para um nome de cobertura — tolerante ao prefixo
+ * "RC " que o PDF real nem sempre imprime (ex.: "Danos Morais" = "RC Danos Morais").
+ * -1 quando não é LMG padrão.
+ */
+function casarLmgPadrao(nome: string): number {
+  const n = normalizarTermoEquivalenciaQar(nome).replace(/^rc\s+/, '')
+  if (!n) return -1
+  return QAR_LMGS_PADRAO.findIndex(
+    (lmg) => normalizarTermoEquivalenciaQar(lmg).replace(/^rc\s+/, '') === n,
+  )
+}
+
 function parseQarLinhaCobertura(
   linha: string,
 ): Pick<
@@ -131,7 +152,7 @@ function parseQarLinhaCobertura(
   const idxValor = texto.indexOf('R$')
   // Número de milhar sem R$ nem % (ex.: "Portões Automáticos 100.000"):
   // também é corte de valor declarado — não é sugestão do formulário.
-  const idxMilhar = texto.search(/\b\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?\b/)
+  const idxMilhar = texto.search(/\b\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\b/)
   const cortes = [idxPct, idxValor, idxMilhar].filter((i) => i >= 0)
   if (cortes.length === 0) return null
   const corte = Math.min(...cortes)
@@ -152,14 +173,16 @@ function parseQarLinhaCobertura(
 
   let valorPretendido: number | null = null
   if (idxValor >= 0) {
-    const mVal = trechoValor.match(/R\$\s*[\d.,]+/)
+    // Espaço interno no número (PDF real: "R$ 2 . 5 00.000,00") entra na
+    // captura — parseNumeroPtBr remove os espaços e aplica a regra pt-BR de milhar.
+    const mVal = trechoValor.match(/R\$\s*[\d.,\s]*\d[\d.,\s]*/)
     if (mVal) valorPretendido = parseValorQar(mVal[0])
   }
   if (valorPretendido === null && !mPct) {
     // Número solto com separador de milhar (ex.: "2.000.000" sem R$).
     // Com % declarado na linha, o % É o valor da cobertura — a milhar vinda
     // depois (coluna da tabela) nunca sobrescreve o % (regra do formulário).
-    const mMilhar = trechoValor.match(/\b\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?\b/)
+    const mMilhar = trechoValor.match(/\b\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\b/)
     if (mMilhar) valorPretendido = parseValorQar(mMilhar[0])
   }
 
@@ -226,6 +249,8 @@ export function parseQar21(linhas: string[]): QarResultado {
     }
   }
 
+  const opcoesLmg: Array<{ valor: number; marcada: boolean }> = []
+
   for (let i = idxInicio + 1; i < idxFim; i++) {
     const texto = linhas[i].trim()
     if (!texto || texto.length < 4) continue
@@ -235,10 +260,26 @@ export function parseQar21(linhas: string[]): QarResultado {
     if (n.includes('marcar e informar')) continue
     if (n.includes('% da is') && n.includes('cobertura')) continue
 
-    const parsed = parseQarLinhaCobertura(texto)
+    // PDF real: a marcação ☒ vem colada no início da linha (ex.: "☒ Colisão ...")
+    const textoLimpo = removerMarcacaoInicio(texto)
+
+    // Bloco de opções de LMG/IS do formulário real (ex.: "☒ Opção 1 : R$ 2 .000.000,00"):
+    // NUNCA são coberturas — definem a escala de opções. A MENOR opção MARCADA
+    // vira a IS pretendida (regra do usuário; se a opção fechada não for a menor,
+    // o analista corrige na edição) e o LMG adotado dos 4 LMGs padrão.
+    if (/^(?:op[çc][ãa]o\s*\d+|outros)\s*[:-]/i.test(textoLimpo)) {
+      const mVal = textoLimpo.match(/R\$\s*[\d.,\s]*\d[\d.,\s]*/)
+      const valor = mVal ? parseValorQar(mVal[0]) : null
+      if (valor !== null && valor > 0) {
+        opcoesLmg.push({ valor, marcada: /[☒☑✓✔]/u.test(texto) })
+      }
+      continue
+    }
+
+    const parsed = parseQarLinhaCobertura(textoLimpo)
     if (!parsed) {
       // Sem % nem valor: se a linha tem nome de cobertura, é sugestão do formulário
-      const nomeSugestao = texto
+      const nomeSugestao = textoLimpo
         .replace(/^[\s•\-–—*.:;]+/, '')
         .replace(/\s+[(]?\s*sugest[aã]o.*$/i, '')
         .trim()
@@ -248,10 +289,7 @@ export function parseQar21(linhas: string[]): QarResultado {
       continue
     }
     if (isCoberturaPropertyQar(parsed.cobertura)) continue // fora do leitor
-    const lmgIdx = QAR_LMGS_PADRAO.findIndex(
-      (lmg) =>
-        normalizarTermoEquivalenciaQar(lmg) === normalizarTermoEquivalenciaQar(parsed.cobertura),
-    )
+    const lmgIdx = casarLmgPadrao(parsed.cobertura)
     const cobertura: QarCoberturaDeclarada = {
       ...parsed,
       lmgMarcado: lmgIdx >= 0,
@@ -260,6 +298,75 @@ export function parseQar21(linhas: string[]): QarResultado {
     }
     if (cobertura.lmgMarcado) res.lmgsMarcados.push(cobertura.cobertura)
     res.coberturas.push(cobertura)
+  }
+
+  // Resgate: coberturas conhecidas do formulário que o PDF real imprime FORA da
+  // janela do item 21 (ex.: Colisão de Veículos; Alagamento/Inundação). Sem isso,
+  // o caso Anália as perde — a janela do item 21 termina antes da seção delas.
+  if (idxInicio >= 0) {
+    for (let i = 0; i < linhas.length; i++) {
+      if (i >= idxInicio && i < idxFim) continue
+      const texto = linhas[i].trim()
+      if (!texto || texto.length < 4) continue
+      const textoLimpo = removerMarcacaoInicio(texto)
+      const n = normalizarTermoEquivalenciaQar(textoLimpo)
+      if (!/^(colisao|alagamento|portoes autom|poluicao subita|percurso)/.test(n)) continue
+      if (isCoberturaPropertyQar(textoLimpo)) continue
+      const parsed = parseQarLinhaCobertura(textoLimpo)
+      if (!parsed) continue
+      const chave = normalizarTermoEquivalenciaQar(parsed.cobertura)
+      if (res.coberturas.some((c) => normalizarTermoEquivalenciaQar(c.cobertura) === chave)) {
+        continue
+      }
+      const lmgIdx = casarLmgPadrao(parsed.cobertura)
+      res.coberturas.push({
+        ...parsed,
+        lmgMarcado: lmgIdx >= 0,
+        lmgIndex: lmgIdx >= 0 ? lmgIdx + 1 : null,
+        linhaOriginal: texto,
+      })
+      if (lmgIdx >= 0) res.lmgsMarcados.push(parsed.cobertura)
+    }
+  }
+
+  // IS pretendida: MENOR opção MARCADA do bloco de opções (regra do usuário)
+  let lmgAdotado: number | null = null
+  if (opcoesLmg.length > 0) {
+    const marcadas = opcoesLmg.filter((o) => o.marcada)
+    const escolhidas = marcadas.length > 0 ? marcadas : opcoesLmg
+    const menor = Math.min(...escolhidas.map((o) => o.valor))
+    if (res.importanciaSeguradaPretendida === null) {
+      res.importanciaSeguradaPretendida = menor
+    }
+    lmgAdotado = menor
+  }
+
+  // Bloco de opções presente => garante os 4 LMGs padrão MARCADOS (lmg_marcado
+  // = true, lmgIndex 1..4). LMG sem linha declarada no formulário recebe o LMG
+  // adotado (a menor opção marcada) como valor.
+  if (lmgAdotado !== null) {
+    QAR_LMGS_PADRAO.forEach((lmg, idx) => {
+      const existente = res.coberturas.find((c) => casarLmgPadrao(c.cobertura) === idx)
+      if (existente) {
+        existente.lmgMarcado = true
+        existente.lmgIndex = idx + 1
+        if (!res.lmgsMarcados.includes(existente.cobertura)) {
+          res.lmgsMarcados.push(existente.cobertura)
+        }
+      } else {
+        res.coberturas.push({
+          cobertura: lmg,
+          tipoValor: 'fixo',
+          percentual: null,
+          valorPretendido: lmgAdotado,
+          detalheKm: null,
+          lmgMarcado: true,
+          lmgIndex: idx + 1,
+          linhaOriginal: '',
+        })
+        res.lmgsMarcados.push(lmg)
+      }
+    })
   }
 
   return res
