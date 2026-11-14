@@ -16,9 +16,14 @@ import {
   ExtractedApoliceCobertura,
 } from '../apoliceReader'
 import { extractAxaDetails } from '../propostaReader'
-import { parseQar21, QAR_LMGS_PADRAO } from '../qarReader'
+import { parseQar21, parseValorQar, QAR_LMGS_PADRAO } from '../qarReader'
 import { calcularFluxoPremios, ALIQUOTA_IOF_PADRAO } from '../rfqPropostasService'
 import { compararVrdEstagnado } from '../analiticoCarteiraService'
+import {
+  montarAuditoriaQarApolice,
+  reclassificarComLmgEditado,
+  valoresIguaisQarApolice,
+} from '../auditoriaQarApoliceService'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
@@ -1898,6 +1903,241 @@ export async function runAllSuites() {
     )
     assert(qarRes.sugestoesIgnoradas.length === 3, 'Três sugestões do fixture ignoradas')
   })
+
+  // =========================================================================
+  // SUITE: LEITOR DE QAR — CASO REAL ANÁLIA FRANCO (COMPORTAMENTO CALIBRADO)
+  // =========================================================================
+  // Fixture SINTÉTICO no layout do PDF real do QAR do caso Anália (nenhum dado
+  // do documento real é embutido — regra estrita do projeto): bloco de opções
+  // de LMG/IS com a MENOR opção marcada, valores com espaço interno no número,
+  // marcação ☒ colada no início da linha e percentuais da IS pretendida.
+  // PACTO ANTI-REGRESSÃO: apenas ADIÇÃO de asserções — as 91 anteriores (e as
+  // da suíte QAR acima) permanecem intocadas.
+  console.log('SUITE: Leitor de QAR — Caso real Anália (comportamento calibrado)')
+  const QAR_ANALIA_LINHAS: string[] = [
+    'QAR - Questionário de Avaliação de Risco RCG',
+    'Segurado: Empresa Exemplo Anália Ltda',
+    'CNPJ: 00.000.000/0002-00',
+    '21. LIMITE MÁXIMO DE GARANTIA (LMG) POR COBERTURA - marcar e informar',
+    'Indicar LMG pretendido por cobertura de RC (em % da IS pretendida ou valor)',
+    '☒ Opção 1 : R$ 5 .000.000,00',
+    'Opção 2 : R$ 10.000.000,00',
+    'Opção 3 : R$ 20.000.000,00',
+    'RC Operações (Estabelecimentos Comerciais/Industriais)             ☒',
+    'RC Danos Morais                                                    ☒',
+    'RC Empregador                                                      ☒',
+    'RC Produtos e Trabalhos Concluídos                                 ☒',
+    '☒ Colisão de Veículos de Terceiros Compreensiva      R$ 2 .000.000,00',
+    '☒ Portões Automáticos                                R$ 100.000,00',
+    '☒ Percurso estabelecimento-garagem  1 km             R$ 2.000.000,00',
+    '☒ Poluição Súbita e Acidental                        100%',
+    '☒ Alagamento/Inundação                               2%',
+    '22. Observações',
+    'Nada a observar',
+  ]
+  const qarAnalia = parseQar21(QAR_ANALIA_LINHAS)
+  const qarAnaliaCob = (pattern: RegExp) =>
+    qarAnalia.coberturas.find((c) => pattern.test(c.cobertura))
+
+  runTest(
+    'QAR Anália',
+    'IS pretendida adotada como a MENOR opção marcada do bloco de opções',
+    () => {
+      assertEqual(
+        qarAnalia.importanciaSeguradaPretendida,
+        5000000,
+        'IS pretendida deve ser a menor opção marcada (Opção 1: R$ 5.000.000,00)',
+      )
+    },
+  )
+
+  runTest('QAR Anália', 'Valor com espaço interno no número é parseado (R$ 5 .000.000,00)', () => {
+    assertEqual(parseValorQar('R$ 5 .000.000,00'), 5000000, 'Espaço interno (5.000.000)')
+    assertEqual(parseValorQar('R$ 2 .000.000,00'), 2000000, 'Espaço interno (2.000.000)')
+    assertEqual(parseValorQar('R$ 2.000.000,00'), 2000000, 'Sem espaço interno (controle)')
+  })
+
+  runTest('QAR Anália', 'Os 4 LMGs padrão marcados (lmg_marcado=true) com o LMG adotado', () => {
+    assertEqual(qarAnalia.lmgsMarcados.length, 4, 'Total de LMGs marcados')
+    for (const lmg of QAR_LMGS_PADRAO) {
+      const cob = qarAnalia.coberturas.find((c) => c.cobertura === lmg)
+      assert(cob !== undefined, `LMG "${lmg}" deve existir entre as coberturas`)
+      assert(cob.lmgMarcado === true, `LMG "${lmg}" deve ter lmgMarcado=true`)
+      assert(
+        cob.lmgIndex !== null && cob.lmgIndex >= 1 && cob.lmgIndex <= 4,
+        `LMG "${lmg}" deve ter lmgIndex entre 1 e 4`,
+      )
+      assertEqual(
+        cob.valorPretendido,
+        5000000,
+        `LMG "${lmg}" — valor adotado deve ser a menor opção marcada`,
+      )
+    }
+  })
+
+  runTest('QAR Anália', 'Opção 1/2/3 e Outros NUNCA viram coberturas', () => {
+    assert(
+      qarAnalia.coberturas.every((c) => !/op[çc][ãa]o\s*\d/i.test(c.cobertura)),
+      'Nenhuma linha "Opção N" do bloco de opções pode virar cobertura',
+    )
+    assert(
+      qarAnalia.coberturas.every((c) => !/^outros\b/i.test(c.cobertura)),
+      'Nenhuma linha "Outros" do bloco de opções pode virar cobertura',
+    )
+    assert(
+      qarAnalia.coberturas.every((c) => !/\d{2,}/.test(c.cobertura)),
+      'Nenhum nome de cobertura pode conter valor truncado do bloco de opções',
+    )
+  })
+
+  runTest(
+    'QAR Anália',
+    'Colisão de Veículos de Terceiros Compreensiva = R$ 2.000.000 (valor com espaço)',
+    () => {
+      const c = qarAnaliaCob(/Colis/i)
+      assert(c !== undefined, 'Colisão de Veículos de Terceiros Compreensiva deve ser extraída')
+      assertEqual(
+        c.valorPretendido,
+        2000000,
+        'Colisão — valor exato (com espaço interno no número)',
+      )
+      assertEqual(c.tipoValor, 'fixo', 'Colisão — tipo valor fixo')
+    },
+  )
+
+  runTest('QAR Anália', 'Portões Automáticos = R$ 100.000', () => {
+    const c = qarAnaliaCob(/Port.es Autom/i)
+    assert(c !== undefined, 'Portões Automáticos deve ser extraído')
+    assertEqual(c.valorPretendido, 100000, 'Portões — valor exato')
+  })
+
+  runTest('QAR Anália', 'Percurso estabelecimento-garagem = R$ 2.000.000 com 1 km', () => {
+    const c = qarAnaliaCob(/Percurso/i)
+    assert(c !== undefined, 'Percurso estabelecimento-garagem deve ser extraído')
+    assertEqual(c.valorPretendido, 2000000, 'Percurso — valor declarado')
+    assertEqual(c.detalheKm, '1 km', 'Percurso — distância declarada')
+  })
+
+  runTest('QAR Anália', 'Poluição Súbita e Acidental = 100% da IS', () => {
+    const c = qarAnaliaCob(/Polui/i)
+    assert(c !== undefined, 'Poluição Súbita e Acidental deve ser extraída')
+    assertEqual(c.percentual, 100, 'Poluição — % da IS pretendida')
+    assertEqual(c.tipoValor, 'percentual', 'Poluição — tipo valor percentual')
+  })
+
+  runTest('QAR Anália', 'Alagamento/Inundação = 2% da IS', () => {
+    const c = qarAnaliaCob(/Alagamento/i)
+    assert(c !== undefined, 'Alagamento/Inundação deve ser extraído')
+    assertEqual(c.percentual, 2, 'Alagamento — % da IS pretendida')
+  })
+
+  runTest('QAR Anália', 'Nenhum nome de cobertura com marcação ☒', () => {
+    assert(
+      qarAnalia.coberturas.every((c) => !/[☒☑☐✓✔×✗✘]/u.test(c.cobertura)),
+      'Nenhum nome de cobertura pode conter marcação de checkbox',
+    )
+  })
+
+  // ---- Caso real Anália: motor QAR × Apólice (montarAuditoriaQarApolice) ----
+  // Apólice simulada no padrão Anália (dados de apólice REAL NÃO embutidos):
+  // LMGs emitidos que casam com as opções do QAR e um que não casa — o motor
+  // deve reclassificar quando o analista corrige o LMG declarado.
+  runTest(
+    'QAR Anália',
+    'motor QAR × Apólice: LMG emitido que não casa nenhum valor declarado é DIVERGENCIA e a correção do analista muda para APTO',
+    () => {
+      // Linhas declaradas (QarDeclaradoLinha) derivadas da leitura do QAR Anália:
+      // os 4 LMGs padrão adotam a menor opção marcada (R$ 5.000.000).
+      const linhasQar = qarAnalia.coberturas.map((c, idx) => ({
+        id: `qar-${idx}`,
+        cobertura: c.cobertura,
+        coberturaNormalizada: c.cobertura,
+        tipoValor: c.tipoValor,
+        percentual: c.percentual,
+        valorPretendido: c.valorPretendido,
+        importanciaSeguradaPretendida: 5000000,
+        distanciaKm: null,
+        lmgMarcado: c.lmgMarcado,
+      }))
+
+      // Apólice atual simulada (padrão Anália, dados reais NÃO embutidos):
+      // Danos Morais emitido com R$ 2.000.000 — não casa com o declarado (5.000.000).
+      const apoliceCoberturas = [
+        {
+          id: 'a1',
+          nomeApolice: 'RC Operações',
+          nomeNormalizado: 'RC Operações',
+          lmiApolice: 5000000,
+        },
+        {
+          id: 'a2',
+          nomeApolice: 'RC Danos Morais',
+          nomeNormalizado: 'RC Danos Morais',
+          lmiApolice: 2000000,
+        },
+        {
+          id: 'a3',
+          nomeApolice: 'RC Empregador',
+          nomeNormalizado: 'RC Empregador',
+          lmiApolice: 5000000,
+        },
+        {
+          id: 'a4',
+          nomeApolice: 'RC Produtos e Trabalhos Concluídos',
+          nomeNormalizado: 'RC Produtos e Trabalhos Concluídos',
+          lmiApolice: 5000000,
+        },
+      ]
+
+      const res = montarAuditoriaQarApolice(linhasQar, apoliceCoberturas, 5000000)
+      const dm = res.itens.find((i) => /Danos Morais/i.test(i.cobertura))
+      assert(dm !== undefined, 'RC Danos Morais deve estar na auditoria')
+      assertEqual(dm.nivel, 'DIVERGENCIA', 'Divergência antes da correção do analista')
+
+      const corrigido = reclassificarComLmgEditado(dm, 5000000)
+      assertEqual(corrigido.nivel, 'APTO', 'Apto após a correção do analista (correção prevalece)')
+      assertEqual(corrigido.lmgDeclaradoEditavel, 5000000, 'LMG declarado editável atualizado')
+      assert(
+        valoresIguaisQarApolice(corrigido.lmgDeclaradoEditavel, corrigido.lmgEmitido),
+        'Casa exata com o LMG emitido',
+      )
+    },
+  )
+
+  runTest(
+    'QAR Anália',
+    'motor QAR × Apólice: % da IS corrigida pelo analista resolve na auditoria (Poluição 100% da IS)',
+    () => {
+      const poluicaoLinha = {
+        id: 'qar-poluicao',
+        cobertura: 'Poluição Súbita e Acidental',
+        coberturaNormalizada: 'Poluição Súbita e Acidental',
+        tipoValor: 'percentual' as const,
+        percentual: 100,
+        valorPretendido: null,
+        importanciaSeguradaPretendida: 10000000, // IS corrigida pelo analista
+        distanciaKm: null,
+        lmgMarcado: false,
+      }
+      const res = montarAuditoriaQarApolice(
+        [poluicaoLinha],
+        [
+          {
+            id: 'a1',
+            nomeApolice: 'Poluição Súbita e Acidental',
+            nomeNormalizado: 'Poluição Súbita e Acidental',
+            lmiApolice: 10000000,
+          },
+        ],
+        10000000,
+      )
+
+      const poluicao = res.itens.find((i) => /Polui/i.test(i.cobertura))
+      assert(poluicao !== undefined, 'Poluição deve estar na auditoria')
+      assertEqual(poluicao.valorDeclaradoQar, 10000000, '100% da IS corrigida => R$ 10.000.000')
+      assertEqual(poluicao.nivel, 'APTO', 'Apto com o LMG emitido igual à IS corrigida')
+    },
+  )
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO
