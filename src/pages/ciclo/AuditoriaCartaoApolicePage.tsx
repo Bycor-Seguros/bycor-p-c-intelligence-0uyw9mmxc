@@ -53,12 +53,20 @@ import {
 } from '@/services/equivalenciaCoberturasService'
 import {
   montarAuditoriaQarApolice,
+  reclassificarComLmgEditado,
   type QarDeclaradoLinha,
   type QarApoliceCoberturaLinha,
   type QarAuditoriaNivel,
+  type QarAuditoriaItem,
 } from '@/services/auditoriaQarApoliceService'
+import {
+  salvarEdicaoLmgQarDeclarado,
+  salvarEdicaoIsPretendidaQar,
+} from '@/services/qarPersistencia'
+import { ValorEditavelInline } from '@/components/ValorEditavelInline'
+import { useAuth } from '@/contexts/AuthContext'
 
-/** Registro bruto de qar_declarados (campos da coleção, migrations 0044/0045). */
+/** Registro bruto de qar_declarados (campos da coleção, migrations 0044/0045/0046). */
 interface QarDeclaradoRecord {
   id: string
   cobertura?: string
@@ -69,6 +77,7 @@ interface QarDeclaradoRecord {
   distancia_km?: number | null
   lmg_marcado?: boolean
   importancia_segurada_pretendida?: number | null
+  lmg_editado_pelo_analista?: boolean
 }
 
 /** Registro bruto de coberturas da apólice (coleção coberturas). */
@@ -122,12 +131,17 @@ export default function AuditoriaCartaoApolicePage() {
   >('coberturas')
 
   // ---- EIXO QAR × APÓLICE ----
+  // Edições de LMG aplicadas em memória (por cobertura normalizada) — a UI
+  // reclassifica na hora; a gravação em qar_declarados é feita pelo handler.
+  const [qarEdicoesLmg, setQarEdicoesLmg] = useState<Record<string, QarAuditoriaItem>>({})
   const [qarLinhas, setQarLinhas] = useState<QarDeclaradoLinha[]>([])
   const [qarIsPretendida, setQarIsPretendida] = useState<number | null>(null)
   const [qarCoberturasApolice, setQarCoberturasApolice] = useState<QarApoliceCoberturaLinha[]>([])
   const [qarLoading, setQarLoading] = useState(false)
   const [qarErro, setQarErro] = useState<string | null>(null)
+  const [qarSalvandoEdicao, setQarSalvandoEdicao] = useState(false)
   const qarRodadaIdRef = useRef<string | null>(null)
+  const { user } = useAuth()
   const [canonicas, setCanonicas] = useState<CoberturaCanonicaRecord[]>([])
   const [sinonimos, setSinonimos] = useState<CoberturaSinonimoRecord[]>([])
 
@@ -315,6 +329,7 @@ export default function AuditoriaCartaoApolicePage() {
     if (!activeRodada) return
     if (qarRodadaIdRef.current === activeRodada.id) return
     qarRodadaIdRef.current = activeRodada.id
+    setQarEdicoesLmg({}) // nova rodada: edições em memória começam do zero
     let cancelled = false
     const apoliceRefId = activeRodada.apolice_referencia_real || activeRodada.apolice || ''
     ;(async () => {
@@ -373,6 +388,7 @@ export default function AuditoriaCartaoApolicePage() {
                 : null,
             distanciaKm: typeof rec.distancia_km === 'number' ? rec.distancia_km : null,
             lmgMarcado: Boolean(rec.lmg_marcado),
+            lmgEditadoPeloAnalista: Boolean(rec.lmg_editado_pelo_analista),
           })),
         )
         setQarIsPretendida(isGlobal)
@@ -401,13 +417,86 @@ export default function AuditoriaCartaoApolicePage() {
     }
   }, [activeRodada])
 
-  // Resultado do eixo QAR × Apólice (leitura — edição do LMG entra em rodada futura)
+  // Resultado do eixo QAR × Apólice (leitura) + edições do analista aplicadas
+  // em memória (reclassificação imediata via reclassificarComLmgEditado).
   const qarResultado = useMemo(() => {
     if (!activeRodada || qarLinhas.length === 0) return null
-    return montarAuditoriaQarApolice(qarLinhas, qarCoberturasApolice, qarIsPretendida)
-  }, [activeRodada, qarLinhas, qarCoberturasApolice, qarIsPretendida])
+    const base = montarAuditoriaQarApolice(qarLinhas, qarCoberturasApolice, qarIsPretendida)
+    if (Object.keys(qarEdicoesLmg).length === 0) return base
+    return {
+      ...base,
+      itens: base.itens.map((i) => qarEdicoesLmg[i.coberturaNormalizada] || i),
+    }
+  }, [activeRodada, qarLinhas, qarCoberturasApolice, qarIsPretendida, qarEdicoesLmg])
 
   const snap = activeRodada?.snapshot_comparativo
+
+  // ---- EDIÇÃO DO LMG/IS PELO ANALISTA (eixo QAR × Apólice) ----
+  // Persiste em qar_declarados (flag lmg_editado_pelo_analista) e reclassifica
+  // o item IMEDIATAMENTE em memória — sem recarregar a página.
+  const handleSalvarLmgEditado = async (
+    linha: QarDeclaradoLinha,
+    item: QarAuditoriaItem,
+    novoLmg: number,
+  ) => {
+    if (!activeRodada) return
+    setQarSalvandoEdicao(true)
+    try {
+      const resultado = await salvarEdicaoLmgQarDeclarado({
+        empreendimentoId: activeRodada.empreendimento,
+        cobertura: linha.cobertura,
+        novoLmg,
+        importanciaSeguradaPretendida: item.importanciaSeguradaUsada,
+      })
+      if (!resultado.success) {
+        alert('Erro ao salvar a edição do LMG: ' + (resultado.erro || 'erro desconhecido'))
+        throw new Error(resultado.erro || 'erro ao salvar edição do LMG')
+      }
+      // A correção do analista prevalece: a linha passa a ser valor fixo editado.
+      setQarLinhas((prev) =>
+        prev.map((l) =>
+          l.id === linha.id ? { ...l, tipoValor: 'fixo' as const, valorPretendido: novoLmg } : l,
+        ),
+      )
+      // Badge recalculado na hora (sem recarregar a página).
+      setQarEdicoesLmg((prev) => ({
+        ...prev,
+        [item.coberturaNormalizada]: reclassificarComLmgEditado(item, novoLmg),
+      }))
+    } finally {
+      setQarSalvandoEdicao(false)
+    }
+  }
+
+  const handleSalvarIsPretendida = async (novaIs: number) => {
+    if (!activeRodada) return
+    setQarSalvandoEdicao(true)
+    try {
+      const resultado = await salvarEdicaoIsPretendidaQar({
+        empreendimentoId: activeRodada.empreendimento,
+        novaIs,
+        ...(user?.email ? { usuarioEmail: user.email } : {}),
+      })
+      if (!resultado.success) {
+        alert('Erro ao salvar a IS pretendida: ' + (resultado.erro || 'erro desconhecido'))
+        throw new Error(resultado.erro || 'erro ao salvar IS pretendida')
+      }
+      setQarIsPretendida(novaIs)
+      // IS em todos os registros do empreendimento (rastreabilidade, sem flag humana)
+      try {
+        for (const l of qarLinhas) {
+          if (l.lmgEditadoPeloAnalista) continue // guarda: preserva a correção do analista
+          await pb.collection('qar_declarados').update(l.id, {
+            importancia_segurada_pretendida: novaIs,
+          })
+        }
+      } catch {
+        /* melhor esforço: o fallback global já cobre o recálculo */
+      }
+    } finally {
+      setQarSalvandoEdicao(false)
+    }
+  }
 
   // Regra de produto: o botão "Ressalva C5" só é exibido em linhas com divergência real
   // (LMI divergente com desvio >= 1%, ou cobertura só no cartão não emitida com LMI > 0),
@@ -1570,22 +1659,28 @@ export default function AuditoriaCartaoApolicePage() {
                                 </div>
                               </div>
                               <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200 text-center">
-                                <div className="text-sm font-bold font-mono text-gray-900 pt-0.5">
-                                  {qarResultado.importanciaSeguradaUsada !== null
-                                    ? formatCurrency(qarResultado.importanciaSeguradaUsada)
-                                    : '—'}
+                                <div className="pt-0.5">
+                                  <ValorEditavelInline
+                                    valor={qarIsPretendida}
+                                    ariaLabel="Editar IS pretendida do QAR"
+                                    inputClassName="w-32"
+                                    disabled={qarSalvandoEdicao}
+                                    onSalvar={handleSalvarIsPretendida}
+                                  />
                                 </div>
                                 <div className="text-[10px] font-semibold text-gray-500 uppercase">
-                                  IS Pretendida
+                                  IS Pretendida (editável)
                                 </div>
                               </div>
                             </div>
 
                             <p className="text-[11px] text-gray-500">
                               % do QAR = % da Importância Segurada pretendida. Divergência quando o
-                              LMG emitido não casa com nenhuma opção idêntica do QAR. Coberturas
-                              property (Danos por Água; Despesas de Salvamento/Contenção) e
-                              sugestões sem %/valor ficam fora deste eixo.
+                              LMG emitido não casa com nenhuma opção idêntica do QAR — clique no
+                              valor para editar o LMG declarado (a correção do analista prevalece e
+                              o badge recalcula na hora). Coberturas property (Danos por Água;
+                              Despesas de Salvamento/Contenção) e sugestões sem %/valor ficam fora
+                              deste eixo.
                             </p>
 
                             {/* Tabela por cobertura RC (apto/divergência) */}
@@ -1602,6 +1697,9 @@ export default function AuditoriaCartaoApolicePage() {
                                       <th className="py-2.5 px-3">Cobertura (QAR)</th>
                                       <th className="py-2.5 px-3 text-right">Declarado no QAR</th>
                                       <th className="py-2.5 px-3 text-right">LMG Emitido</th>
+                                      <th className="py-2.5 px-3 text-right">
+                                        LMG Declarado (editável)
+                                      </th>
                                       <th className="py-2.5 px-3 text-center">Classificação</th>
                                       <th className="py-2.5 px-3">Observação</th>
                                     </tr>
@@ -1609,37 +1707,72 @@ export default function AuditoriaCartaoApolicePage() {
                                   <tbody className="divide-y divide-gray-100">
                                     {qarResultado.itens
                                       .filter((i) => i.nivel !== 'PONTO_DE_ATENCAO')
-                                      .map((i, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50">
-                                          <td className="py-2.5 px-3 font-semibold text-[#16578B]">
-                                            {i.cobertura}
-                                          </td>
-                                          <td className="py-2.5 px-3 text-right font-mono text-gray-900">
-                                            {i.valorDeclaradoQar !== null
-                                              ? formatCurrency(i.valorDeclaradoQar)
-                                              : '—'}
-                                            {i.percentualDeclarado !== null && (
-                                              <span className="block text-[10px] text-gray-500 font-sans">
-                                                {i.percentualDeclarado}% da IS pretendida
-                                              </span>
-                                            )}
-                                          </td>
-                                          <td className="py-2.5 px-3 text-right font-mono text-gray-900">
-                                            {i.lmgEmitido !== null
-                                              ? formatCurrency(i.lmgEmitido)
-                                              : '—'}
-                                            {i.nomeApoliceCorrespondente && (
-                                              <span className="block text-[10px] text-gray-400 font-sans">
-                                                {i.nomeApoliceCorrespondente}
-                                              </span>
-                                            )}
-                                          </td>
-                                          <td className="py-2.5 px-3 text-center">
-                                            <QarNivelBadge nivel={i.nivel} />
-                                          </td>
-                                          <td className="py-2.5 px-3 text-gray-600">{i.motivo}</td>
-                                        </tr>
-                                      ))}
+                                      .map((i, idx) => {
+                                        const linhaOrig = qarLinhas.find(
+                                          (l) => l.coberturaNormalizada === i.coberturaNormalizada,
+                                        )
+                                        return (
+                                          <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="py-2.5 px-3 font-semibold text-[#16578B]">
+                                              {i.cobertura}
+                                              {linhaOrig?.lmgEditadoPeloAnalista && (
+                                                <span className="ml-1.5 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold text-[#16578B]">
+                                                  editado
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-right font-mono text-gray-900">
+                                              {i.valorDeclaradoQar !== null
+                                                ? formatCurrency(i.valorDeclaradoQar)
+                                                : '—'}
+                                              {i.percentualDeclarado !== null && (
+                                                <span className="block text-[10px] text-gray-500 font-sans">
+                                                  {i.percentualDeclarado}% da IS pretendida
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-right font-mono text-gray-900">
+                                              {i.lmgEmitido !== null
+                                                ? formatCurrency(i.lmgEmitido)
+                                                : '—'}
+                                              {i.nomeApoliceCorrespondente && (
+                                                <span className="block text-[10px] text-gray-400 font-sans">
+                                                  {i.nomeApoliceCorrespondente}
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-right">
+                                              {linhaOrig ? (
+                                                <ValorEditavelInline
+                                                  valor={
+                                                    linhaOrig.tipoValor === 'fixo'
+                                                      ? linhaOrig.valorPretendido
+                                                      : linhaOrig.percentual !== null &&
+                                                          qarIsPretendida !== null
+                                                        ? (linhaOrig.percentual / 100) *
+                                                          qarIsPretendida
+                                                        : null
+                                                  }
+                                                  ariaLabel={`Editar LMG declarado de ${i.cobertura}`}
+                                                  inputClassName="w-36"
+                                                  disabled={qarSalvandoEdicao}
+                                                  onSalvar={(novo) =>
+                                                    handleSalvarLmgEditado(linhaOrig, i, novo)
+                                                  }
+                                                />
+                                              ) : (
+                                                <span className="text-gray-400">—</span>
+                                              )}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center">
+                                              <QarNivelBadge nivel={i.nivel} />
+                                            </td>
+                                            <td className="py-2.5 px-3 text-gray-600">
+                                              {i.motivo}
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
                                   </tbody>
                                 </table>
                               </div>

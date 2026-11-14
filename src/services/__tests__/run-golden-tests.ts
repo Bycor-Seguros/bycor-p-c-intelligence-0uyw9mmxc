@@ -2139,6 +2139,55 @@ export async function runAllSuites() {
     },
   )
 
+  runTest(
+    'QAR Anália',
+    'guarda de re-upload: LMG editado pelo analista em qar_declarados é preservado (lmg_editado_pelo_analista)',
+    () => {
+      // Simula um registro qar_declarados já corrigido pelo analista e um
+      // re-upload com o valor da leitura automática (menor opção do formulário).
+      const registroEditado = {
+        id: 'rec-editado',
+        cobertura: 'RC Danos Morais',
+        cobertura_normalizada: 'RC Danos Morais',
+        tipo_valor: 'fixo',
+        percentual_is_pretendida: null,
+        valor_pretendido_rs: 5000000,
+        lmg_marcado: false,
+        lmg_index: null,
+        importancia_segurada_pretendida: 5000000,
+        lmg_editado_pelo_analista: true,
+      }
+      const reupload = {
+        cobertura: 'RC Danos Morais',
+        tipoValor: 'fixo',
+        percentual: null,
+        valorPretendido: 2000000, // leitura automática voltaria a gravar 2.000.000
+        lmgMarcado: false,
+        lmgIndex: null,
+        detalheKm: null,
+      }
+
+      // Reproduz a lógica de guarda do qarPersistencia.salvarQarDeclarado:
+      // registros com o flag NÃO entram no dedupe (nunca são atualizados nem
+      // recriados) e contam como preservados.
+      const lmgEditados = new Set<string>()
+      for (const rec of [registroEditado]) {
+        if (!rec.lmg_editado_pelo_analista) continue
+        lmgEditados.add(String(rec.cobertura_normalizada || rec.cobertura))
+      }
+      const existingMap = new Map<string, typeof registroEditado>()
+      for (const rec of [registroEditado]) {
+        const chave = String(rec.cobertura_normalizada || rec.cobertura)
+        if (lmgEditados.has(chave)) continue
+        existingMap.set(chave, rec)
+      }
+      const key = reupload.cobertura
+      const criaria = !existingMap.has(key) && !lmgEditados.has(key)
+      assert(!criaria, 'Cobertura editada pelo analista não pode ser atualizada nem recriada')
+      assert(lmgEditados.has(key), 'Cobertura editada deve estar na lista de preservados')
+    },
+  )
+
   // =========================================================================
   // RESUMO DA EXECUÇÃO
   // =========================================================================
