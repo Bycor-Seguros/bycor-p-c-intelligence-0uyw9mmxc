@@ -17,6 +17,7 @@ import {
 } from '../apoliceReader'
 import { extractAxaDetails } from '../propostaReader'
 import { parseQar21, parseValorQar, QAR_LMGS_PADRAO } from '../qarReader'
+import { calcularLinhasOrfasQar } from '../qarPersistencia'
 import { calcularFluxoPremios, ALIQUOTA_IOF_PADRAO } from '../rfqPropostasService'
 import { compararVrdEstagnado } from '../analiticoCarteiraService'
 import {
@@ -2187,6 +2188,87 @@ export async function runAllSuites() {
       assert(lmgEditados.has(key), 'Cobertura editada deve estar na lista de preservados')
     },
   )
+
+  // =========================================================================
+  // SUITE: RE-UPLOAD DO QAR — SEMÂNTICA "SUBSTITUIR TUDO" (RECONCILIAÇÃO PURA)
+  // =========================================================================
+  // Caso real Anália (empreendimento 24cld9sh7ftgjtq): linhas espúrias gravadas
+  // por leituras antigas ("☒ Opção 1/2/3", "☒ Outros", "RC Produtos e Trabalhos
+  // Concluídos") ficavam no banco porque o reenvio só ATUALIZAVA as linhas
+  // reconhecidas. A reconciliação pura calcularLinhasOrfasQar (espelhada em
+  // qarPersistencia.salvarQarDeclarado) retorna os ids órfãos a deletar;
+  // registros com lmg_editado_pelo_analista (a correção do analista) NUNCA são
+  // órfãos. PACTO ANTI-REGRESSÃO: apenas ADIÇÃO — nenhuma asserção anterior
+  // foi alterada.
+  console.log('SUITE: Re-upload do QAR — semântica "substituir tudo" (calcularLinhasOrfasQar)')
+  // Registro espúrio real do caso Anália: leitura antiga truncou "R$ 5.000.000,00"
+  // em "☒ Outros" com valor 5 (id real rx5rgj25omn6edf — sem nenhum dado do
+  // documento real embutido aqui).
+  const ORFAOS_EXISTING = [
+    { id: '08d5w9tvljf4z6q', cobertura: '☒ Opção 1' },
+    { id: '9gcdniuauxkew2n', cobertura: '☒ Opção 2' },
+    { id: 'v01savt5j01v257', cobertura: '☒ Opção 3' },
+    { id: 'rx5rgj25omn6edf', cobertura: '☒ Outros' },
+    { id: '8ofva3myrdm9284', cobertura: 'RC Produtos e Trabalhos Concluídos' },
+    { id: 'keep-1', cobertura: 'Poluição Súbita e Acidental – 72hrs' },
+    { id: 'keep-2', cobertura: 'Colisão de Veículos de Terceiros Compreensiva' },
+    { id: 'keep-editado', cobertura: 'RC Danos Morais' },
+    { id: 'keep-lmg', cobertura: 'RC Empregador' },
+  ]
+  const ORFAOS_NOVAS = [
+    'Poluição Súbita e Acidental',
+    'Colisão de Veículos de Terceiros Compreensiva',
+    'RC Danos Morais',
+    'RC Empregador',
+    'RC Produtos e Trabalhos Concluídos', // LMG padrão da leitura ATUAL
+  ]
+  const ORFAOS_EDITADOS = new Set(['rc danos morais'])
+  const orfaos = calcularLinhasOrfasQar(ORFAOS_EXISTING, ORFAOS_NOVAS, ORFAOS_EDITADOS)
+  const orfaosIds = orfaos.map((o) => o.id)
+
+  runTest('QAR Re-upload', 'Linhas espúrias do caso Anália são órfãs (a deletar)', () => {
+    assert(orfaosIds.includes('08d5w9tvljf4z6q'), '"☒ Opção 1" deve ser deletada')
+    assert(orfaosIds.includes('9gcdniuauxkew2n'), '"☒ Opção 2" deve ser deletada')
+    assert(orfaosIds.includes('v01savt5j01v257'), '"☒ Opção 3" deve ser deletada')
+    assert(orfaosIds.includes('rx5rgj25omn6edf'), '"☒ Outros" deve ser deletada')
+    assert(
+      orfaosIds.includes('8ofva3myrdm9284'),
+      '"RC Produtos e Trabalhos Concluídos" espúria deve ser deletada',
+    )
+    assertEqual(orfaos.length, 5, 'Cinco linhas espúrias a deletar')
+  })
+
+  runTest('QAR Re-upload', 'Linhas que a nova leitura trouxe NÃO são órfãs', () => {
+    assert(!orfaosIds.includes('keep-1'), 'Poluição (nova leitura) deve sobreviver')
+    assert(!orfaosIds.includes('keep-2'), 'Colisão (nova leitura) deve sobreviver')
+    assert(!orfaosIds.includes('keep-lmg'), 'RC Empregador (nova leitura) deve sobreviver')
+  })
+
+  runTest(
+    'QAR Re-upload',
+    'Linhas com lmg_editado_pelo_analista=true sobrevivem ao reenvio',
+    () => {
+      assert(
+        !orfaosIds.includes('keep-editado'),
+        'Edição do analista (RC Danos Morais) nunca é perdida no reenvio',
+      )
+    },
+  )
+
+  runTest('QAR Re-upload', 'Acentos/caixa não geram órfãos falsos (casamento normalizado)', () => {
+    // Mesma cobertura com grafia diferente entre leitura antiga e nova
+    const r = calcularLinhasOrfasQar(
+      [{ id: 'a1', cobertura: 'Portões Automáticos' }],
+      ['Portoes Automaticos'],
+      new Set(),
+    )
+    assertEqual(r.length, 0, 'Grafias equivalentes casam após normalização')
+  })
+
+  runTest('QAR Re-upload', 'Primeiro upload (sem existentes) não deleta nada', () => {
+    const r = calcularLinhasOrfasQar([], ORFAOS_NOVAS, new Set())
+    assertEqual(r.length, 0, 'Sem linhas existentes não há órfãs')
+  })
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO

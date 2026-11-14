@@ -39,6 +39,8 @@ export interface QarUploadResultado {
   sugestoesIgnoradas: number
   /** Coberturas cujo LMG editado pelo analista foi preservado no re-upload. */
   lmgsPreservados: number
+  /** Linhas espúrias de leituras antigas deletadas pelo re-upload ("substituir tudo"). */
+  deletadas: number
   errors: string[]
 }
 
@@ -65,6 +67,29 @@ function identicalQar(rec: Record<string, unknown>, payload: Record<string, unkn
 }
 
 /**
+ * SUBSTITUIR TUDO (reconciliação pura do re-upload do QAR): retorna os ids das
+ * linhas órfãs de leituras antigas que a NOVA leitura NÃO trouxe — as espúrias
+ * do caso Anália ("☒ Opção 1/2/3", "☒ Outros", "RC Produtos e Trabalhos
+ * Concluídos") somem ao reenviar o PDF. Linhas com lmg_editado_pelo_analista
+ * (chaves presentes em lmgEditados) NUNCA são órfãs: a correção do analista
+ * sobrevive ao reenvio.
+ */
+export function calcularLinhasOrfasQar(
+  existing: Array<{ id: string; cobertura: string }>,
+  coberturasNovas: string[],
+  lmgEditados: Set<string>,
+): Array<{ id: string; cobertura: string }> {
+  const chavesNovas = new Set(coberturasNovas.map((c) => normalizarTermoEquivalenciaQar(c)))
+  return existing
+    .map((rec) => ({ id: rec.id, cobertura: rec.cobertura }))
+    .filter(
+      (rec) =>
+        !chavesNovas.has(normalizarTermoEquivalenciaQar(rec.cobertura)) &&
+        !lmgEditados.has(normalizarTermoEquivalenciaQar(rec.cobertura)),
+    )
+}
+
+/**
  * Grava o QAR declarado do item 21 no banco, vinculado ao ciclo/empreendimento.
  * Idempotente por dedupe (empreendimento + cobertura normalizada): atualiza o
  * registro existente se algo mudou, pula se idêntico.
@@ -87,6 +112,7 @@ export async function salvarQarDeclarado(
     coberturasGravadas: 0,
     sugestoesIgnoradas: 0,
     lmgsPreservados: 0,
+    deletadas: 0,
     errors: [],
   }
 
@@ -233,6 +259,28 @@ export async function salvarQarDeclarado(
       }
     } catch (err) {
       res.errors.push(`Erro ao gravar cobertura "${cob.cobertura}": ${(err as Error).message}`)
+    }
+  }
+
+  // 4. SUBSTITUIR TUDO: o re-upload do QAR reflete o formulário ATUAL — linhas
+  // de leituras antigas que a nova leitura NÃO trouxe são deletadas (ex.:
+  // "☒ Opção 1/2/3", "☒ Outros" e "RC Produtos e Trabalhos Concluídos" do caso
+  // Anália, gravadas pelo leitor antigo). PRESERVAÇÃO GARANTIDA: registros com
+  // lmg_editado_pelo_analista=true (a correção do analista nunca é perdida) e
+  // qualquer cobertura que a nova leitura trouxe (dedupe por chave normalizada).
+  if (existing.length > 0) {
+    const idsOrfaos = calcularLinhasOrfasQar(
+      existing.map((r) => ({ id: String(r.id), cobertura: String(r.cobertura || '') })),
+      declaradas.map((c) => c.cobertura),
+      lmgEditados,
+    )
+    for (const { id, cobertura } of idsOrfaos) {
+      try {
+        await executeWithRetry(() => pb.collection(QAR_DECLARADOS).delete(id))
+        res.deletadas++
+      } catch (err) {
+        res.errors.push(`Erro ao remover linha obsoleta "${cobertura}": ${(err as Error).message}`)
+      }
     }
   }
 
