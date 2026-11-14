@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T18:51:11.396Z",
+  "generatedAt": "2026-11-14T19:09:46.740Z",
   "collections": [
     {
       "name": "users",
@@ -2974,6 +2974,12 @@
         {
           "name": "importancia_segurada_pretendida",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lmg_editado_pelo_analista",
+          "type": "bool",
           "required": false,
           "system": false
         }
