@@ -2062,7 +2062,8 @@ export async function runAllSuites() {
       }))
 
       // Apólice atual simulada (padrão Anália, dados reais NÃO embutidos):
-      // Danos Morais emitido com R$ 2.000.000 — não casa com o declarado (5.000.000).
+      // Danos Morais emitido com R$ 5.000.000 — não casa com o declarado (R$ 2.000.000,
+      // menor opção marcada do QAR Anália, travada pelas asserções do parser).
       const apoliceCoberturas = [
         {
           id: 'a1',
@@ -2074,7 +2075,7 @@ export async function runAllSuites() {
           id: 'a2',
           nomeApolice: 'RC Danos Morais',
           nomeNormalizado: 'RC Danos Morais',
-          lmiApolice: 2000000,
+          lmiApolice: 5000000,
         },
         {
           id: 'a3',

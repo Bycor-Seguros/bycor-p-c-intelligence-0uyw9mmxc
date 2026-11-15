@@ -218,7 +218,9 @@ export function montarAuditoriaQarApolice(
     const correspondente = encontrarLmgEmitido(norm, apoliceCoberturas)
     const lmgEmitido = correspondente ? correspondente.lmiApolice : null
     const lmgDeclaradoEditavel = linhaQar.valorPretendido
-    const casaExata = valoresIguaisQarApolice(lmgDeclaradoEditavel, lmgEmitido)
+    // Comparação pelo valor RESOLVIDO (fixo em R$ ou % × IS pretendida): linhas
+    // em % não têm valorPretendido e nunca podem casar pelo campo bruto.
+    const casaExata = valoresIguaisQarApolice(resolvido.valor, lmgEmitido)
 
     const isPct = linhaQar.tipoValor === 'percentual' && linhaQar.percentual !== null
     const motivo = isPct
