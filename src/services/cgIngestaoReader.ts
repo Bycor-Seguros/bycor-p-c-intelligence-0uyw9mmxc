@@ -201,7 +201,7 @@ export function detectarProcessoSusepCg(textoGlobal: string): string {
 
 export function detectarProdutoVersaoCg(textoGlobal: string): string {
   const mVersao = textoGlobal.match(/vers[aã]o\s*:?\s*(\d{1,3}\s*\/\s*\d{4})/i)
-  const mMes = textoGlobal.match(/processo\s+susep[^–\-\n]{0,60}[–-]\s*(\d{2}\/\d{4})/i)
+  const mMes = textoGlobal.match(/processo\s+susep[^-–\n]{0,60}[–-]\s*(\d{2}\/\d{4})/i)
   if (mVersao) return `Versão ${mVersao[1].replace(/\s+/g, '')}`
   if (mMes) return mMes[1]
   return ''

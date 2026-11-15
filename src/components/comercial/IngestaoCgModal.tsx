@@ -17,6 +17,7 @@ import {
   lerCondicoesGerais,
   detectarProcessoSusepCg,
   detectarProdutoVersaoCg,
+  chaveGuardaCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
@@ -24,6 +25,7 @@ import {
   salvarSessaoIngestao,
   confirmarItemIngestao,
   rejeitarItemIngestao,
+  casarComMotorC3,
   LIMIAR_CONFIANCA_CG,
 } from '@/services/cgIngestaoService'
 import type { CoberturaCanonicaRecord } from '@/services/equivalenciaCoberturasService'
@@ -231,10 +233,10 @@ export default function IngestaoCgModal({
           pagina: f.extraido.pagina,
           slotY: f.extraido.slotY,
           exclusoes: f.extraido.exclusoes.map((e) => e.texto),
-          sugestaoCanonicaId: f.match.canonicaId,
-          sugestaoCanonicaNome: f.match.canonicaNome,
-          confianca: f.match.confianca,
-          matchType: f.match.matchType,
+          sugestaoCanonicaId: f.canonicaIdSelecionada,
+          sugestaoCanonicaNome: f.canonicaNomeSelecionada,
+          confianca: f.confianca,
+          matchType: f.matchType,
           status: 'pendente',
         },
         seguradoraId,

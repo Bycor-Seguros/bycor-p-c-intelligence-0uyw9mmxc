@@ -29,7 +29,7 @@ import type { CoberturaCanonicaRecord } from '@/services/equivalenciaCoberturasS
 // ---------------------------------------------------------------------------
 
 function frag(str: string, y: number): PdfTextFragment {
-  return { str, y }
+  return { str, x: 0, y }
 }
 
 function page(pageNumber: number, linhas: Array<[string, number]>): PdfPageText {

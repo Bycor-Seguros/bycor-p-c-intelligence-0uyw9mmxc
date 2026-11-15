@@ -200,7 +200,7 @@ export async function processarCgParaRevisao(params: {
   seguradoraId: string
   seguradoraNome: string
 }): Promise<CgIngestaoSessao> {
-  const leitura = lerCondiçõesGerais(params.pages)
+  const leitura = lerCondicoesGerais(params.pages)
   const canonicas = await listarTaxonomiaCanonicas()
 
   const itens: CgIngestaoItemFila[] = leitura.itens.map((it) => {
