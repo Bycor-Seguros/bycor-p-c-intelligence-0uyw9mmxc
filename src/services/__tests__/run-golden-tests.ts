@@ -25,6 +25,7 @@ import {
   reclassificarComLmgEditado,
   valoresIguaisQarApolice,
 } from '../auditoriaQarApoliceService'
+import { runIngestaoCgSuite } from './ingestaoCg.golden'
 import type { PdfPageText } from '../pdfTextExtractor'
 
 // Utilitários de teste simples e expressivos
@@ -2270,6 +2271,23 @@ export async function runAllSuites() {
     const r = calcularLinhasOrfasQar([], ORFAOS_NOVAS, new Set())
     assertEqual(r.length, 0, 'Sem linhas existentes não há órfãs')
   })
+
+  // =========================================================================
+  // SUITE: INGESTÃO DE CGs — BIBLIOTECA DE CGs (FASE 2, PILOTO AXA)
+  // Parser puro + casamento C3 + guarda de re-ingestão. Casos NOVOS:
+  // nenhuma asserção antiga é tocada. Suíte auxiliar: ingestaoCg.golden.ts
+  // =========================================================================
+  console.log('\nSUITE: Ingestão de CGs — Biblioteca de CGs (parser + C3 + guarda)')
+  const cgSuite = runIngestaoCgSuite()
+  for (const r of cgSuite) {
+    results.push({ suite: 'Ingestão CGs', name: r.nome, passed: r.ok, error: r.detalhe })
+    if (r.ok) {
+      console.log(`  ✓ [PASS] ${r.nome}`)
+    } else {
+      console.log(`  ✗ [FAIL] ${r.nome}`)
+      console.log(`    ↳ ${r.detalhe}`)
+    }
+  }
 
   // =========================================================================
   // RESUMO DA EXECUÇÃO

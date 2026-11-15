@@ -14,6 +14,7 @@ import {
   Split,
   RefreshCw,
   AlertCircle,
+  Upload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,6 +36,7 @@ import {
   derivarEventosTipicosPadrao,
 } from '@/services/equivalenciaCoberturasService'
 import { SeguradoraCadastroRecord, getSeguradorasCadastro } from '@/services/seguradoraNormalizer'
+import IngestaoCgModal from '@/components/comercial/IngestaoCgModal'
 
 /**
  * Biblioteca de CGs — fonte de verdade das Coberturas Genéricas (canônicas) Bycor.
@@ -45,6 +47,10 @@ import { SeguradoraCadastroRecord, getSeguradorasCadastro } from '@/services/seg
  * a tela espelha o banco. O CRUD de sinônimos usa o mesmo `salvarSinonimo` /
  * `excluirSinonimo` do motor de equivalências (C3), garantindo que o que é
  * gravado aqui vale imediatamente para tabulação, auditoria e apresentação.
+ *
+ * Ingestão de CGs: botão "Ingerir CG da seguradora" (IngestaoCgModal) — sobe o
+ * PDF da cia, extrai coberturas/exclusões (pág/slotY, padrão QAR), casa via
+ * motor C3 e mostra fila de revisão; nada é gravado sem confirmação humana.
  */
 
 // Categorias exibidas no filtro (derivadas do campo `ramo` da canônica).
@@ -88,6 +94,9 @@ export default function BibliotecaCgsPage() {
 
   // ---- Detalhe da CG ----
   const [detalheCanonica, setDetalheCanonica] = useState<CoberturaCanonicaRecord | null>(null)
+
+  // ---- Modal de ingestão de CG (PDF → C3 → fila de revisão) ----
+  const [modalIngestaoAberto, setModalIngestaoAberto] = useState(false)
 
   // ---- Carregamento ----
   const carregarDados = useCallback(async () => {
@@ -267,6 +276,14 @@ export default function BibliotecaCgsPage() {
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${carregando ? 'animate-spin' : ''}`} />
             Atualizar
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setModalIngestaoAberto(true)}
+            className="h-9 text-xs bg-[#16578B] hover:bg-[#0F2B46] text-white font-semibold"
+          >
+            <Upload className="w-3.5 h-3.5 mr-1.5" />
+            Ingerir CG da seguradora
           </Button>
           <Button
             size="sm"
@@ -861,6 +878,15 @@ export default function BibliotecaCgsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de ingestão de CG (PDF → C3 → fila de revisão) */}
+      <IngestaoCgModal
+        open={modalIngestaoAberto}
+        onOpenChange={setModalIngestaoAberto}
+        canonicas={canonicas}
+        seguradoras={seguradorasCadastro}
+        onIngestaoConcluida={carregarDados}
+      />
     </div>
   )
 }
