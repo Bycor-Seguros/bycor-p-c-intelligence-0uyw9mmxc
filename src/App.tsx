@@ -25,6 +25,7 @@ import AprovacaoPage from '@/pages/ciclo/AprovacaoPage'
 import MercadoPage from '@/pages/mercado/MercadoPage'
 import VersaoContratacaoPage from '@/pages/mercado/VersaoContratacaoPage'
 import PlaybookPage from '@/pages/mercado/PlaybookPage'
+import BibliotecaCgsPage from '@/pages/comercial/BibliotecaCgsPage'
 import ChatPage from '@/pages/chat/ChatPage'
 import NotFound from '@/pages/NotFound'
 
@@ -66,6 +67,7 @@ export default function App() {
             <Route path="/mercado" element={<MercadoPage />} />
             <Route path="/versao-contratacao" element={<VersaoContratacaoPage />} />
             <Route path="/playbook" element={<PlaybookPage />} />
+            <Route path="/biblioteca-cgs" element={<BibliotecaCgsPage />} />
 
             {/* Chat IA */}
             <Route path="/chat" element={<ChatPage />} />

@@ -24,6 +24,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  Library,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -152,6 +153,7 @@ export default function Layout() {
         { label: 'Mapa de Mercado', path: '/mercado', icon: Building2 },
         { label: 'Versão Contratação', path: '/versao-contratacao', icon: FileCheck },
         { label: 'Playbook Prospecção', path: '/playbook', icon: BookOpen },
+        { label: 'Biblioteca de CGs', path: '/biblioteca-cgs', icon: Library },
       ],
     },
     {
