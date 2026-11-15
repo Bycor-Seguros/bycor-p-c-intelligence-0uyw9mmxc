@@ -709,7 +709,16 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
       result.seguradoraAnterior = normalizarNomeSeguradoraSync(rawSeg) || rawSeg
     }
     if (normD.includes('apolice')) {
-      result.numeroApoliceAnterior = colE || colD.replace(/^n.*apolice[:\s]*/i, '').trim()
+      // REGRA DE PRODUTO (renovação): o Cartão de Risco declara o número da
+      // apólice ANTERIOR apenas como referência da renovação. Nunca vira
+      // numero_apolice de registro novo: registros de origem de renovação nascem
+      // SEM numero_apolice — a sucessora recebe o número quando é emitida.
+      // Também normaliza rótulos de planilha colados ("Nº da apólice :123...").
+      const brutoApolice = colE || colD.replace(/^n.*apolice[:\s]*/i, '').trim()
+      result.numeroApoliceAnterior = String(brutoApolice || '')
+        .replace(/n[ºo°.]*\s*da\s*ap[oó]lice\s*[:-]?\s*/i, '')
+        .replace(/^[\s:;,-]+/, '')
+        .trim()
     }
     if (rowFullText.includes('Possui Outros Seguros')) {
       if (isChecked(colE) && /sim/i.test(colE)) {
@@ -1563,7 +1572,12 @@ export async function saveRiskCardToDatabase(
       segurado_na_apolice: card.segurado,
       cnpj_segurado: card.cnpj,
       seguradora: seguradoraCanonica,
-      numero_apolice: card.numeroApoliceAnterior || 'Processo de Cotação',
+      // REGRA DE PRODUTO (renovação): registro de ORIGEM de renovação nasce SEM
+      // numero_apolice — o número da apólice anterior é referência do Cartão
+      // (card.numeroApoliceAnterior) e a sucessora recebe o número quando é
+      // EMITIDA. Preencher aqui contamina a /carteira (parece 3º seguro vigente)
+      // e a auditoria Cartão × Apólice.
+      numero_apolice: '',
       ramo: match.ramoCanonicaCartao,
       data_inicio: card.vigenciaInicio || null,
       data_fim: card.vigenciaFim || null,
