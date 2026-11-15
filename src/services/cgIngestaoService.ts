@@ -347,3 +347,84 @@ export async function listarItensIngestao(ingestaoId: string): Promise<CgIngesta
     sort: 'pagina,slot_y',
   })
 }
+
+// ---------------------------------------------------------------------------
+// Retomada de sessão (só leitura — motor C3, guarda e salvarSinonimo intactos)
+// ---------------------------------------------------------------------------
+
+export interface SessaoPendenteResumo {
+  ingestao: CgIngestaoRecord
+  pendentes: number
+  total: number
+}
+
+/**
+ * Painel "Sessões de ingestão pendentes": sessões com pelo menos 1 item
+ * pendente, com contagem pendentes/total. Só leitura.
+ */
+export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> {
+  const [sessoes, itens] = await Promise.all([
+    pb.collection('cg_ingestoes').getFullList<CgIngestaoRecord>({ sort: '-created' }),
+    pb.collection('cg_ingestao_itens').getFullList<{ ingestao: string; status: string }>({
+      filter: '',
+      sort: 'created',
+    }),
+  ])
+  const contagem = new Map<string, { pendentes: number; total: number }>()
+  for (const it of itens) {
+    const c = contagem.get(it.ingestao) || { pendentes: 0, total: 0 }
+    c.total++
+    if (it.status === 'pendente') c.pendentes++
+    contagem.set(it.ingestao, c)
+  }
+  return sessoes
+    .map((s) => ({ ingestao: s, ...(contagem.get(s.id) || { pendentes: 0, total: 0 }) }))
+    .filter((s) => s.pendentes > 0)
+}
+
+/** Item retomado: fila da sessão com o id do registro persistido (para atualizar sem re-buscar). */
+export interface CgIngestaoItemRetomada extends CgIngestaoItemFila {
+  itemRecordId: string
+}
+
+/** Campo JSON `exclusoes` pode virar array puro ou objeto com a chave `exclusoes`. */
+function normalizarExclusoesRecord(ex: CgIngestaoItemRecord['exclusoes']): string[] {
+  if (Array.isArray(ex)) return ex
+  if (ex && typeof ex === 'object' && Array.isArray(ex.exclusoes)) return ex.exclusoes
+  return []
+}
+
+/**
+ * Recarrega a fila de revisão de uma sessão persistida SEM re-extrair o PDF:
+ * sessão + itens (nome, página, exclusões, status) direto do banco. Itens já
+ * confirmados/rejeitados voltam com o status gravado — nunca reaparecem como
+ * pendentes nem são duplicados.
+ */
+export async function carregarSessaoParaRetomada(ingestaoId: string): Promise<{
+  sessao: CgIngestaoRecord
+  itens: CgIngestaoItemRetomada[]
+}> {
+  const [sessao, registros] = await Promise.all([
+    pb.collection('cg_ingestoes').getOne<CgIngestaoRecord>(ingestaoId),
+    listarItensIngestao(ingestaoId),
+  ])
+  const itens: CgIngestaoItemRetomada[] = registros.map((r) => ({
+    itemRecordId: r.id,
+    tipoItem: r.tipo_item === 'exclusao' ? 'exclusao' : 'cobertura',
+    nomeExtraido: r.nome_extraido,
+    secaoOrigem: r.secao_origem || r.nome_extraido,
+    pagina: r.pagina ?? 0,
+    slotY: r.slot_y ?? 0,
+    exclusoes: normalizarExclusoesRecord(r.exclusoes),
+    sugestaoCanonicaId: r.sugestao_canonica_id || '',
+    sugestaoCanonicaNome: r.sugestao_canonica_nome || '',
+    confianca: r.confianca ?? 0,
+    matchType: r.match_type || 'sem_sugestao',
+    status: (['confirmado', 'rejeitado'].includes(r.status)
+      ? r.status
+      : 'pendente') as CgIngestaoStatus,
+    destinoRejeicao: (r.destino_rejeicao || undefined) as CgIngestaoItemFila['destinoRejeicao'],
+    sinonimoGravadoId: r.sinonimo_gravado_id || undefined,
+  }))
+  return { sessao, itens }
+}

@@ -17,7 +17,6 @@ import {
   lerCondicoesGerais,
   detectarProcessoSusepCg,
   detectarProdutoVersaoCg,
-  chaveGuardaCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
@@ -26,7 +25,10 @@ import {
   confirmarItemIngestao,
   rejeitarItemIngestao,
   casarComMotorC3,
+  carregarSessaoParaRetomada,
   LIMIAR_CONFIANCA_CG,
+  type CgIngestaoItemRetomada,
+  type CgIngestaoRecord,
 } from '@/services/cgIngestaoService'
 import type { CoberturaCanonicaRecord } from '@/services/equivalenciaCoberturasService'
 import type { SeguradoraCadastroRecord } from '@/services/seguradoraNormalizer'
@@ -49,6 +51,9 @@ interface Props {
   canonicas: CoberturaCanonicaRecord[]
   seguradoras: SeguradoraCadastroRecord[]
   onIngestaoConcluida: () => void
+  /** Sessão persistida a retomar (painel "Sessões de ingestão pendentes"). */
+  sessaoRetomarId?: string | null
+  onRetomarSessao?: (id: string | null) => void
 }
 
 interface FilaItem {
@@ -61,6 +66,7 @@ interface FilaItem {
   status: 'pendente' | 'confirmado' | 'rejeitado'
   sinonimoId?: string
   destinoRejeicao?: 'candidato_cg_nova' | 'exclusao_nao_cobre'
+  itemRecordId?: string
 }
 
 function formatoConfianca(c: number): string {
@@ -79,6 +85,8 @@ export default function IngestaoCgModal({
   canonicas,
   seguradoras,
   onIngestaoConcluida,
+  sessaoRetomarId,
+  onRetomarSessao,
 }: Props) {
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [seguradoraId, setSeguradoraId] = useState('')
@@ -92,6 +100,10 @@ export default function IngestaoCgModal({
   const [resumo, setResumo] = useState<{ confirmados: number; rejeitados: number } | null>(null)
   const [erro, setErro] = useState('')
   const [processandoUid, setProcessandoUid] = useState<string | null>(null)
+  // ---- Retomada: sessão persistida carregada do banco (sem re-extrair PDF) ----
+  const [retomando, setRetomando] = useState(false)
+  const [sessaoRetomada, setSessaoRetomada] = useState<CgIngestaoRecord | null>(null)
+  const [modoRetomada, setModoRetomada] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
@@ -107,11 +119,25 @@ export default function IngestaoCgModal({
     setResumo(null)
     setErro('')
     setProcessandoUid(null)
+    setRetomando(false)
+    setSessaoRetomada(null)
+    setModoRetomada(false)
   }
 
   useEffect(() => {
-    if (!open) reset()
+    if (!open) {
+      reset()
+      onRetomarSessao?.(null)
+    }
   }, [open])
+
+  // Painel "Sessões de ingestão pendentes" pediu a retomada de uma sessão.
+  useEffect(() => {
+    if (open && sessaoRetomarId && !modoRetomada && !retomando) {
+      retomarSessao(sessaoRetomarId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessaoRetomarId])
 
   const handleSelecionarArquivo = async (f: File | null) => {
     if (!f) return
@@ -290,6 +316,61 @@ export default function IngestaoCgModal({
       setErro(e instanceof Error ? e.message : String(e))
     } finally {
       setProcessandoUid(null)
+    }
+  }
+
+  /**
+   * RETOMADA de sessão persistida: carrega a fila de cg_ingestao_itens SEM
+   * re-extrair o PDF e sem recriar a sessão. Itens confirmados/rejeitados
+   * voltam com o status gravado — nunca reaparecem como pendentes nem são
+   * duplicados. Confirmar/rejeitar daqui usa o MESMO confirmarItemIngestao /
+   * rejeitarItemIngestao do fluxo de upload, atualizando o próprio registro.
+   */
+  const retomarSessao = async (record: CgIngestaoRecord) => {
+    setRetomando(true)
+    setErro('')
+    try {
+      const { sessao, itens } = await carregarSessaoParaRetomada(record.id)
+      setSessaoRetomada(sessao)
+      setSeguradoraId(sessao.seguradora)
+      setSeguradoraNome(sessao.seguradora_nome || '')
+      setProdutoVersao(sessao.produto_versao || '')
+      setProcessoSusep(sessao.processo_susep || '')
+      setIngestaoId(sessao.id)
+      setModoRetomada(true)
+      const filaRetomada: FilaItem[] = itens.map((it: CgIngestaoItemRetomada) => ({
+        uid: `cg_ret_${it.itemRecordId}`,
+        extraido: {
+          tipoItem: it.tipoItem,
+          nomeExtraido: it.nomeExtraido,
+          secaoOrigem: it.secaoOrigem,
+          pagina: it.pagina,
+          slotY: it.slotY,
+          exclusoes: it.exclusoes.map((t) => ({ texto: t, pagina: it.pagina, slotY: it.slotY })),
+        },
+        confianca: it.confianca,
+        matchType: it.matchType,
+        canonicaIdSelecionada: it.sugestaoCanonicaId,
+        canonicaNomeSelecionada: it.sugestaoCanonicaNome,
+        status: it.status,
+        sinonimoId: it.sinonimoGravadoId,
+        destinoRejeicao: it.destinoRejeicao,
+        itemRecordId: it.itemRecordId,
+      }))
+      setFila(filaRetomada)
+      const jaConfirmados = itens.filter((i) => i.status === 'confirmado').length
+      const jaRejeitados = itens.filter((i) => i.status === 'rejeitado').length
+      if (jaConfirmados || jaRejeitados) {
+        setResumo({ confirmados: jaConfirmados, rejeitados: jaRejeitados })
+      } else {
+        setResumo(null)
+      }
+      onRetomarSessao?.(sessao)
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : String(e))
+      m
+    } finally {
+      setRetomando(false)
     }
   }
 
