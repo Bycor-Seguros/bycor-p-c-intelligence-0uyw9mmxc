@@ -140,12 +140,36 @@ export function tituloEhCobertura(titulo: string): boolean {
 const RE_INICIO_EXCLUSOES =
   /^(?:\d+(?:\.\d+)*[.)]?\s*)?(riscos?\s+exclu[íi]dos|exclus[õo]es|exclus[ãa]o|riscos?\s+n[ãa]o\s+cobertos|n[ãa]o\s+est[ãa]o\s+cobertos|bens\s+n[ãa]o\s+cobertos|bens\s+e\s+locais\s+n[ãa]o\s+cobertos)/i
 
+// Alíneas a), b), ..., z), aa), bb), aaa) — CGs usam letras repetidas quando a
+// lista passa de "z". Hífen não entra aqui: classe de caractere com hífen deve
+// tê-lo PRIMEIRO ([^-–]) para não virar range inválido.
 const RE_ALINEA = /^\s*([a-z]{1,3})\s*[).]\s*(.+)$/i
+
+/**
+ * Cabeçalho de seção numerado de CG (ex.: "1.3 LIMITE DE INDENIZAÇÃO",
+ * "2.10.1 CONDIÇÕES GERAIS"): número de cláusula/seção + título em caixa alta.
+ * NUNCA é exclusão — marca o fim do bloco "RISCOS EXCLUÍDOS". Linhas de corpo
+ * que começam com número mas têm texto em minúsculas (ex.: "3 veículos ...")
+ * não são cabeçalho e não encerram o bloco.
+ */
+const RE_CABECALHO_SECAO_NUMERADO = /^(\d+(?:\.\d+)*)[.)]?\s+(.+)$/
+
+function ehCabecalhoSecaoNumerado(t: string): boolean {
+  const m = t.match(RE_CABECALHO_SECAO_NUMERADO)
+  if (!m) return false
+  const resto = m[2].trim()
+  if (resto.length < 4) return false
+  if (resto !== resto.toUpperCase()) return false
+  // exige ao menos uma letra no título (descarta "1.2 10/2018" etc.)
+  return /[A-ZÁÉÍÓÚÂÊÔÃÕÇÜ]/.test(resto)
+}
 
 /**
  * Dado o corpo (linhas com posição) de UMA seção de cobertura, extrai as
  * exclusões: a partir do subtítulo "RISCOS EXCLUÍDOS" até o próximo subtítulo
- * em caixa alta. Cada alínea a), b)... vira uma exclusão.
+ * em caixa alta (com ou sem numeração de cláusula). Cada alínea a), b),
+ * aa)... vira uma exclusão; linhas de texto corrido fora do bloco nunca são
+ * capturadas.
  */
 export function extrairExclusoesDoBloco(
   corpoLinhas: Array<{ texto: string; pagina: number; slotY: number }>,
@@ -162,13 +186,16 @@ export function extrairExclusoesDoBloco(
       continue
     }
 
-    // fim da lista de exclusões: novo subtítulo em caixa alta (não alínea)
+    // fim da lista de exclusões: novo subtítulo em caixa alta (com ou sem
+    // numeração de cláusula, ex. "1.3 LIMITE DE INDENIZAÇÃO")
     const ehAlinea = RE_ALINEA.test(t)
     const iniciaPalavra = /^[A-Za-zÁÉÍÓÚÂÊÔÃÕÇ]/.test(t)
-    if (!ehAlinea && iniciaPalavra && t === t.toUpperCase() && t.length > 3) {
-      if (RE_INICIO_EXCLUSOES.test(t)) continue // "NÃO ESTÃO COBERTOS:" repetido
-      dentroExclusoes = false
-      continue
+    if (!ehAlinea) {
+      if (RE_INICIO_EXCLUSOES.test(t)) continue // "NÃO ESTÃO COBERTOS:" repetido/renumerado
+      if ((iniciaPalavra && t === t.toUpperCase() && t.length > 3) || ehCabecalhoSecaoNumerado(t)) {
+        dentroExclusoes = false
+        continue
+      }
     }
 
     const mAlinea = t.match(RE_ALINEA)
@@ -201,7 +228,7 @@ export function detectarProcessoSusepCg(textoGlobal: string): string {
 
 export function detectarProdutoVersaoCg(textoGlobal: string): string {
   const mVersao = textoGlobal.match(/vers[aã]o\s*:?\s*(\d{1,3}\s*\/\s*\d{4})/i)
-  const mMes = textoGlobal.match(/processo\s+susep[^-–\n]{0,60}[–-]\s*(\d{2}\/\d{4})/i)
+  const mMes = textoGlobal.match(/processo\s+susep[^-–\n]{0,60}[-–]\s*(\d{2}\/\d{4})/i)
   if (mVersao) return `Versão ${mVersao[1].replace(/\s+/g, '')}`
   if (mMes) return mMes[1]
   return ''
