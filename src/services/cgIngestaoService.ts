@@ -390,11 +390,18 @@ export interface SessaoPendenteResumo {
   ingestao: CgIngestaoRecord
   pendentes: number
   total: number
+  /**
+   * Sessão 100% revisada (0 pendentes) que entrou no painel só porque está
+   * sem produto_versao OU processo_susep — badge "Certificação incompleta".
+   */
+  certificacaoIncompleta: boolean
 }
 
 /**
  * Painel "Sessões de ingestão pendentes": sessões com pelo menos 1 item
- * pendente, com contagem pendentes/total. Só leitura.
+ * pendente (contagem pendentes/total) OU sessões 100% revisadas que ainda
+ * estão sem produto_versao / processo_susep ("Certificação incompleta") —
+ * para o analista retomá-las e preencher só esses dois campos. Só leitura.
  */
 export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> {
   const [sessoes, itens] = await Promise.all([
@@ -413,7 +420,13 @@ export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> 
   }
   return sessoes
     .map((s) => ({ ingestao: s, ...(contagem.get(s.id) || { pendentes: 0, total: 0 }) }))
-    .filter((s) => s.pendentes > 0)
+    .map((s) => ({
+      ...s,
+      certificacaoIncompleta:
+        s.pendentes === 0 &&
+        (!(s.ingestao.produto_versao || '').trim() || !(s.ingestao.processo_susep || '').trim()),
+    }))
+    .filter((s) => s.pendentes > 0 || s.certificacaoIncompleta)
 }
 
 /** Item retomado: fila da sessão com o id do registro persistido (para atualizar sem re-buscar). */

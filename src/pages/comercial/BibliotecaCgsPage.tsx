@@ -374,17 +374,30 @@ export default function BibliotecaCgsPage() {
                         </span>
                       </span>
                     )}
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                        s.pendentes === s.total
-                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-blue-50 text-[#16578B] border-blue-200'
-                      }`}
-                    >
-                      {s.pendentes} pendente(s) / {s.total} item(ns)
-                    </span>
+                    {s.pendentes > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                          s.pendentes === s.total
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-blue-50 text-[#16578B] border-blue-200'
+                        }`}
+                      >
+                        {s.pendentes} pendente(s) / {s.total} item(ns)
+                      </span>
+                    )}
+                    {s.certificacaoIncompleta && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-orange-800 border border-orange-300">
+                        Certificação incompleta
+                      </span>
+                    )}
                     {s.ingestao.produto_versao && (
                       <span className="text-gray-400">{s.ingestao.produto_versao}</span>
+                    )}
+                    {!s.ingestao.produto_versao && (
+                      <span className="text-gray-400 italic">sem produto/versão</span>
+                    )}
+                    {!s.ingestao.processo_susep && (
+                      <span className="text-gray-400 italic">sem processo SUSEP</span>
                     )}
                   </div>
                   <Button

@@ -517,6 +517,7 @@ export default function IngestaoCgModal({
                 placeholder="ex.: AXA Empresarial 2024"
                 className="text-xs"
                 disabled={extraindo}
+                onBlur={modoRetomada ? persistirMetadadosSessao : undefined}
               />
               {modoRetomada &&
                 produtoVersao !== metadadosIniciais.produto &&
