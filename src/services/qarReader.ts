@@ -58,7 +58,7 @@ export const QAR_COBERTURAS_PROPERTY = [
  * "RC Produtos e Trabalhos Concluídos" NÃO existe no formulário real do PDF —
  * nunca é criada a partir do bloco de opções (mesmo tratamento das espúrias
  * "Opção 1/2/3" e "Outros"). */
-const CHAVE_LINHA_FANTASMA_QAR = 'rc produtos e trabalhos concluidos'
+export const CHAVE_LINHA_FANTASMA_QAR = 'rc produtos e trabalhos concluidos'
 
 /** Nome normalizado (sem acentos, minúsculo) para dedupe e matching. */
 export function normalizarTermoEquivalenciaQar(s: string): string {
