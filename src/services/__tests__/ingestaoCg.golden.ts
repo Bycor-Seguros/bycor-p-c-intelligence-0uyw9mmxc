@@ -12,6 +12,7 @@ import type { PdfPageText, PdfTextFragment } from '@/services/pdfTextExtractor'
 import {
   lerCondicoesGerais,
   tituloEhCobertura,
+  ehLinhaSumario,
   extrairExclusoesDoBloco,
   chaveGuardaCg,
   detectarProcessoSusepCg,
@@ -353,6 +354,110 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     assert(r[1].texto.startsWith('exclusão de letra dupla'), 'alínea aa deveria ser extraída')
     assert(r[2].texto.startsWith('exclusão de letra tripla'), 'alínea aaa deveria ser extraída')
   })
+
+  // ------------------------------------------------------------------
+  // 6) Linhas de Sumário em qualquer formato de pontilhado (caso LC)
+  // ------------------------------------------------------------------
+  t('Ingestão CG: linha de Sumário reconhecida em qualquer formato de pontilhado', () => {
+    // Pontos corridos, elipses U+2026, pontos espaçados e fragmento separado —
+    // todas as formas que o pdf.js entrega DEVEM ser reconhecidas como índice.
+    assert(ehLinhaSumario('COBERTURA BASICA - DESPESAS FIXAS........... 23'), 'pontos corridos')
+    assert(ehLinhaSumario('COBERTURA BASICA - DESPESAS FIXAS…… 23'), 'elipses U+2026')
+    assert(ehLinhaSumario('COBERTURA BASICA - DESPESAS FIXAS . . . . . . 23'), 'pontos espaçados')
+    assert(ehLinhaSumario('. ............................. 29'), 'fragmento separado com ponto')
+    assert(ehLinhaSumario('............ 23'), 'fragmento só de pontilhado + nº')
+    assert(ehLinhaSumario('… 23'), 'fragmento só de elipses + nº')
+    assert(!ehLinhaSumario('TITULO DA SECAO 23'), 'título com nº, SEM pontilhado, não é Sumário')
+    assert(!ehLinhaSumario('texto corrido do corpo da seção'), 'corpo não é Sumário')
+  })
+  t(
+    'Ingestão CG: título no Sumário (elipses/fragmento separado) não vira seção — seção real vence',
+    () => {
+      // Estrutura genérica do caso LC: Sumário com pontilhados que o pdf.js
+      // entrega em formatos variados (elipses, espaçados, fragmento separado
+      // na linha seguinte) e as seções reais adiante.
+      const pages = [
+        page(1, [
+          ['CONDIÇÕES GERAIS', 700],
+          ['Sumário', 660],
+          ['COBERTURA BASICA - DESPESAS FIXAS…… 6', 620],
+          ['COBERTURA ADICIONAL DESPESAS EXTRAORDINARIAS . . . . . . 8', 590],
+          ['COBERTURA ADICIONAL PERDA OU PAGAMENTO DE ALUGUEL', 560],
+          ['. ............................. 10', 530],
+        ]),
+        page(6, [
+          ['COBERTURA BASICA - DESPESAS FIXAS', 700],
+          ['1.1 FICA ENTENDIDO E ACORDADO QUE', 650],
+          ['texto de riscos cobertos da seção', 610],
+          ['1.2 RISCOS EXCLUÍDOS', 570],
+          ['a) perdas em decorrência de variação cambial', 530],
+          ['b) multas ou penalidades de qualquer natureza', 490],
+          ['1.3 RATIFICAÇÃO', 450],
+          ['texto de ratificação', 410],
+        ]),
+        page(8, [
+          ['COBERTURA ADICIONAL DESPESAS EXTRAORDINARIAS', 700],
+          ['texto de riscos cobertos da seção', 650],
+        ]),
+        page(10, [
+          ['COBERTURA ADICIONAL PERDA OU PAGAMENTO DE ALUGUEL', 700],
+          ['texto de riscos cobertos da seção', 650],
+          ['2. RISCOS EXCLUÍDOS', 600],
+          ['a) valores de alugueis que excedam o custo médio de locação', 550],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 3,
+        `esperava 3 coberturas (Sumário não vira seção), veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => [c.nomeExtraido, c.pagina]))}`,
+      )
+      const despesasFixas = coberturas.find((c) => c.nomeExtraido.startsWith('COBERTURA BASICA'))
+      assert(!!despesasFixas, 'DESPESAS FIXAS deveria estar entre as coberturas')
+      assert(
+        despesasFixas!.pagina === 6,
+        `item deveria apontar para a página da seção REAL (6), veio ${despesasFixas!.pagina}`,
+      )
+      assert(
+        despesasFixas!.exclusoes.length === 2,
+        `esperava 2 exclusões da seção real, veio ${despesasFixas!.exclusoes.length}`,
+      )
+      const aluguel = coberturas.find((c) => c.nomeExtraido.includes('ALUGUEL'))
+      assert(!!aluguel, 'ALUGUEL deveria estar entre as coberturas')
+      assert(
+        aluguel!.pagina === 10,
+        `título quebrado do Sumário (fragmento separado) deveria apontar para a seção real (10), veio ${aluguel!.pagina}`,
+      )
+    },
+  )
+  t(
+    'Ingestão CG: cinto de segurança — última ocorrência do título vence (seção real > Sumário)',
+    () => {
+      // Se o pontilhado do Sumário escapar da detecção, a seção real (que vem
+      // DEPOIS) ainda prevalece sobre a entrada de índice.
+      const pages = [
+        page(1, [
+          ['Sumário', 700],
+          ['COBERTURA ADICIONAL DANOS ELÉTRICOS 9999 x 2', 650], // sem pontilhado: escaparia
+        ]),
+        page(5, [
+          ['COBERTURA ADICIONAL DANOS ELÉTRICOS', 700],
+          ['1.1 RISCOS COBERTOS', 650],
+          ['texto de riscos cobertos da seção', 610],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1,
+        `esperava 1 cobertura, veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => [c.nomeExtraido, c.pagina]))}`,
+      )
+      assert(
+        coberturas[0].pagina === 5,
+        `seção real (última ocorrência) deveria vencer, veio página ${coberturas[0].pagina}`,
+      )
+    },
+  )
 
   return resultados
 }

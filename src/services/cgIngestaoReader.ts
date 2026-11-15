@@ -212,11 +212,63 @@ export function extrairExclusoesDoBloco(
 // ---------------------------------------------------------------------------
 
 function limparLinhaSumario(linha: string): string {
-  return (linha || '')
-    .replace(/\.{2,}|…{1,}|·{2,}/g, ' ')
-    .replace(/\s*\.{0,2}\s*\d+\s*$/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return (
+    (linha || '')
+      // pontilhado em qualquer formato vira um espaço: pontos corridos,
+      // pontos espaçados (". . . ."), elipses U+2026 e pontos médios
+      .replace(/(?:[.·]\s*){2,}|…+/g, ' ')
+      .replace(/\s*\.{0,2}\s*\d+\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
+/**
+ * Linha de Sumário (índice): título + pontilhado + número de página no fim da
+ * linha. O pdf.js entrega o pontilhado de várias formas — todas devem casar:
+ *  - "TÍTULO........... 23" (pontos corridos, com ou sem espaço antes do nº);
+ *  - "TÍTULO . . . . 23" (pontos espaçados);
+ *  - "TÍTULO…… 23" / "TÍTULO … 23" (elipses U+2026);
+ *  - fragmento separado: pontilhado + nº SOZINHOS na linha seguinte
+ *    ("............ 23" ou ". .......... 29").
+ * Requisito mínimo: pontilhado (2+ pontos, mesmo espaçados, ou U+2026)
+ * seguido de número de 1-3 dígitos no fim da linha.
+ */
+export function ehLinhaSumario(linha: string): boolean {
+  const t = (linha || '').trim()
+  if (!t) return false
+  // fragmento separado: a linha é só pontilhado (+ nº de página)
+  if (/^(?:[.·]\s*){2,}[…]*\s*\d{1,3}\s*$/.test(t)) return true
+  if (/^[.·]?\s*…+\s*\d{1,3}\s*$/.test(t)) return true
+  // "título pontilhado número" na mesma linha
+  const semNumero = t.replace(/\s*\d{1,3}\s*$/, '')
+  if (semNumero === t || !semNumero.trim()) return false
+  const resto = semNumero.trim()
+  if (/(?:[.·]\s*){2,}/.test(resto)) return true
+  return resto.includes('…')
+}
+
+/**
+ * Marca quais linhas da página pertencem a entradas de Sumário, incluindo as
+ * partes de entradas quebradas em várias linhas: uma linha de pontilhado+nº
+ * marca também as linhas CAIXA ALTA imediatamente anteriores (título quebrado
+ * em duas linhas ou título separado do pontilhado por quebra do pdf.js).
+ * Assim "TÍTULO" na linha i + "..... 23" na linha i+1 não gera seção fantasma.
+ */
+function marcarLinhasSumario(linhas: Array<{ texto: string }>): boolean[] {
+  const flags = new Array<boolean>(linhas.length).fill(false)
+  for (let i = 0; i < linhas.length; i++) {
+    if (!ehLinhaSumario(linhas[i].texto)) continue
+    flags[i] = true
+    for (let j = i - 1; j >= 0 && !flags[j]; j--) {
+      const prev = limparLinhaSumario(linhas[j].texto)
+      if (!prev || prev.length < 4) break
+      if (prev !== prev.toUpperCase()) break
+      if (ehInicioSubtitulo(prev)) break
+      flags[j] = true
+    }
+  }
+  return flags
 }
 
 /**
@@ -363,48 +415,60 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
 
   const linhasPorPagina = new Map<number, Array<{ texto: string; slotY: number }>>()
   for (const page of pages) linhasPorPagina.set(page.pageNumber, linhasComSlotY(page))
+  const sumarioFlagsPorPagina = new Map<number, boolean[]>()
+  for (const page of pages) {
+    sumarioFlagsPorPagina.set(
+      page.pageNumber,
+      marcarLinhasSumario(linhasPorPagina.get(page.pageNumber) || []),
+    )
+  }
 
-  // 1ª passada: seções de cobertura (título pode quebrar em 2-3 linhas caixa alta)
-  const secoes: SecaoCobertura[] = []
-  const nomesJaVistos = new Set<string>()
+  // 1ª passada: ocorrências de título de cobertura (título pode quebrar em
+  // 2-3 linhas caixa alta). Linhas de Sumário — pontilhado em QUALQUER formato
+  // — são ignoradas. Guarda TODAS as ocorrências: no fim, a ÚLTIMA ocorrência
+  // de cada título vence, porque a seção real nunca vem antes do Sumário.
+  const ocorrencias: Array<{ nome: string; pagina: number; slotY: number; ordem: number }> = []
+  let ordem = 0
 
   for (const page of pages) {
     const linhas = linhasPorPagina.get(page.pageNumber) || []
+    const flags = sumarioFlagsPorPagina.get(page.pageNumber) || []
     for (let i = 0; i < linhas.length; i++) {
+      if (flags[i]) continue
       const bruto = limparLinhaSumario(linhas[i].texto)
       if (!bruto || !tituloEhCobertura(bruto)) continue
-      // linha de Sumário: contém pontilhado seguido de nº — é índice, o título
-      // real da seção vem adiante; ignora para não duplicar
-      if (/\.{3,}/.test(linhas[i].texto)) continue
 
       const linhasTitulo = [bruto]
       let j = i + 1
       while (j < linhas.length && linhasTitulo.length < 3) {
+        if (flags[j]) break
         const prox = limparLinhaSumario(linhas[j].texto)
-        if (
-          prox &&
-          prox === prox.toUpperCase() &&
-          !ehInicioSubtitulo(prox) &&
-          !/\.{3,}/.test(prox)
-        ) {
+        if (prox && prox === prox.toUpperCase() && !ehInicioSubtitulo(prox)) {
           linhasTitulo.push(prox)
           j++
         } else break
       }
-      const nomeCompleto = linhasTitulo.join(' ').replace(/\s+/g, ' ').trim()
-      const chave = normalizarTituloCg(nomeCompleto)
-      if (!nomesJaVistos.has(chave)) {
-        nomesJaVistos.add(chave)
-        secoes.push({
-          nome: nomeCompleto,
-          pagina: page.pageNumber,
-          slotY: linhas[i].slotY,
-          corpo: [],
-        })
-      }
+      ocorrencias.push({
+        nome: linhasTitulo.join(' ').replace(/\s+/g, ' ').trim(),
+        pagina: page.pageNumber,
+        slotY: linhas[i].slotY,
+        ordem: ordem++,
+      })
       i = j - 1
     }
   }
+
+  // Dedupe por título normalizado mantendo a ÚLTIMA ocorrência (cinto de
+  // segurança: se o pontilhado do Sumário escapou da marcação, a entrada de
+  // índice nunca vence a seção real do corpo), preservando a ordem do documento.
+  const ultimaPorChave = new Map<
+    string,
+    { nome: string; pagina: number; slotY: number; ordem: number }
+  >()
+  for (const o of ocorrencias) ultimaPorChave.set(normalizarTituloCg(o.nome), o)
+  const secoes: SecaoCobertura[] = [...ultimaPorChave.values()]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((o) => ({ nome: o.nome, pagina: o.pagina, slotY: o.slotY, corpo: [] }))
 
   // 2ª passada: corpo de cada seção (até a próxima seção) e exclusões
   const itens: CgIngestaoItemExtraido[] = []
@@ -414,7 +478,11 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       s + 1 < secoes.length ? secoes[s + 1].pagina : (pages[pages.length - 1]?.pageNumber || 1) + 1
     for (const page of pages) {
       if (page.pageNumber < secao.pagina || page.pageNumber > fimPag) continue
-      for (const linha of linhasPorPagina.get(page.pageNumber) || []) {
+      const linhas = linhasPorPagina.get(page.pageNumber) || []
+      const flags = sumarioFlagsPorPagina.get(page.pageNumber) || []
+      for (let idx = 0; idx < linhas.length; idx++) {
+        if (flags[idx]) continue // linha de Sumário não entra no corpo
+        const linha = linhas[idx]
         const limpo = limparLinhaSumario(linha.texto)
         if (!limpo) continue
         if (
@@ -422,7 +490,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
           normalizarTituloCg(limpo) === normalizarTituloCg(secao.nome)
         )
           continue
-        if (tituloEhCobertura(limpo) && !/\.{3,}/.test(linha.texto)) {
+        if (tituloEhCobertura(limpo)) {
           // próxima seção começa no meio desta página: corta o corpo aqui
           break
         }
