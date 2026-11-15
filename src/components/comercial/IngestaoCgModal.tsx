@@ -482,17 +482,20 @@ export default function IngestaoCgModal({
                         className="w-full text-xs border border-gray-300 rounded px-2 py-1.5"
                       >
                         <option value="">
-                          {f.confianca >= LIMIAR_CONFIANCA_CG
-                            ? f.canonicaNomeSelecionada
-                            : 'Sem sugestão firme — escolha manual'}
+                          {f.canonicaIdSelecionada
+                            ? '— Remover seleção'
+                            : f.confianca >= LIMIAR_CONFIANCA_CG
+                              ? f.canonicaNomeSelecionada
+                              : 'Sem sugestão firme — escolha manual'}
                         </option>
-                        {canonicas
-                          .filter((c) => c.id !== f.canonicaIdSelecionada)
-                          .map((c) => (
+                        {canonicas.map((c) => {
+                          const selecionada = c.id === f.canonicaIdSelecionada
+                          return (
                             <option key={c.id} value={c.id}>
-                              {c.nome}
+                              {selecionada ? `✓ Selecionada — ${c.nome}` : c.nome}
                             </option>
-                          ))}
+                          )
+                        })}
                       </select>
                       <div className="flex flex-wrap gap-2">
                         <Button
