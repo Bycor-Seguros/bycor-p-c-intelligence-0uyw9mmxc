@@ -229,31 +229,88 @@ function limparLinhaSumario(linha: string): string {
  *    dígitos, hífen, 2 dígitos). Sem barra, exige hífen + 2 dígitos no fim
  *    como âncora — a alternância com barra vem primeiro e não retrocede para
  *    dentro de números com "/".
+ *
+ * Tolerância a fragmentação do pdf.js: o extrator de texto reconstrói linhas
+ * juntando fragmentos com espaço — o cabeçalho da CG de LC da AXA chega como
+ * "Processo SUSEP nº: 15414.902020/2014-36 – Versão 2 / 2018" com ESPAÇO em
+ * volta do hífen do DV ("2014- 36") e em volta da barra ("/ 2018"). A classe
+ * [\s\/.-]* engole esses separadores fantasma no interior do número; o
+ * normalizador devolve o número na forma canônica com barra e hífen.
  */
 const RE_PROCESSO_SUSEP =
-  /processo\s+susep[^0-9]{0,30}(\d{2,5}\.?\d{3,6}\/\d{4}-\d{1,2}|\d{5}\.\d{1,10}-\d{2})/i
+  /processo\s+susep[^0-9]{0,30}(\d{2,5}\s*[./.-]*\s*\d{3,6}\s*[./.-]*\s*\/\s*\d{4}\s*[./.-]*\s*-\s*\d{1,2}|\d{5}\s*[./.-]*\s*\d{1,10}\s*[./.-]*\s*-\s*\d{2})/i
+
+/**
+ * Normaliza o número detectado para a forma canônica: remove espaços que o
+ * pdf.js insere na reconstrução da linha e colapsa o caso "2014 - 36" →
+ * "2014-36" e "902020 / 2014" → "902020/2014".
+ */
+function normalizarNumeroProcessoSusep(bruto: string): string {
+  return (bruto || '').replace(/\s+/g, '')
+}
 
 export function detectarProcessoSusepCg(textoGlobal: string): string {
   const m = textoGlobal.match(RE_PROCESSO_SUSEP)
-  return m ? m[1] : ''
+  return m ? normalizarNumeroProcessoSusep(m[1]) : ''
 }
 
 /**
- * Fallback de detecção pelo NOME do arquivo (ex.: a AXA usa
- * "CG_..._15414.9020252014-69_20251210.pdf"). Só casa o formato sem barra da
- * AXA — número isolado com separadores fixos, nunca precedido nem seguido de
- * outro dígito (evita recortar parte de CNPJ/telefone).
+ * Fallback de detecção pelo NOME do arquivo. Casos conhecidos:
+ *  - "CG_..._15414.9020252014-69_20251210.pdf" (formato sem barra da AXA);
+ *  - "CG_AXA_LC Secundário RN 15414.902020 2014-36 - cópia.pdf" — a barra da
+ *    cópia aparece como ESPAÇO no nome do arquivo, com hífen do DV preservado.
+ *
+ * Estratégia: captura o CANDIDATO bruto (dígito+ponto+até 10 dígitos, hífen e
+ * 2 dígitos finais, tolerando espaço no lugar da barra) e normaliza depois
+ * retirando os espaços: "15414.902020 2014-36" → "15414.9020202014-36" →
+ * com barra em "2014-36" → "15414.902020/2014-36". Sem barra, o hífen + 2
+ * dígitos no fim é âncora obrigatória — nunca recorta parte de CNPJ/telefone.
  */
 export function detectarProcessoSusepNomeArquivo(nomeArquivo: string): string {
-  const m = (nomeArquivo || '').match(/(^|[^0-9])(\d{5}\.\d{1,10}-\d{2})([^0-9]|$)/)
-  return m ? m[2] : ''
+  const m = (nomeArquivo || '').match(/(^|[^0-9])(\d{5}\.[\d\s]{3,12}-\s?\d{2})([^0-9]|$)/)
+  if (!m) return ''
+  let numero = m[2].replace(/\s+/g, '')
+  // Barra faltante (espaço no nome do arquivo): insere antes do ano + DV.
+  const mSemBarra = numero.match(/^(\d{5}\.\d{1,10})(\d{4}-\d{2})$/)
+  if (mSemBarra) numero = `${mSemBarra[1]}/${mSemBarra[2]}`
+  return numero
 }
 
+/**
+ * Produto/versão — a CG de LC da AXA traz "Versão 12/2025" SÓ na capa (p. 1)
+ * e "Versão 2 / 2018" repetido no corpo; a versão correta do produto é a que
+ * se REPETE no corpo. Regra: agrupa todas as ocorrências (tolerando espaços
+ * em volta da barra que o pdf.js insere) e devolve a MAIS FREQUENTE — empatou,
+ * vale a última (corpo vem depois da capa). Se só a capa traz versão, cai para
+ * a primeira ocorrência (comportamento anterior preservado).
+ */
 export function detectarProdutoVersaoCg(textoGlobal: string): string {
-  const mVersao = textoGlobal.match(/vers[aã]o\s*:?\s*(\d{1,3}\s*\/\s*\d{4})/i)
-  const mMes = textoGlobal.match(/processo\s+susep[^-–\n]{0,60}[-–]\s*(\d{2}\/\d{4})/i)
-  if (mVersao) return `Versão ${mVersao[1].replace(/\s+/g, '')}`
-  if (mMes) return mMes[1]
+  const texto = textoGlobal || ''
+  const mMes = texto.match(/processo\s+susep[^-–\n]{0,60}[-–]\s*(\d{2}\s*\/\s*\d{4})/i)
+
+  const ocorrencias = [...texto.matchAll(/vers[aã]o\s*:?\s*(\d{1,3})\s*\/\s*(\d{4})/gi)]
+  if (ocorrencias.length > 0) {
+    // Frequência por chave normalizada "n/aaaa" (espaços da barra ignorados).
+    const freq = new Map<string, { versao: string; n: number; ultima: { v: string; i: number } }>()
+    ocorrencias.forEach((m, i) => {
+      const chave = `${m[1]}/${m[2]}`
+      const atual = freq.get(chave)
+      if (atual) {
+        atual.n += 1
+        atual.ultima = { v: chave, i }
+      } else {
+        freq.set(chave, { versao: chave, n: 1, ultima: { v: chave, i } })
+      }
+    })
+    let melhor: { v: string; n: number; i: number } | null = null
+    for (const f of freq.values()) {
+      if (!melhor || f.n > melhor.n || (f.n === melhor.n && f.ultima.i > melhor.i)) {
+        melhor = { v: f.versao, n: f.n, i: f.ultima.i }
+      }
+    }
+    if (melhor) return `Versão ${melhor.v}`
+  }
+  if (mMes) return mMes[1]?.replace(/\s+/g, '') ?? ''
   return ''
 }
 

@@ -15,6 +15,7 @@ import {
   extrairExclusoesDoBloco,
   chaveGuardaCg,
   detectarProcessoSusepCg,
+  detectarProcessoSusepNomeArquivo,
   detectarProdutoVersaoCg,
 } from '@/services/cgIngestaoReader'
 import {
@@ -263,6 +264,81 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     assert(detectarProcessoSusepCg(texto) === '15414.902025/2014-69', 'processo SUSEP incorreto')
     assert(detectarProdutoVersaoCg(texto) === 'Versão 2/2018', 'versão incorreta')
   })
+  t(
+    'Ingestão CG: processo SUSEP do LC detectado no texto com espaços do pdf.js ("2014 - 36")',
+    () => {
+      // Linha reconstruída pelo extractTextFromPdf: fragmentos do cabeçalho da
+      // CG de LC da AXA chegam com espaço em volta da barra e do hífen do DV.
+      const texto = 'CONDIÇÕES GERAIS\nProcesso Susep nº: 15414.902020/2014 - 36 – Versão 2 / 2018'
+      assert(
+        detectarProcessoSusepCg(texto) === '15414.902020/2014-36',
+        `processo com espaços deveria casar, veio: ${detectarProcessoSusepCg(texto)}`,
+      )
+    },
+  )
+  t('Ingestão CG: processo SUSEP no NOME do arquivo com espaço no lugar da barra (LC AXA)', () => {
+    assert(
+      detectarProcessoSusepNomeArquivo(
+        'CG_AXA_LC Secundário RN 15414.902020 2014-36 - cópia.pdf',
+      ) === '15414.902020/2014-36',
+      'nome com espaço no lugar da barra deveria casar',
+    )
+    // Formato sem barra antigo (RC Geral AXA) continua casando.
+    assert(
+      detectarProcessoSusepNomeArquivo('CG_AXA_15414.9020252014-69_20251210.pdf') ===
+        '15414.902025/2014-69',
+      'formato sem barra deveria continuar casando',
+    )
+  })
+  t('Ingestão CG: versão repetida no CORPO prevalece sobre a da capa (12/2025 × 2/2018)', () => {
+    const capa = 'Versão 12/2025'
+    const corpo = ['Versão 2 / 2018', 'Versão 2 / 2018', 'Versão 2 / 2018']
+    const texto = [capa, ...corpo].join('\n')
+    assert(
+      detectarProdutoVersaoCg(texto) === 'Versão 2/2018',
+      `versão do corpo deveria prevalecer, veio: ${detectarProdutoVersaoCg(texto)}`,
+    )
+    // Só a capa com versão: comportamento anterior (1ª ocorrência) preservado.
+    assert(
+      detectarProdutoVersaoCg('CONDIÇÕES GERAIS\nVersão 12/2025') === 'Versão 12/2025',
+      'só capa deveria devolver 12/2025',
+    )
+  })
+  t(
+    'Ingestão CG: documento LC (capa + corpo fragmentado) detecta processo e versão do corpo',
+    () => {
+      const pages = [
+        page(1, [
+          ['CONDIÇÕES GERAIS', 700],
+          ['Versão 12/2025', 650],
+        ]),
+        page(2, [
+          ['Processo Susep nº: 15414.902020/2014 - 36 – Versão 2 / 2018', 700],
+          ['COBERTURA BASICA - COBERTURA LUCROS CESSANTES', 650],
+          ['1.1 RISCOS COBERTOS', 600],
+          ['texto de riscos cobertos da seção', 560],
+          ['1.2 RISCOS EXCLUÍDOS', 520],
+          ['a) perdas em decorrência de variação cambial', 480],
+          ['b) lucros esperados não realizados', 440],
+          ['1.3 LIMITE DE INDENIZAÇÃO', 400],
+          ['texto de limite', 360],
+        ]),
+        page(3, [
+          ['Versão 2 / 2018', 700],
+          ['texto de cláusula particular', 650],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      assert(
+        leitura.processoSusepDetectado === '15414.902020/2014-36',
+        `processo inesperado: ${leitura.processoSusepDetectado}`,
+      )
+      assert(
+        leitura.produtoVersaoDetectado === 'Versão 2/2018',
+        `versão inesperada: ${leitura.produtoVersaoDetectado}`,
+      )
+    },
+  )
   t('Ingestão CG: alíneas com mais de uma letra (aa, bb, aaa) viram exclusões', () => {
     const corpo = [
       { texto: '1.4 RISCOS EXCLUÍDOS', pagina: 1, slotY: 500 },

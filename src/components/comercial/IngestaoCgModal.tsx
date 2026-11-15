@@ -118,13 +118,23 @@ export default function IngestaoCgModal({
   const [retomando, setRetomando] = useState(false)
   const [sessaoRetomada, setSessaoRetomada] = useState<CgIngestaoRecord | null>(null)
   const [modoRetomada, setModoRetomada] = useState(false)
-  // ---- Visualizador do PDF de origem (só quando a sessão tem PDF anexado) ----
+  // ---- Visualizador do PDF de origem ----
+  // Enquanto a sessão não existe (nenhum item decidido), o visualizador usa o
+  // PRÓPRIO arquivo local selecionado no upload (URL de blob) — o botão "Ver
+  // no PDF" funciona desde o primeiro item da fila. Gravado o PDF em
+  // cg_ingestoes.arquivo (1º Confirmar/Rejeitar), passa a valer urlPdfSessao.
+  // Sessões antigas sem PDF ficam com os dois vazios (botão desabilitado).
   const [urlPdfSessao, setUrlPdfSessao] = useState('')
+  const [urlBlobArquivo, setUrlBlobArquivo] = useState('')
+  const urlBlobRef = useRef('')
   const [itemVisualizando, setItemVisualizando] = useState<FilaItem | null>(null)
   const [salvandoMetadados, setSalvandoMetadados] = useState(false)
   // Snapshot dos metadados carregados na retomada — detecta alteração do analista.
   const [metadadosIniciais, setMetadadosIniciais] = useState({ produto: '', processo: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // PDF exibido pelo visualizador: gravado na sessão tem precedência; antes
+  // disso (ou em upload novo sem decisão), o blob do arquivo local.
+  const urlPdfAtivo = urlPdfSessao || urlBlobArquivo
 
   const reset = () => {
     setArquivo(null)
@@ -143,6 +153,11 @@ export default function IngestaoCgModal({
     setSessaoRetomada(null)
     setModoRetomada(false)
     setUrlPdfSessao('')
+    if (urlBlobRef.current) {
+      URL.revokeObjectURL(urlBlobRef.current)
+      urlBlobRef.current = ''
+    }
+    setUrlBlobArquivo('')
     setItemVisualizando(null)
     setSalvandoMetadados(false)
     setMetadadosIniciais({ produto: '', processo: '' })
@@ -166,6 +181,11 @@ export default function IngestaoCgModal({
   const handleSelecionarArquivo = async (f: File | null) => {
     if (!f) return
     setArquivo(f)
+    // Blob do PDF local para o visualizador funcionar antes da 1ª decisão.
+    if (urlBlobRef.current) URL.revokeObjectURL(urlBlobRef.current)
+    const blobUrl = URL.createObjectURL(f)
+    urlBlobRef.current = blobUrl
+    setUrlBlobArquivo(blobUrl)
     setErro('')
     setFila([])
     setIngestaoId('')
@@ -176,11 +196,14 @@ export default function IngestaoCgModal({
       if (!pages.length) throw new Error('Nenhum texto extraído do PDF.')
 
       const textoCompleto = pages.map((p) => p.text).join('\n')
+      // Processo SUSEP: detecta do TEXTO (autoridade) e só cai para o NOME do
+      // arquivo quando o texto não casa — uma fonte nunca sobrescreve a outra
+      // quando só uma acerta. Ambos os caminhos devolvem a forma canônica com
+      // barra (ex.: 15414.902020/2014-36), tolerando a fragmentação do pdf.js
+      // no cabeçalho e o espaço no lugar da barra no nome do arquivo.
       const p = detectarProcessoSusepCg(textoCompleto)
       if (p) setProcessoSusep(p)
-      // Fallback: o número também pode aparecer só no nome do arquivo
-      // (caso AXA: "CG_..._15414.9020252014-69_20251210.pdf").
-      if (!p) {
+      else {
         const pNome = detectarProcessoSusepNomeArquivo(f.name)
         if (pNome) setProcessoSusep(pNome)
       }
@@ -607,7 +630,7 @@ export default function IngestaoCgModal({
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {urlPdfSessao ? (
+                      {urlPdfAtivo ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -783,7 +806,7 @@ export default function IngestaoCgModal({
             </DialogHeader>
             {itemVisualizando && (
               <VisualizadorCgPdf
-                urlPdf={urlPdfSessao}
+                urlPdf={urlPdfAtivo}
                 pagina={itemVisualizando.extraido.pagina}
                 slotY={itemVisualizando.extraido.slotY}
                 nomeItem={itemVisualizando.extraido.nomeExtraido}
