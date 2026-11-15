@@ -1921,9 +1921,9 @@ export async function runAllSuites() {
     'CNPJ: 00.000.000/0002-00',
     '21. LIMITE MÁXIMO DE GARANTIA (LMG) POR COBERTURA - marcar e informar',
     'Indicar LMG pretendido por cobertura de RC (em % da IS pretendida ou valor)',
-    '☒ Opção 1 : R$ 5 .000.000,00',
+    'Opção 1 : R$ 5 .000.000,00',
     'Opção 2 : R$ 10.000.000,00',
-    'Opção 3 : R$ 20.000.000,00',
+    '☒ Opção 3 : R$ 2 .000.000,00',
     'RC Operações (Estabelecimentos Comerciais/Industriais)             ☒',
     'RC Danos Morais                                                    ☒',
     'RC Empregador                                                      ☒',
@@ -1946,8 +1946,8 @@ export async function runAllSuites() {
     () => {
       assertEqual(
         qarAnalia.importanciaSeguradaPretendida,
-        5000000,
-        'IS pretendida deve ser a menor opção marcada (Opção 1: R$ 5.000.000,00)',
+        2000000,
+        'IS pretendida deve ser a menor opção marcada (Opção 3: R$ 2.000.000,00)',
       )
     },
   )
@@ -1970,7 +1970,7 @@ export async function runAllSuites() {
       )
       assertEqual(
         cob.valorPretendido,
-        5000000,
+        2000000,
         `LMG "${lmg}" — valor adotado deve ser a menor opção marcada`,
       )
     }
@@ -2056,7 +2056,7 @@ export async function runAllSuites() {
         tipoValor: c.tipoValor,
         percentual: c.percentual,
         valorPretendido: c.valorPretendido,
-        importanciaSeguradaPretendida: 5000000,
+        importanciaSeguradaPretendida: 2000000,
         distanciaKm: null,
         lmgMarcado: c.lmgMarcado,
       }))

@@ -10,6 +10,7 @@ import {
   isCoberturaPropertyQar,
   parseQar21,
   normalizarTermoEquivalenciaQar,
+  CHAVE_LINHA_FANTASMA_QAR,
   type QarResultado,
 } from '@/services/qarReader'
 
@@ -75,7 +76,7 @@ function identicalQar(rec: Record<string, unknown>, payload: Record<string, unkn
  * correto. A correção do analista (lmg_editado_pelo_analista) tem precedência
  * sobre a fantasma.
  */
-const CHAVE_LINHA_FANTASMA_LMG_QAR = 'rc produtos e trabalhos concluidos'
+const CHAVE_LINHA_FANTASMA_LMG_QAR = CHAVE_LINHA_FANTASMA_QAR
 
 /** A linha fantasma documentada do leitor antigo (sempre órfã no re-upload). */
 function isLinhaFantasmaLmgQar(chave: string): boolean {

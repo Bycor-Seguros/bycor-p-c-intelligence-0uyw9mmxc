@@ -54,6 +54,12 @@ export const QAR_COBERTURAS_PROPERTY = [
   'Despesas de Salvamento e Contenção',
 ] as const
 
+/** Chave normalizada da LINHA FANTASMA documentada (caso real Anália): o item
+ * "RC Produtos e Trabalhos Concluídos" NÃO existe no formulário real do PDF —
+ * nunca é criada a partir do bloco de opções (mesmo tratamento das espúrias
+ * "Opção 1/2/3" e "Outros"). */
+const CHAVE_LINHA_FANTASMA_QAR = 'rc produtos e trabalhos concluidos'
+
 /** Nome normalizado (sem acentos, minúsculo) para dedupe e matching. */
 export function normalizarTermoEquivalenciaQar(s: string): string {
   return (s || '')
@@ -413,11 +419,10 @@ export function parseQar21(linhas: string[]): QarResultado {
   // padrão gravam lmg_marcado=false e o eixo QAR × Apólice perde o LMG
   // declarado. LMG sem linha declarada no formulário recebe o LMG adotado (a
   // menor opção marcada) como valor.
-  // Filtro de proteção: coberturas que não são LMG padrão nem coberturas
-  // conhecidas do eixo RC do QAR não entram (a linha fantasma "RC Produtos
-  // e Trabalhos Concluídos" do caso Anália é um LMG padrão criado pelo bloco
-  // de opções; o item real do formulário não existe no PDF).
-  // (vazio: nenhum filtro além do bloco acima)
+  // Filtro de proteção: a linha fantasma "RC Produtos e Trabalhos Concluídos"
+  // do caso Anália (LMG padrão criado pelo bloco de opções; o item real do
+  // formulário não existe no PDF) NUNCA é criada quando ausente das linhas.
+  // (A gravação em qarPersistencia também a filtra — guarda dupla.)
 
   if (lmgAdotado !== null) {
     QAR_LMGS_PADRAO.forEach((lmg, idx) => {
@@ -425,6 +430,13 @@ export function parseQar21(linhas: string[]): QarResultado {
       if (existente) {
         existente.lmgMarcado = true
         existente.lmgIndex = idx + 1
+        // LMG padrão marcado só com checkbox (☒ sem % nem valor) adota o LMG
+        // adotado (a MENOR opção marcada do bloco) — caso Anália: "RC Operações
+        // (Estabelecimentos Comerciais/Industriais)" ficava com valor null.
+        if (existente.valorPretendido === null) {
+          existente.valorPretendido = lmgAdotado
+          existente.tipoValor = 'fixo'
+        }
         // Reetiqueta com o nome EXATO do LMG padrão: o dedupe do re-upload e o
         // cruzamento com a apólice casam por nome (caso real Anália:
         // "Síndico 100%" gravado como cobertura própria separada de
@@ -434,6 +446,9 @@ export function parseQar21(linhas: string[]): QarResultado {
           res.lmgsMarcados.push(existente.cobertura)
         }
       } else {
+        // Linha fantasma documentada: não existe no formulário real — nunca vira
+        // cobertura nem entra nos LMGs marcados (mesmo destino de "Opção 1/2/3").
+        if (normalizarTermoEquivalenciaQar(lmg) === CHAVE_LINHA_FANTASMA_QAR) return
         res.coberturas.push({
           cobertura: lmg,
           tipoValor: 'fixo',
