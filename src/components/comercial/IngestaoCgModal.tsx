@@ -17,10 +17,10 @@ import {
   lerCondicoesGerais,
   detectarProcessoSusepCg,
   detectarProdutoVersaoCg,
+  chaveGuardaCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
-  processarCgParaRevisao,
   salvarSessaoIngestao,
   confirmarItemIngestao,
   rejeitarItemIngestao,
@@ -326,11 +326,11 @@ export default function IngestaoCgModal({
    * duplicados. Confirmar/rejeitar daqui usa o MESMO confirmarItemIngestao /
    * rejeitarItemIngestao do fluxo de upload, atualizando o próprio registro.
    */
-  const retomarSessao = async (record: CgIngestaoRecord) => {
+  const retomarSessao = async (recordId: string) => {
     setRetomando(true)
     setErro('')
     try {
-      const { sessao, itens } = await carregarSessaoParaRetomada(record.id)
+      const { sessao, itens } = await carregarSessaoParaRetomada(recordId)
       setSessaoRetomada(sessao)
       setSeguradoraId(sessao.seguradora)
       setSeguradoraNome(sessao.seguradora_nome || '')
@@ -365,10 +365,9 @@ export default function IngestaoCgModal({
       } else {
         setResumo(null)
       }
-      onRetomarSessao?.(sessao)
+      onRetomarSessao?.(sessao.id)
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : String(e))
-      m
     } finally {
       setRetomando(false)
     }
@@ -389,6 +388,17 @@ export default function IngestaoCgModal({
             Sistema sugere, analista confirma. Nada é gravado sem sua revisão.
           </DialogDescription>
         </DialogHeader>
+
+        {modoRetomada && sessaoRetomada && (
+          <div className="flex items-center gap-2 text-[11px] text-[#16578B] bg-blue-50 border border-blue-200 rounded px-3 py-2">
+            <FileText className="w-4 h-4 shrink-0" />
+            <span>
+              Sessão retomada — <strong>{sessaoRetomada.seguradora_nome || 'seguradora'}</strong>
+              {sessaoRetomada.fonte_arquivo ? ` · ${sessaoRetomada.fonte_arquivo}` : ''} · itens
+              recarregados do banco, sem re-extrair o PDF.
+            </span>
+          </div>
+        )}
 
         <div className="space-y-4">
           {/* Etapa 1: upload e metadados */}

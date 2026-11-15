@@ -15,6 +15,8 @@ import {
   RefreshCw,
   AlertCircle,
   Upload,
+  History,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +38,7 @@ import {
   derivarEventosTipicosPadrao,
 } from '@/services/equivalenciaCoberturasService'
 import { SeguradoraCadastroRecord, getSeguradorasCadastro } from '@/services/seguradoraNormalizer'
+import { listarSessoesPendentes, type SessaoPendenteResumo } from '@/services/cgIngestaoService'
 import IngestaoCgModal from '@/components/comercial/IngestaoCgModal'
 
 /**
@@ -98,6 +101,11 @@ export default function BibliotecaCgsPage() {
   // ---- Modal de ingestão de CG (PDF → C3 → fila de revisão) ----
   const [modalIngestaoAberto, setModalIngestaoAberto] = useState(false)
 
+  // ---- Painel "Sessões de ingestão pendentes" (só leitura; Retomar recarrega cg_ingestao_itens) ----
+  const [sessoesPendentes, setSessoesPendentes] = useState<SessaoPendenteResumo[]>([])
+  const [carregandoSessoes, setCarregandoSessoes] = useState(false)
+  const [sessaoRetomarId, setSessaoRetomarId] = useState<string | null>(null)
+
   // ---- Carregamento ----
   const carregarDados = useCallback(async () => {
     setCarregando(true)
@@ -122,6 +130,16 @@ export default function BibliotecaCgsPage() {
       )
     }
     setCarregando(false)
+
+    // Sessões de ingestão pendentes (painel de retomada) — falha não bloqueia a página.
+    setCarregandoSessoes(true)
+    try {
+      setSessoesPendentes(await listarSessoesPendentes())
+    } catch (err: unknown) {
+      console.error('Falha ao listar sessões de ingestão pendentes', err)
+      setSessoesPendentes([])
+    }
+    setCarregandoSessoes(false)
   }, [])
 
   useEffect(() => {
@@ -323,6 +341,69 @@ export default function BibliotecaCgsPage() {
           </select>
         </div>
       </div>
+
+      {/* Painel: Sessões de ingestão pendentes (só leitura; Retomar recarrega a fila do banco) */}
+      {!carregando && (sessoesPendentes.length > 0 || carregandoSessoes) && (
+        <div className="bg-white rounded-xl border border-[#E4E9F0] p-4 shadow-sm space-y-2">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-[#16578B]" />
+            <h3 className="text-sm font-bold text-gray-900">Sessões de ingestão pendentes</h3>
+            {carregandoSessoes && <RefreshCw className="w-3 h-3 animate-spin text-gray-400" />}
+          </div>
+          {carregandoSessoes ? (
+            <p className="text-xs text-gray-400">Carregando sessões…</p>
+          ) : (
+            <div className="space-y-1.5">
+              {sessoesPendentes.map((s) => (
+                <div
+                  key={s.ingestao.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100"
+                >
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] min-w-0">
+                    <Building className="w-3 h-3 text-[#16578B] shrink-0" />
+                    <span className="font-bold text-gray-900">
+                      {s.ingestao.seguradora_nome ||
+                        s.ingestao.expand?.seguradora?.nome ||
+                        'Seguradora'}
+                    </span>
+                    {s.ingestao.fonte_arquivo && (
+                      <span className="text-gray-500 flex items-center gap-1 min-w-0">
+                        <FileText className="w-3 h-3 text-gray-400 shrink-0" />
+                        <span className="truncate max-w-[16rem]" title={s.ingestao.fonte_arquivo}>
+                          {s.ingestao.fonte_arquivo}
+                        </span>
+                      </span>
+                    )}
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                        s.pendentes === s.total
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-blue-50 text-[#16578B] border-blue-200'
+                      }`}
+                    >
+                      {s.pendentes} pendente(s) / {s.total} item(ns)
+                    </span>
+                    {s.ingestao.produto_versao && (
+                      <span className="text-gray-400">{s.ingestao.produto_versao}</span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSessaoRetomarId(s.ingestao.id)
+                      setModalIngestaoAberto(true)
+                    }}
+                    className="h-7 text-xs shrink-0"
+                  >
+                    Retomar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Erro de carregamento */}
       {erroCarregamento && (
@@ -886,6 +967,8 @@ export default function BibliotecaCgsPage() {
         canonicas={canonicas}
         seguradoras={seguradorasCadastro}
         onIngestaoConcluida={carregarDados}
+        sessaoRetomarId={sessaoRetomarId}
+        onRetomarSessao={(id) => setSessaoRetomarId(id)}
       />
     </div>
   )
