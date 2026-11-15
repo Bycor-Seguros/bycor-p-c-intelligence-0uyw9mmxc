@@ -67,6 +67,36 @@ function identicalQar(rec: Record<string, unknown>, payload: Record<string, unkn
 }
 
 /**
+ * Linha fantasma documentada do leitor antigo (caso real Anália): o item
+ * "RC Produtos e Trabalhos Concluídos" não existe no formulário real do PDF —
+ * a linha foi gravada por leitura antiga a partir do bloco de opções (ver o
+ * comentário do bloco de opções em qarReader.ts). No re-upload ("substituir
+ * tudo") ela é SEMPRE órfã: a leitura atual recria o LMG padrão com o valor
+ * correto. A correção do analista (lmg_editado_pelo_analista) tem precedência
+ * sobre a fantasma.
+ */
+const CHAVE_LINHA_FANTASMA_LMG_QAR = 'rc produtos e trabalhos concluidos'
+
+/** A linha fantasma documentada do leitor antigo (sempre órfã no re-upload). */
+function isLinhaFantasmaLmgQar(chave: string): boolean {
+  return chave === CHAVE_LINHA_FANTASMA_LMG_QAR
+}
+
+/**
+ * Casamento entre o nome gravado no banco (leitura antiga) e o nome que o
+ * leitor atual produz — MESMA normalização (normalizarTermoEquivalenciaQar)
+ * dos dois lados, com tolerância ao lixo de junção de linhas do PDF no
+ * SUFIXO da leitura antiga (ex.: "Poluição Súbita e Acidental – 72hrs" casa
+ * com "Poluição Súbita e Acidental" da leitura atual). Lixo no PREFIXO
+ * (ex.: "imóveis Poluição...") NÃO casa — é espúrio e vira órfão.
+ */
+function casaComLeituraAtualQar(coberturaAntiga: string, chavesNovas: string[]): boolean {
+  const chave = normalizarTermoEquivalenciaQar(coberturaAntiga)
+  if (chavesNovas.includes(chave)) return true
+  return chavesNovas.some((nk) => nk.length > 0 && chave.startsWith(nk) && chave.length > nk.length)
+}
+
+/**
  * SUBSTITUIR TUDO (reconciliação pura do re-upload do QAR): retorna os ids das
  * linhas órfãs de leituras antigas que a NOVA leitura NÃO trouxe — as espúrias
  * do caso Anália ("☒ Opção 1/2/3", "☒ Outros", "RC Produtos e Trabalhos
@@ -79,14 +109,15 @@ export function calcularLinhasOrfasQar(
   coberturasNovas: string[],
   lmgEditados: Set<string>,
 ): Array<{ id: string; cobertura: string }> {
-  const chavesNovas = new Set(coberturasNovas.map((c) => normalizarTermoEquivalenciaQar(c)))
+  const chavesNovas = coberturasNovas.map((c) => normalizarTermoEquivalenciaQar(c))
   return existing
     .map((rec) => ({ id: rec.id, cobertura: rec.cobertura }))
-    .filter(
-      (rec) =>
-        !chavesNovas.has(normalizarTermoEquivalenciaQar(rec.cobertura)) &&
-        !lmgEditados.has(normalizarTermoEquivalenciaQar(rec.cobertura)),
-    )
+    .filter((rec) => {
+      const chave = normalizarTermoEquivalenciaQar(rec.cobertura)
+      if (lmgEditados.has(chave)) return false // correção do analista nunca é perdida
+      if (isLinhaFantasmaLmgQar(chave)) return true // fantasma documentada: sempre órfã
+      return !casaComLeituraAtualQar(rec.cobertura, chavesNovas)
+    })
 }
 
 /**
@@ -97,6 +128,12 @@ export function calcularLinhasOrfasQar(
  * Segunda camada de guarda (regra de produto): coberturas de property (Danos
  * por Água; Despesas de Salvamento e Contenção) e sugestões do formulário
  * nunca são gravadas — o parser já as exclui.
+ *
+ * Reconciliação com o casamento tolerante (mesma semântica de
+ * calcularLinhasOrfasQar): a linha fantasma do leitor antigo sai do dedupe (a
+ * leitura atual recria o LMG padrão limpa) e o lookup aceita a chave antiga
+ * com lixo de sufixo — evita duplicata quando a leitura antiga gravou o nome
+ * estendido (ex.: "Poluição Súbita e Acidental – 72hrs").
  */
 export async function salvarQarDeclarado(
   params: QarUploadParams,
@@ -212,7 +249,19 @@ export async function salvarQarDeclarado(
   for (const rec of existing) {
     const chave = normalizarTermoEquivalenciaQar(String(rec.cobertura || ''))
     if (lmgEditados.has(chave)) continue // guarda: preserva a edição humana
+    if (isLinhaFantasmaLmgQar(chave)) continue // fantasma: a leitura atual recria o LMG limpa
     existingMap.set(chave, rec)
+  }
+
+  /** Lookup tolerante: chave exata OU chave antiga que estende a nova (lixo de sufixo). */
+  const acharExistenteQar = (chaveNova: string): Record<string, unknown> | undefined => {
+    const exato = existingMap.get(chaveNova)
+    if (exato) return exato
+    for (const [chaveExistente, rec] of existingMap) {
+      if (chaveExistente.length > chaveNova.length && chaveExistente.startsWith(chaveNova))
+        return rec
+    }
+    return undefined
   }
 
   // 3. Grava apenas as coberturas declaradas (com % ou valor) — property nunca grava
@@ -244,7 +293,7 @@ export async function salvarQarDeclarado(
       res.lmgsPreservados = (res.lmgsPreservados || 0) + 1
       continue
     }
-    const rec = existingMap.get(key)
+    const rec = acharExistenteQar(key)
     try {
       if (rec) {
         if (identicalQar(rec, payload)) {
@@ -264,10 +313,11 @@ export async function salvarQarDeclarado(
 
   // 4. SUBSTITUIR TUDO: o re-upload do QAR reflete o formulário ATUAL — linhas
   // de leituras antigas que a nova leitura NÃO trouxe são deletadas (ex.:
-  // "☒ Opção 1/2/3", "☒ Outros" e "RC Produtos e Trabalhos Concluídos" do caso
-  // Anália, gravadas pelo leitor antigo). PRESERVAÇÃO GARANTIDA: registros com
-  // lmg_editado_pelo_analista=true (a correção do analista nunca é perdida) e
-  // qualquer cobertura que a nova leitura trouxe (dedupe por chave normalizada).
+  // "☒ Opção 1/2/3", "☒ Outros" e a linha fantasma "RC Produtos e Trabalhos
+  // Concluídos" do caso Anália, gravadas pelo leitor antigo). PRESERVAÇÃO
+  // GARANTIDA: registros com lmg_editado_pelo_analista=true (a correção do
+  // analista nunca é perdida) e qualquer cobertura que a nova leitura trouxe
+  // (casamento por chave normalizada, tolerante a lixo de sufixo).
   if (existing.length > 0) {
     const idsOrfaos = calcularLinhasOrfasQar(
       existing.map((r) => ({ id: String(r.id), cobertura: String(r.cobertura || '') })),
