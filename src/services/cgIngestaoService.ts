@@ -55,6 +55,8 @@ export interface CgIngestaoSessao {
   produtoVersao: string
   processoSusep: string
   fonteArquivo: string
+  /** Arquivo PDF da CG (cg_ingestoes.arquivo, field file do PocketBase). */
+  arquivoPdf?: File | null
   totalItens: number
   totalExclusoes: number
   itens: CgIngestaoItemFila[]
@@ -92,9 +94,23 @@ export interface CgIngestaoRecord {
   total_itens: number
   total_exclusoes: number
   fonte_arquivo: string
+  /** Nome do arquivo PDF anexado (vazio = sessão antiga sem PDF). */
+  arquivo: string
   usuario_email: string
   created: string
   expand?: { seguradora?: { nome: string } }
+}
+
+/**
+ * URL do PDF anexado à sessão (para o visualizador pdf.js). O PocketBase
+ * expõe o arquivo em /api/files/{collectionIdOrName}/{recordId}/{filename};
+ * como o campo não é `protected`, nenhuma URL assinada é necessária.
+ */
+export function urlArquivoPdfSessao(sessao: Pick<CgIngestaoRecord, 'id' | 'arquivo'>): string {
+  if (!sessao?.id || !sessao?.arquivo) return ''
+  const recordStub = { id: sessao.id, collectionName: 'cg_ingestoes' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return pb.files.getURL(recordStub as any, sessao.arquivo)
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +277,7 @@ function mapItemToRecord(it: CgIngestaoItemFila, ingestaoId: string): Record<str
 }
 
 /** Cria a sessão de ingestão (cg_ingestoes) e grava os itens como pendentes. */
-export async function salvarSessaoIngestao(sessao: CgIngestaoSessao): Promise<string> {
+export async function salvarSessaoIngestao(sessao: CgIngestaoSessao): Promise<CgIngestaoRecord> {
   const ingestao = await pb.collection('cg_ingestoes').create({
     seguradora: sessao.seguradoraId,
     seguradora_nome: sessao.seguradoraNome,
@@ -270,11 +286,13 @@ export async function salvarSessaoIngestao(sessao: CgIngestaoSessao): Promise<st
     total_itens: sessao.totalItens,
     total_exclusoes: sessao.totalExclusoes,
     fonte_arquivo: sessao.fonteArquivo,
+    // PDF da CG anexado à sessão (quando o upload veio com arquivo).
+    ...(sessao.arquivoPdf ? { arquivo: sessao.arquivoPdf } : {}),
   })
   for (const it of sessao.itens) {
     await pb.collection('cg_ingestao_itens').create(mapItemToRecord(it, ingestao.id))
   }
-  return ingestao.id
+  return ingestao as unknown as CgIngestaoRecord
 }
 
 /**

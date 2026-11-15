@@ -26,6 +26,7 @@ import {
   rejeitarItemIngestao,
   casarComMotorC3,
   carregarSessaoParaRetomada,
+  urlArquivoPdfSessao,
   LIMIAR_CONFIANCA_CG,
   type CgIngestaoItemRetomada,
   type CgIngestaoRecord,
@@ -43,7 +44,18 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Upload, FileText, Check, X, AlertCircle, Loader2, CheckCircle2, Ban } from 'lucide-react'
+import { VisualizadorCgPdf } from '@/components/comercial/VisualizadorCgPdf'
+import {
+  Upload,
+  FileText,
+  Check,
+  X,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+  Ban,
+  Eye,
+} from 'lucide-react'
 
 interface Props {
   open: boolean
@@ -104,6 +116,9 @@ export default function IngestaoCgModal({
   const [retomando, setRetomando] = useState(false)
   const [sessaoRetomada, setSessaoRetomada] = useState<CgIngestaoRecord | null>(null)
   const [modoRetomada, setModoRetomada] = useState(false)
+  // ---- Visualizador do PDF de origem (só quando a sessão tem PDF anexado) ----
+  const [urlPdfSessao, setUrlPdfSessao] = useState('')
+  const [itemVisualizando, setItemVisualizando] = useState<FilaItem | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
@@ -122,6 +137,8 @@ export default function IngestaoCgModal({
     setRetomando(false)
     setSessaoRetomada(null)
     setModoRetomada(false)
+    setUrlPdfSessao('')
+    setItemVisualizando(null)
   }
 
   useEffect(() => {
@@ -218,18 +235,21 @@ export default function IngestaoCgModal({
         matchType: f.matchType,
         status: 'pendente' as const,
       }))
-      const id = await salvarSessaoIngestao({
+      const sessaoSalva = await salvarSessaoIngestao({
         seguradoraId,
         seguradoraNome: seguradoraNome.trim(),
         produtoVersao: produtoVersao.trim(),
         processoSusep: processoSusep.trim(),
         fonteArquivo: arquivo.name,
+        arquivoPdf: arquivo,
         totalItens: itens.length,
         totalExclusoes: itens.reduce((acc, i) => acc + i.exclusoes.length, 0),
         itens,
       })
-      setIngestaoId(id)
-      return id
+      setIngestaoId(sessaoSalva.id)
+      // Sessão nova: o PDF acaba de ser gravado em cg_ingestoes.arquivo.
+      setUrlPdfSessao(urlArquivoPdfSessao(sessaoSalva))
+      return sessaoSalva.id
     } finally {
       setSalvandoSessao(false)
     }
@@ -337,6 +357,7 @@ export default function IngestaoCgModal({
       setProdutoVersao(sessao.produto_versao || '')
       setProcessoSusep(sessao.processo_susep || '')
       setIngestaoId(sessao.id)
+      setUrlPdfSessao(urlArquivoPdfSessao(sessao))
       setModoRetomada(true)
       const filaRetomada: FilaItem[] = itens.map((it: CgIngestaoItemRetomada) => ({
         uid: `cg_ret_${it.itemRecordId}`,
@@ -519,15 +540,37 @@ export default function IngestaoCgModal({
                         {f.extraido.nomeExtraido}
                       </p>
                       <p className="text-[11px] text-gray-400">
-                        pág. {f.extraido.pagina} · slotY {Math.round(f.extraido.slotY)} ·{' '}
-                        {f.extraido.secaoOrigem}
+                        Página {f.extraido.pagina} · {f.extraido.secaoOrigem}
                       </p>
                     </div>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded border ${corConfianca(f.confianca)}`}
-                    >
-                      {formatoConfianca(f.confianca)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {urlPdfSessao ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setItemVisualizando(f)}
+                          className="h-6 px-2 text-[10px]"
+                          title={`Ver no PDF — página ${f.extraido.pagina}`}
+                        >
+                          <Eye className="w-3 h-3 mr-1" /> Ver no PDF
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          className="h-6 px-2 text-[10px]"
+                          title="Sessão sem PDF anexado"
+                        >
+                          <Eye className="w-3 h-3 mr-1" /> Ver no PDF
+                        </Button>
+                      )}
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${corConfianca(f.confianca)}`}
+                      >
+                        {formatoConfianca(f.confianca)}
+                      </span>
+                    </div>
                   </div>
 
                   {f.extraido.exclusoes.length > 0 && (
@@ -660,6 +703,31 @@ export default function IngestaoCgModal({
             Fechar
           </Button>
         </DialogFooter>
+
+        {/* Visualizador do PDF de origem — página exata do item (pdf.js) */}
+        <Dialog open={!!itemVisualizando} onOpenChange={(o) => !o && setItemVisualizando(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#16578B]" />
+                Origem no PDF — Página {itemVisualizando?.extraido.pagina}
+                {!!itemVisualizando?.extraido.slotY &&
+                  ` · posição ${Math.round(itemVisualizando.extraido.slotY)}`}
+              </DialogTitle>
+              <DialogDescription className="text-[11px] text-gray-500">
+                {itemVisualizando?.extraido.secaoOrigem}
+              </DialogDescription>
+            </DialogHeader>
+            {itemVisualizando && (
+              <VisualizadorCgPdf
+                urlPdf={urlPdfSessao}
+                pagina={itemVisualizando.extraido.pagina}
+                slotY={itemVisualizando.extraido.slotY}
+                nomeItem={itemVisualizando.extraido.nomeExtraido}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
