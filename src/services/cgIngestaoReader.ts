@@ -219,11 +219,34 @@ function limparLinhaSumario(linha: string): string {
     .trim()
 }
 
-const RE_PROCESSO_SUSEP = /processo\s+susep[^0-9]{0,30}(\d{2,5}\.?\d{3,6}\/\d{4}-\d{1,2})/i
+/**
+ * Processo SUSEP — dois formatos, ambos ancorados no rótulo "Processo SUSEP"
+ * (até 30 caracteres não numéricos de intervalo) para nunca casar telefone,
+ * CNPJ ou data soltos:
+ *  - padrão SUSEP com barra: 15414.900340/2018-85 (5 dígitos, ponto, 3-6
+ *    dígitos, /, ano de 4, -, dígito verificador de 1-2);
+ *  - formato sem barra da AXA: 15414.9020252014-69 (5 dígitos, ponto, até 10
+ *    dígitos, hífen, 2 dígitos). Sem barra, exige hífen + 2 dígitos no fim
+ *    como âncora — a alternância com barra vem primeiro e não retrocede para
+ *    dentro de números com "/".
+ */
+const RE_PROCESSO_SUSEP =
+  /processo\s+susep[^0-9]{0,30}(\d{2,5}\.?\d{3,6}\/\d{4}-\d{1,2}|\d{5}\.\d{1,10}-\d{2})/i
 
 export function detectarProcessoSusepCg(textoGlobal: string): string {
   const m = textoGlobal.match(RE_PROCESSO_SUSEP)
   return m ? m[1] : ''
+}
+
+/**
+ * Fallback de detecção pelo NOME do arquivo (ex.: a AXA usa
+ * "CG_..._15414.9020252014-69_20251210.pdf"). Só casa o formato sem barra da
+ * AXA — número isolado com separadores fixos, nunca precedido nem seguido de
+ * outro dígito (evita recortar parte de CNPJ/telefone).
+ */
+export function detectarProcessoSusepNomeArquivo(nomeArquivo: string): string {
+  const m = (nomeArquivo || '').match(/(^|[^0-9])(\d{5}\.\d{1,10}-\d{2})([^0-9]|$)/)
+  return m ? m[2] : ''
 }
 
 export function detectarProdutoVersaoCg(textoGlobal: string): string {

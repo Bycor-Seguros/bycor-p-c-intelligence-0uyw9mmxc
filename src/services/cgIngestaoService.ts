@@ -296,6 +296,22 @@ export async function salvarSessaoIngestao(sessao: CgIngestaoSessao): Promise<Cg
 }
 
 /**
+ * ATUALIZA os metadados editáveis da sessão (produto/versão e processo SUSEP)
+ * no próprio registro cg_ingestoes — usado na retomada, onde o analista pode
+ * corrigir/completar os dois campos sem re-extrair o PDF. Escopo restrito à
+ * sessão: NUNCA propaga para cobertura_sinonimos nem valida divergência.
+ */
+export async function atualizarMetadadosSessao(
+  ingestaoId: string,
+  metadados: { produtoVersao: string; processoSusep: string },
+): Promise<CgIngestaoRecord> {
+  return (await pb.collection('cg_ingestoes').update(ingestaoId, {
+    produto_versao: metadados.produtoVersao,
+    processo_susep: metadados.processoSusep,
+  })) as unknown as CgIngestaoRecord
+}
+
+/**
  * CONFIRMA um item da fila: grava o sinônimo via salvarSinonimo do motor C3
  * (única escrita em cobertura_sinonimos, sempre com confirmação humana) e
  * marca o item como confirmado.

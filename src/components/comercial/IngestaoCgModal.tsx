@@ -16,12 +16,14 @@ import { extractTextFromPdf } from '@/services/pdfTextExtractor'
 import {
   lerCondicoesGerais,
   detectarProcessoSusepCg,
+  detectarProcessoSusepNomeArquivo,
   detectarProdutoVersaoCg,
   chaveGuardaCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
   salvarSessaoIngestao,
+  atualizarMetadadosSessao,
   confirmarItemIngestao,
   rejeitarItemIngestao,
   casarComMotorC3,
@@ -119,6 +121,9 @@ export default function IngestaoCgModal({
   // ---- Visualizador do PDF de origem (só quando a sessão tem PDF anexado) ----
   const [urlPdfSessao, setUrlPdfSessao] = useState('')
   const [itemVisualizando, setItemVisualizando] = useState<FilaItem | null>(null)
+  const [salvandoMetadados, setSalvandoMetadados] = useState(false)
+  // Snapshot dos metadados carregados na retomada — detecta alteração do analista.
+  const [metadadosIniciais, setMetadadosIniciais] = useState({ produto: '', processo: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
@@ -139,6 +144,8 @@ export default function IngestaoCgModal({
     setModoRetomada(false)
     setUrlPdfSessao('')
     setItemVisualizando(null)
+    setSalvandoMetadados(false)
+    setMetadadosIniciais({ produto: '', processo: '' })
   }
 
   useEffect(() => {
@@ -171,6 +178,12 @@ export default function IngestaoCgModal({
       const textoCompleto = pages.map((p) => p.text).join('\n')
       const p = detectarProcessoSusepCg(textoCompleto)
       if (p) setProcessoSusep(p)
+      // Fallback: o número também pode aparecer só no nome do arquivo
+      // (caso AXA: "CG_..._15414.9020252014-69_20251210.pdf").
+      if (!p) {
+        const pNome = detectarProcessoSusepNomeArquivo(f.name)
+        if (pNome) setProcessoSusep(pNome)
+      }
       const v = detectarProdutoVersaoCg(textoCompleto)
       if (v && !produtoVersao.trim()) setProdutoVersao(v)
 
@@ -356,6 +369,10 @@ export default function IngestaoCgModal({
       setSeguradoraNome(sessao.seguradora_nome || '')
       setProdutoVersao(sessao.produto_versao || '')
       setProcessoSusep(sessao.processo_susep || '')
+      setMetadadosIniciais({
+        produto: sessao.produto_versao || '',
+        processo: sessao.processo_susep || '',
+      })
       setIngestaoId(sessao.id)
       setUrlPdfSessao(urlArquivoPdfSessao(sessao))
       setModoRetomada(true)
@@ -396,6 +413,36 @@ export default function IngestaoCgModal({
 
   const pendentes = fila.filter((f) => f.status === 'pendente')
   const processados = fila.length - pendentes.length
+
+  /**
+   * GRAVA no registro cg_ingestoes os metadados editados na retomada
+   * (produto/versão e processo SUSEP). Escopo restrito à sessão: nunca
+   * propaga para sinônimos nem valida divergência detectado×digitado.
+   */
+  const persistirMetadadosSessao = async () => {
+    if (!modoRetomada || !ingestaoId || salvandoMetadados) return
+    if (
+      produtoVersao.trim() === metadadosIniciais.produto &&
+      processoSusep.trim() === metadadosIniciais.processo
+    )
+      return
+    try {
+      setSalvandoMetadados(true)
+      const sessaoAtualizada = await atualizarMetadadosSessao(ingestaoId, {
+        produtoVersao: produtoVersao.trim(),
+        processoSusep: processoSusep.trim(),
+      })
+      setSessaoRetomada(sessaoAtualizada)
+      setMetadadosIniciais({
+        produto: sessaoAtualizada.produto_versao || '',
+        processo: sessaoAtualizada.processo_susep || '',
+      })
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSalvandoMetadados(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -469,8 +516,15 @@ export default function IngestaoCgModal({
                 onChange={(e) => setProdutoVersao(e.target.value)}
                 placeholder="ex.: AXA Empresarial 2024"
                 className="text-xs"
-                disabled={extraindo || !!fila.length}
+                disabled={extraindo}
               />
+              {modoRetomada &&
+                produtoVersao !== metadadosIniciais.produto &&
+                !salvandoMetadados && (
+                  <p className="text-[10px] text-amber-700">
+                    Alterado — será gravado na sessão ao sair do campo.
+                  </p>
+                )}
             </div>
 
             <div className="space-y-1">
@@ -480,8 +534,16 @@ export default function IngestaoCgModal({
                 onChange={(e) => setProcessoSusep(e.target.value)}
                 placeholder="—"
                 className="text-xs"
-                disabled={extraindo || !!fila.length}
+                disabled={extraindo}
+                onBlur={modoRetomada ? persistirMetadadosSessao : undefined}
               />
+              {modoRetomada &&
+                processoSusep !== metadadosIniciais.processo &&
+                !salvandoMetadados && (
+                  <p className="text-[10px] text-amber-700">
+                    Alterado — será gravado na sessão ao sair do campo.
+                  </p>
+                )}
             </div>
           </div>
 
