@@ -814,5 +814,164 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     },
   )
 
+  // ------------------------------------------------------------------
+  // 10) Fragmentos em CAIXA ALTA de continuação de período NUNCA são
+  //     título de seção (v0.0.222 — caso real Tokio, pág. 94/101: rabo em
+  //     caixa alta do parágrafo DPVAT/RC Facultativa, sem minúscula, sem
+  //     verbo, termina em ";" — passava pelo prefixo /^responsabilidade
+  //     civil\b/ e virava cobertura espúria). Seção NOVA: nenhuma asserção
+  //     existente alterada ou removida (pacto anti-regressão). Frases
+  //     ESTRUTURAIS genéricas, zero conteúdo do PDF real.
+  // ------------------------------------------------------------------
+
+  t(
+    'Ingestão CG: fragmento CAIXA ALTA de continuação de período (termina em ";") NÃO é cobertura',
+    () => {
+      // Frase genérica com a MESMA estrutura do caso real: continuação de
+      // período em caixa alta, com conector de meio de frase, terminando em
+      // ponto-e-vírgula. Título de seção nunca tem cauda de período aberto.
+      const fragmento =
+        'RESPONSABILIDADE CIVIL FACULTATIVA, ESTE ÚLTIMO CONTRATADO, APLICANDO-SE SOMENTE EM PROTEÇÃO AOS INTERESSES DO SEGURADO E JAMAIS EM BENEFÍCIO DE TERCEIROS ENVOLVIDOS;'
+      assert(
+        ehFragmentoFraseCg(fragmento),
+        'cauda ";" deveria marcar a linha como fragmento de frase',
+      )
+      assert(
+        !tituloEhCobertura(fragmento),
+        'continuação de período em caixa alta não deveria ser cobertura',
+      )
+      // Variante sem ponto-e-vírgula (linha pdf.js truncada antes do ";"):
+      // o conector de meio de frase em caixa alta também barra.
+      const truncada = fragmento.replace(/;$/, '')
+      assert(
+        !tituloEhCobertura(truncada),
+        'variante truncada com conector de meio de frase também não é cobertura',
+      )
+      assert(ehFragmentoFraseCg(truncada), 'linha com conector de frase deveria ser fragmento')
+      // Caudas abertas em geral: vírgula e elipses no fim da linha.
+      assert(ehFragmentoFraseCg('TEXTO DE CLÁUSULA INTERROMPIDO,'), 'cauda vírgula')
+      assert(ehFragmentoFraseCg('TEXTO DE CLÁUSULA TRUNCADO PELO EXTRATOR…'), 'cauda elipses')
+      assert(ehFragmentoFraseCg('TEXTO EM CAIXA ALTA, SEGUE CONTINUAÇÃO'), 'conector ", segue"')
+    },
+  )
+
+  t(
+    'Ingestão CG: título de cobertura Tokio em CAIXA ALTA legítimo continua sendo cobertura',
+    () => {
+      // Padrões estruturais do formato Tokio — NENHUM termina em ";"/"," e
+      // nenhum contém conector de meio de frase. Devem continuar passando
+      // (pacto anti-regressão).
+      assert(
+        tituloEhCobertura('COBERTURA ADICIONAL Nº. 095 - COBERTURA ADICIONAL DE EXEMPLO'),
+        'COBERTURA ADICIONAL Nº. com nome no resto da linha',
+      )
+      assert(
+        tituloEhCobertura('COBERTURA BÁSICA Nº. 001C - INCÊNDIO DO OBJETO DO SEGURO'),
+        'COBERTURA BÁSICA nº. com código',
+      )
+      assert(
+        tituloEhCobertura(
+          'COBERTURA ADICIONAL Nº. 138 - COBERTURA ADICIONAL PARA INTERRUPÇÃO DE UTILIDADES',
+        ),
+        'COBERTURA ADICIONAL Nº. em 2 linhas',
+      )
+      assert(tituloEhCobertura('RESPONSABILIDADE CIVIL FACULTATIVA'), 'RC Facultativa sem cauda')
+      assert(
+        tituloEhCobertura('CLÁUSULA PARTICULAR DE EXTENSÃO DE GARANTIA PARA EXEMPLO'),
+        'cláusula particular passando pelo teste geral (não-bloqueada por fragmento)',
+      )
+      // ... e o teste geral da cláusula particular (regra NÃO cobertura)
+      // continua valendo — a guarda nova não mudou essa regra.
+      assert(
+        !tituloEhCobertura('CLÁUSULA PARTICULAR DE USO RESTRITO'),
+        'cláusula particular continua NÃO cobertura (regra intacta)',
+      )
+    },
+  )
+
+  t(
+    'Ingestão CG: página Tokio reconstruída (fragmento em caixa alta + títulos legítimos) não gera cobertura espúria',
+    () => {
+      // Página estrutural genérica: parágrafo DPVAT/RC em caixa alta quebrado
+      // em várias linhas (uma delas termina em ";") + títulos Tokio legítimos
+      // antes e depois. Os títulos passam; o fragmento não vira seção.
+      const pages = [
+        page(93, [
+          ['COBERTURA ADICIONAL Nº. 095 - COBERTURA ADICIONAL DE EXEMPLO UM', 700],
+          ['1.1 RISCOS COBERTOS', 650],
+          ['texto de riscos cobertos da seção', 610],
+        ]),
+        page(94, [
+          ['COBERTURA ADICIONAL Nº. 096 - COBERTURA ADICIONAL DE EXEMPLO DOIS', 720],
+          [
+            'RESPONSABILIDADE CIVIL FACULTATIVA, ESTE ÚLTIMO CONTRATADO, APLICANDO-SE SOMENTE EM',
+            690,
+          ],
+          [
+            'PROTEÇÃO AOS INTERESSES DO SEGURADO E JAMAIS EM BENEFÍCIO DE TERCEIROS ENVOLVIDOS;',
+            670,
+          ],
+          ['texto de continuação do parágrafo da cláusula', 640],
+          ['COBERTURA ADICIONAL Nº. 097 - COBERTURA ADICIONAL DE EXEMPLO TRÊS', 600],
+          ['1.1 RISCOS COBERTOS', 560],
+          ['texto de riscos cobertos da seção', 520],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 3,
+        `esperava 3 coberturas (fragmento não vira seção), veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      assert(
+        !coberturas.some((c) => c.nomeExtraido.includes('JAMAIS')),
+        'fragmento em caixa alta de continuação de período não deveria virar cobertura',
+      )
+    },
+  )
+
+  t(
+    'Ingestão CG: fragmento Tokio barrado não afeta exclusões nem títulos quebrados (formato Chubb/AXA intactos)',
+    () => {
+      // Falso-positivo de proteção: a guarda nova (cauda ";"/"," + conector)
+      // não pode fechar o bloco de exclusões antes da 1ª alínea nem barrar
+      // títulos quebrados em 2 linhas que não têm cauda aberta.
+      const pages = [
+        page(1, [
+          ['Sumário', 700],
+          ['1. COBERTURA ADICIONAL DESPESAS EXTRAORDINARIAS ..... 3', 650],
+        ]),
+        page(3, [
+          ['COBERTURA ADICIONAL DESPESAS EXTRAORDINARIAS', 700],
+          ['1.1 RISCOS COBERTOS', 650],
+          ['texto de riscos cobertos da seção', 620],
+          ['2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO INDENIZÁVEIS / BENS NÃO', 580],
+          ['COMPREENDIDOS NO SEGURO:', 560],
+          ['FRAGMENTO EM CAIXA ALTA INTERROMPIDO, SEGUINDO COM A CONTINUAÇÃO DO PERÍODO;', 540],
+          ['a) perdas decorrentes de fato gerador anterior ao período', 520],
+          ['b) multas ou penalidades aplicadas por autoridade', 500],
+          ['3. LIMITE DE INDENIZAÇÃO', 480],
+          ['texto de limite da seção', 450],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1,
+        `esperava 1 cobertura, veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      assert(
+        coberturas[0].exclusoes.length === 2,
+        `esperava 2 exclusões (guarda nova não fecha bloco), veio ${coberturas[0].exclusoes.length}`,
+      )
+      // O fragmento em caixa alta com cauda ";" não vira seção e não entra
+      // como exclusão da cobertura da página.
+      assert(
+        !coberturas[0].exclusoes.some((e) => e.texto.includes('FRAGMENTO EM CAIXA ALTA')),
+        'fragmento barrado não deveria entrar nem como seção nem como exclusão',
+      )
+    },
+  )
+
   return resultados
 }

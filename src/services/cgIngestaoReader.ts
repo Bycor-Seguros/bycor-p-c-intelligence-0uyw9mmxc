@@ -147,6 +147,27 @@ const RE_FRAGMENTO_MINUSCULA = /^[a-z(]/i
 const RE_CAUDA_FIM_DE_FRASE = /[a-zà-ú.]\.$|\.\)$/i
 
 /**
+ * Guarda v0.0.222 (Tokio) — cauda de PERÍODO ABERTO: título de seção de CG
+ * NUNCA termina em ";", "," ou "…" — pontuação que LIGA a linha ao que vem
+ * depois, sinais de continuação de período do corpo de cláusulas. Fragmentos
+ * em CAIXA ALTA que escapavam das guardas acima (sem minúscula, sem verbo,
+ * sem ponto final) — o rabo em caixa alta do parágrafo DPVAT/RC Facultativa
+ * ("... EM BENEFÍCIO DOS PROPRIETÁRIOS DOS CITADOS VEÍCULOS, INCLUSIVE...;")
+ * passava pelo prefixo /^responsabilidade civil\b/ e virava cobertura
+ * espúria. "..." no fim (linha pdf.js truncada) também é cauda aberta.
+ */
+const RE_CAUDA_PERIODO_ABERTO = /[;,…]$|,\s*$/
+
+/**
+ * Guarda v0.0.222 (Tokio) — MEIO de frase em caixa alta: título de seção não
+ * contém conectores de frase do corpo (" este último,", " e jamais ", " e, "
+ * " aplicando-se") nem abre com vírgula (linha que começa após quebra de
+ * fragmento). Determinístico, sem listas de palavras da cia.
+ */
+const RE_MEIO_FRASE_CAIXA_ALTA =
+  /,\s+este\s|,\s+o\s+qual|,\s+a\s+qual|\be\s+jamais\b|\baplicando-se\b|\be,\s/i
+
+/**
  * A linha é um FRAGMENTO de frase (continuação de parágrafo, texto dentro de
  * cláusula numerada, rabo de alínea)? (função pura — testada na suíte golden)
  */
@@ -155,6 +176,11 @@ export function ehFragmentoFraseCg(titulo: string): boolean {
   if (!t) return false
   if (RE_FRAGMENTO_ALINEA.test(t)) return true
   if (RE_CAUDA_FIM_DE_FRASE.test(t)) return true
+  // v0.0.222: cauda de período aberto (";" / "," / "…") e conectores de meio
+  // de frase em caixa alta — fragmento mesmo em CAIXA ALTA (caso Tokio).
+  if (RE_CAUDA_PERIODO_ABERTO.test(t)) return true
+  if (RE_MEIO_FRASE_CAIXA_ALTA.test(t)) return true
+  if (/^,\s/.test(t)) return true
   if (RE_FRAGMENTO_CLAUSULA.test(normalizarTituloCg(t))) return true
   // Minúscula inicial: só é fragmento se a linha não é um título em caixa alta
   // quebrado (título quebrado mantém caixa alta em todas as linhas).
