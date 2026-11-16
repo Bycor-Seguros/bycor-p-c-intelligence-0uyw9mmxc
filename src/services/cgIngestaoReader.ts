@@ -208,7 +208,24 @@ export function tituloEhCobertura(titulo: string): boolean {
   }
 
   if (/^cobertura\s+(basica|adicional|especial)\b/i.test(norm)) return true
-  if (/^cobertura\s+de\s+/i.test(t)) return true
+  if (/^cobertura\s+(de\s+|adicional\s+-\s+)/i.test(t)) return true
+  // v0.0.218 Chubb: "CONDIÇÃO ESPECIAL/CONDIÇÃO PARTICULAR NN - ..." com nome
+  // livre no resto da linha (a CG RN 96 da Chubb usa este formato em TODAS as
+  // coberturas: "CONDIÇÃO ESPECIAL 21 - CONDIÇÕES ESPECIAIS PARA O SEGURO DE
+  // RECOMPOSIÇÃO DE REGISTROS...", "COBERTURA ADICIONAL - LUCRO BRUTO",
+  // "CONDIÇÃO PARTICULAR 06 - CLÁUSULA ESPECIAL DE..."). O nome vem depois do
+  // traço — pode ser OU NÃO o padrão "para o seguro de" já coberto acima.
+  // Cláusula PARTICULAR: cauda "COBERTURA ..." depois do traço É cobertura
+  // (ex. "CONDIÇÃO PARTICULAR 02 - COBERTURA ADICIONAL - ..."); qualquer outra
+  // cauda ("CLÁUSULA ESPECIAL DE ...") só é cobertura se declarar cobertura
+  // explícita (salvamento/contenção/defesa) — regra geral intacta.
+  const mParticular = t.match(/^condi[cç][aã]o\s+particular\s*\d+\s*-\s*(.+)$/i)
+  if (mParticular) {
+    if (/^cobertura\b/i.test(mParticular[1])) return true
+    return RE_CLAUSULA_COBERTURA_EXPLICITA.test(norm)
+  }
+  if (/^condi[cç][aã]o\s+(especial)\s*\d+\s*-\s*\S/i.test(t)) return true
+  if (/^cobertura\s+adicional\s*-\s*\S/i.test(t)) return true
   if (/condi[cç][oõ]es especiais para o seguro de /i.test(norm)) return true
   if (/^responsabilidade civil\b/i.test(norm)) return true
   if (/^lucros cessantes/i.test(norm)) return true
@@ -256,6 +273,27 @@ function ehCabecalhoSecaoNumerado(t: string): boolean {
 }
 
 /**
+ * Guarda Chubb (v0.0.218) — o cabeçalho da seção de exclusões pode vir
+ * QUEBRADO em duas linhas pelo pdf.js: "2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO
+ * INDENIZÁVEIS / BENS NÃO" + "COMPREENDIDOS NO SEGURO:". A 2ª linha é caixa
+ * alta e, sem guarda, fechava o bloco antes da primeira alínea (sessões
+ * Chubb gravavam total_exclusoes: 0). É continuação de cabeçalho a linha em
+ * caixa alta que repete o vocabulário do cabeçalho E tem formato de título
+ * quebrado (termina em ":" ou contém "/" separando as três partes). Subtítulos
+ * de fechamento ("LIMITE DE INDENIZAÇÃO", "RATIFICAÇÃO") NÃO repetem esse
+ * vocabulário e continuam fechando o bloco — formato AXA intacto.
+ * "EXCLUIDOS" sem acento, " / " com espaços e numeração "2." já casam em
+ * RE_INICIO_EXCLUSOES — a quebra de linha era a variação faltante.
+ */
+function ehContinuacaoCabecalhoExclusoes(t: string): boolean {
+  const norm = normalizarTituloCg(t)
+  if (!norm) return false
+  if (/compreendid/.test(norm)) return true // "BENS NÃO COMPREENDIDOS NO SEGURO:"
+  if (!/(prejuiz|indenizav|exclu)/.test(norm)) return false
+  return t.includes('/') || t.endsWith(':')
+}
+
+/**
  * Dado o corpo (linhas com posição) de UMA seção de cobertura, extrai as
  * exclusões: a partir do subtítulo "RISCOS EXCLUÍDOS" até o próximo subtítulo
  * em caixa alta (com ou sem numeração de cláusula). Cada alínea a), b),
@@ -267,13 +305,19 @@ export function extrairExclusoesDoBloco(
 ): CgIngestaoExclusaoExtraida[] {
   const exclusoes: CgIngestaoExclusaoExtraida[] = []
   let dentroExclusoes = false
+  // Guarda Chubb: só consome continuação de cabeçalho ANTES da 1ª alínea —
+  // depois que a lista começou, linha caixa alta é subtítulo e fecha o bloco.
+  let exclusoesDesdeAbertura = 0
 
   for (const linha of corpoLinhas) {
     const t = (linha.texto || '').trim()
     if (!t) continue
 
     if (!dentroExclusoes) {
-      if (RE_INICIO_EXCLUSOES.test(t)) dentroExclusoes = true
+      if (RE_INICIO_EXCLUSOES.test(t)) {
+        dentroExclusoes = true
+        exclusoesDesdeAbertura = 0
+      }
       continue
     }
 
@@ -283,6 +327,17 @@ export function extrairExclusoesDoBloco(
     const iniciaPalavra = /^[A-Za-zÁÉÍÓÚÂÊÔÃÕÇ]/.test(t)
     if (!ehAlinea) {
       if (RE_INICIO_EXCLUSOES.test(t)) continue // "NÃO ESTÃO COBERTOS:" repetido/renumerado
+      if (
+        iniciaPalavra &&
+        t === t.toUpperCase() &&
+        t.length > 3 &&
+        !ehCabecalhoSecaoNumerado(t) &&
+        exclusoesDesdeAbertura === 0 &&
+        ehContinuacaoCabecalhoExclusoes(t)
+      ) {
+        // linha 2+ do cabeçalho de exclusões quebrado — NÃO fecha o bloco
+        continue
+      }
       if ((iniciaPalavra && t === t.toUpperCase() && t.length > 3) || ehCabecalhoSecaoNumerado(t)) {
         dentroExclusoes = false
         continue
@@ -293,6 +348,7 @@ export function extrairExclusoesDoBloco(
     const textoAlinea = (mAlinea ? mAlinea[2] : t).trim()
     if (textoAlinea.length < 8) continue
     exclusoes.push({ texto: textoAlinea, pagina: linha.pagina, slotY: linha.slotY })
+    exclusoesDesdeAbertura += 1
   }
 
   return exclusoes
@@ -487,6 +543,15 @@ interface SecaoCobertura {
   nome: string
   pagina: number
   slotY: number
+  /**
+   * Índice da ÚLTIMA linha do título desta seção NA PRÓPRIA página — o título
+   * pode quebrar em 2-3 linhas (ex.: Chubb "CONDIÇÃO ESPECIAL 21 - ..." +
+   * "RECOMPOSIÇÃO DE REGISTROS E DOCUMENTOS"). A 2ª passada pula as linhas
+   * até aqui antes do teste de próxima seção; sem isso, a 1ª linha do
+   * próprio título quebrado casava o prefixo de cobertura e CORTAVA o corpo
+   * da própria seção (exclusões nunca eram vinculadas — caso Chubb).
+   */
+  ateLinhaTitulo: number
   corpo: Array<{ texto: string; pagina: number; slotY: number }>
 }
 
@@ -518,7 +583,13 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
   // 2-3 linhas caixa alta). Linhas de Sumário — pontilhado em QUALQUER formato
   // — são ignoradas. Guarda TODAS as ocorrências: no fim, a ÚLTIMA ocorrência
   // de cada título vence, porque a seção real nunca vem antes do Sumário.
-  const ocorrencias: Array<{ nome: string; pagina: number; slotY: number; ordem: number }> = []
+  const ocorrencias: Array<{
+    nome: string
+    pagina: number
+    slotY: number
+    ordem: number
+    ateLinhaTitulo: number
+  }> = []
   let ordem = 0
 
   for (const page of pages) {
@@ -544,6 +615,9 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         pagina: page.pageNumber,
         slotY: linhas[i].slotY,
         ordem: ordem++,
+        // título quebrado: a última linha consumida pelo join é parte do
+        // TÍTULO, não do corpo — a 2ª passada pula até aqui (v0.0.218 Chubb).
+        ateLinhaTitulo: j - 1,
       })
       i = j - 1
     }
@@ -554,12 +628,18 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
   // índice nunca vence a seção real do corpo), preservando a ordem do documento.
   const ultimaPorChave = new Map<
     string,
-    { nome: string; pagina: number; slotY: number; ordem: number }
+    { nome: string; pagina: number; slotY: number; ordem: number; ateLinhaTitulo: number }
   >()
   for (const o of ocorrencias) ultimaPorChave.set(chaveDedupTituloCg(o.nome), o)
   const secoes: SecaoCobertura[] = [...ultimaPorChave.values()]
     .sort((a, b) => a.ordem - b.ordem)
-    .map((o) => ({ nome: o.nome, pagina: o.pagina, slotY: o.slotY, corpo: [] }))
+    .map((o) => ({
+      nome: o.nome,
+      pagina: o.pagina,
+      slotY: o.slotY,
+      ateLinhaTitulo: o.ateLinhaTitulo,
+      corpo: [],
+    }))
 
   // 2ª passada: corpo de cada seção (até a próxima seção) e exclusões
   const itens: CgIngestaoItemExtraido[] = []
@@ -576,11 +656,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         const linha = linhas[idx]
         const limpo = limparLinhaSumario(linha.texto)
         if (!limpo) continue
-        if (
-          page.pageNumber === secao.pagina &&
-          normalizarTituloCg(limpo) === normalizarTituloCg(secao.nome)
-        )
-          continue
+        if (page.pageNumber === secao.pagina && idx <= secao.ateLinhaTitulo) continue
         if (tituloEhCobertura(limpo)) {
           // próxima seção começa no meio desta página: corta o corpo aqui
           break
