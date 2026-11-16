@@ -38,7 +38,22 @@ import {
   derivarEventosTipicosPadrao,
 } from '@/services/equivalenciaCoberturasService'
 import { SeguradoraCadastroRecord, getSeguradorasCadastro } from '@/services/seguradoraNormalizer'
-import { listarSessoesPendentes, type SessaoPendenteResumo } from '@/services/cgIngestaoService'
+import {
+  descartarSessaoIngestao,
+  listarSessoesPendentes,
+  type SessaoPendenteResumo,
+} from '@/services/cgIngestaoService'
+import { useToast } from '@/hooks/use-toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import IngestaoCgModal from '@/components/comercial/IngestaoCgModal'
 
 /**
@@ -105,6 +120,9 @@ export default function BibliotecaCgsPage() {
   const [sessoesPendentes, setSessoesPendentes] = useState<SessaoPendenteResumo[]>([])
   const [carregandoSessoes, setCarregandoSessoes] = useState(false)
   const [sessaoRetomarId, setSessaoRetomarId] = useState<string | null>(null)
+  const [sessaoDescartar, setSessaoDescartar] = useState<SessaoPendenteResumo | null>(null)
+  const [descartando, setDescartando] = useState(false)
+  const { toast } = useToast()
 
   // ---- Carregamento ----
   const carregarDados = useCallback(async () => {
@@ -246,6 +264,39 @@ export default function BibliotecaCgsPage() {
       setErroModal('Erro ao salvar sinônimo: ' + (err as Error).message)
     } finally {
       setSalvando(false)
+    }
+  }
+
+  // ---- Descarte de sessão pendente (apaga itens → sessão; aborta se itens falharem) ----
+  const handleDescartarSessao = async () => {
+    if (!sessaoDescartar || descartando) return
+    setDescartando(true)
+    try {
+      const resultado = await descartarSessaoIngestao(sessaoDescartar.ingestao.id)
+      if (resultado.sucesso) {
+        toast({
+          title: 'Sessão descartada',
+          description: `A sessão e ${resultado.itensApagados} item(ns) dela foram apagados do banco.`,
+        })
+      } else {
+        toast({
+          title: 'Erro ao descartar sessão',
+          description: resultado.erro || 'Tente novamente.',
+          variant: 'destructive',
+        })
+      }
+    } catch (err: unknown) {
+      console.error('Falha ao descartar sessão de ingestão', err)
+      toast({
+        title: 'Erro ao descartar sessão',
+        description: (err as Error).message || 'Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSessaoDescartar(null)
+      setDescartando(false)
+      // Recarrega o painel (e a lista por trás dele) — sessão some do painel.
+      carregarDados()
     }
   }
 
@@ -408,17 +459,30 @@ export default function BibliotecaCgsPage() {
                       <span className="text-gray-400 italic">sem processo SUSEP</span>
                     )}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setSessaoRetomarId(s.ingestao.id)
-                      setModalIngestaoAberto(true)
-                    }}
-                    className="h-7 text-xs shrink-0"
-                  >
-                    Retomar
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={descartando}
+                      onClick={() => {
+                        setSessaoRetomarId(s.ingestao.id)
+                        setModalIngestaoAberto(true)
+                      }}
+                      className="h-7 text-xs shrink-0"
+                    >
+                      Retomar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={descartando}
+                      onClick={() => setSessaoDescartar(s)}
+                      className="h-7 text-xs shrink-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Descartar
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -980,6 +1044,54 @@ export default function BibliotecaCgsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmação de descarte de sessão pendente */}
+      <AlertDialog
+        open={Boolean(sessaoDescartar)}
+        onOpenChange={(aberto) => {
+          if (!descartando) setSessaoDescartar(aberto ? sessaoDescartar : null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900">
+              Descartar sessão?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600">
+              {sessaoDescartar && (
+                <>
+                  Isso apaga a sessão de ingestão
+                  {sessaoDescartar.ingestao.seguradora_nome
+                    ? ` (${sessaoDescartar.ingestao.seguradora_nome})`
+                    : ''}{' '}
+                  e todos os {sessaoDescartar.total} item(ns) dela (coberturas e exclusões) em
+                  cg_ingestao_itens. Essa ação não pode ser desfeita.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={descartando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={descartando}
+              onClick={(e) => {
+                e.preventDefault() // mantém o diálogo aberto até a exclusão terminar
+                handleDescartarSessao()
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {descartando ? (
+                <>
+                  <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />
+                  Descartando...
+                </>
+              ) : (
+                'Descartar'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de ingestão de CG (PDF → C3 → fila de revisão) */}
       <IngestaoCgModal

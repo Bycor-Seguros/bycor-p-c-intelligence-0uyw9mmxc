@@ -14,7 +14,7 @@
 
 import pb from '@/lib/pocketbase/client'
 import type { PdfPageText } from './pdfTextExtractor'
-import { criarItensEmLotes } from './pocketbaseWriteHelper' // ondas de creates individuais (sem /api/batch)
+import { criarItensEmLotes, deletarRegistrosEmLotes } from './pocketbaseWriteHelper' // ondas de 20 com retry no 429 (sem /api/batch)
 import { lerCondicoesGerais, chaveGuardaCg, guardasIguaisCg } from './cgIngestaoReader'
 import {
   calcularSimilaridadeTexto,
@@ -557,6 +557,42 @@ export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> 
       ingestaoIncompleta: s.ingestao.ingestao_incompleta === true,
     }))
     .filter((s) => s.pendentes > 0 || s.certificacaoIncompleta || s.ingestaoIncompleta)
+}
+
+/**
+ * DESCARTA uma sessão do painel de pendentes: apaga PRIMEIRO todos os itens em
+ * `cg_ingestao_itens` (deletarRegistrosEmLotes — ondas de 20 com retry
+ * progressivo no 429; /api/batch é 403 no Skip Cloud) e SÓ DEPOIS a sessão em
+ * `cg_ingestoes`. Se QUALQUER item falhar, a sessão NÃO é tocada — o painel
+ * continua mostrando a sessão para nova tentativa (nunca fica parcial). Sessões
+ * confirmadas (ex. AXA) não chegam aqui: o botão Descartar só existe no painel
+ * de pendentes.
+ */
+export async function descartarSessaoIngestao(
+  ingestaoId: string,
+): Promise<{ sucesso: boolean; itensApagados: number; erro?: string }> {
+  const itens = await pb.collection('cg_ingestao_itens').getFullList({
+    filter: `ingestao="${ingestaoId}"`,
+    fields: 'id',
+    batch: 20,
+  })
+  const ids = itens.map((r) => (r as unknown as { id: string }).id)
+
+  if (ids.length) {
+    const resultado = await deletarRegistrosEmLotes(ids, 'cg_ingestao_itens')
+    if (!resultado.sucesso) {
+      return {
+        sucesso: false,
+        itensApagados: resultado.apagados,
+        erro:
+          `Falha ao apagar os itens da sessão (${resultado.apagados}/${ids.length} apagados): ` +
+          `${resultado.erro}. A sessão NÃO foi descartada — tente novamente.`,
+      }
+    }
+  }
+
+  await pb.collection('cg_ingestoes').delete(ingestaoId)
+  return { sucesso: true, itensApagados: ids.length }
 }
 
 /**

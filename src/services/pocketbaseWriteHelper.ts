@@ -84,6 +84,58 @@ async function criarUmRegistro(colecao: string, registro: Record<string, unknown
 }
 
 /**
+ * Mesma disciplina de transporte para DELETE: requisições individuais
+ * (DELETE /api/collections/{colecao}/records/{id}) em ondas de 20, com pausa
+ * progressiva e retry do MESMO id no 429. Aborta no primeiro erro real
+ * (400/403/404) e devolve SEM lançar — quem chama decide interromper.
+ */
+export async function deletarRegistrosEmLotes(
+  ids: string[],
+  colecao: string,
+): Promise<{ sucesso: boolean; apagados: number; erro?: string }> {
+  let apagados = 0
+
+  for (const onda of dividirEmLotes(ids)) {
+    for (const id of onda) {
+      let ok = false
+      let ultimoErro: unknown = null
+
+      for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_POR_ITEM && !ok; tentativa++) {
+        try {
+          await pb.collection(colecao).delete(id)
+          ok = true
+        } catch (err: unknown) {
+          ultimoErro = err
+          const status = (err as { status?: number })?.status
+          const statusResp = (err as { response?: { status?: number } })?.response?.status
+          const eh429 = status === 429 || statusResp === 429
+          if (!eh429) break // erro real — retry não resolve
+          if (tentativa < MAX_TENTATIVAS_POR_ITEM) {
+            await pausar(calcularPausaProgressiva(tentativa))
+          }
+        }
+      }
+
+      if (!ok) {
+        return {
+          sucesso: false,
+          apagados,
+          erro: `Falha ao apagar item ${apagados + 1} após ${MAX_TENTATIVAS_POR_ITEM} tentativas: ${resumoErroItem(ultimoErro)}`,
+        }
+      }
+
+      apagados++
+    }
+
+    if (apagados < ids.length) {
+      await pausar(PAUSA_ENTRE_ONDAS_MS) // respira entre ondas
+    }
+  }
+
+  return { sucesso: true, apagados }
+}
+
+/**
  * Cria registros em ondas de requisições INDIVIDUAIS — sem /api/batch
  * (proibido: o Skip Cloud responde 403 "Batch requests are not allowed.").
  *
