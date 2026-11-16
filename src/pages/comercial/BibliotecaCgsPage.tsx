@@ -385,6 +385,14 @@ export default function BibliotecaCgsPage() {
                         {s.pendentes} pendente(s) / {s.total} item(ns)
                       </span>
                     )}
+                    {s.ingestaoIncompleta && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-800 border border-red-300"
+                        title="A gravação dos itens falhou no meio (rate-limit). Retome a sessão e grave de novo — os itens já gravados não são duplicados."
+                      >
+                        Ingestão incompleta
+                      </span>
+                    )}
                     {s.certificacaoIncompleta && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-orange-800 border border-orange-300">
                         Certificação incompleta

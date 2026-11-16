@@ -24,6 +24,7 @@ import {
   calcularItensGuardaCg,
   LIMIAR_CONFIANCA_CG,
 } from '@/services/cgIngestaoService'
+import { dividirEmLotes, calcularPausaProgressiva } from '@/services/pocketbaseWriteHelper'
 import type { CoberturaCanonicaRecord } from '@/services/equivalenciaCoberturasService'
 
 // ---------------------------------------------------------------------------
@@ -458,6 +459,53 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       )
     },
   )
+
+  // ------------------------------------------------------------------
+  // N) Fluxo de gravação em lotes (pocketbaseWriteHelper) — v0.0.207
+  // ------------------------------------------------------------------
+
+  t(
+    'Ingestão CG: gravação em lotes divide a fila grande (RN 113 coberturas) em lotes de 20',
+    () => {
+      const itens = Array.from({ length: 113 }, (_, i) => ({
+        tipoItem: 'cobertura' as const,
+        nomeExtraido: `COBERTURA ADICIONAL TESTE ${i + 1}`,
+        secaoOrigem: 'COBERTURA ADICIONAL TESTE',
+        pagina: 2,
+        slotY: i,
+        exclusoes: [] as string[],
+        sugestaoCanonicaId: '',
+        sugestaoCanonicaNome: '',
+        confianca: 0,
+        matchType: 'sem_sugestao' as const,
+        status: 'pendente' as const,
+      }))
+      // 113 itens / 20 por lote = 6 lotes completos + 1 de 13 → 7 lotes.
+      const lotes = dividirEmLotes(itens)
+      assert(lotes.length === 7, `esperava 7 lotes, veio ${lotes.length}`)
+      assert(lotes[0].length === 20, `1º lote deveria ter 20, veio ${lotes[0].length}`)
+      assert(lotes[6].length === 13, `último lote deveria ter 13, veio ${lotes[6].length}`)
+      assert(
+        lotes.reduce((a, l) => a + l.length, 0) === itens.length,
+        'soma dos lotes deveria ser o total de itens',
+      )
+    },
+  )
+
+  t('Ingestão CG: calcularPausaProgressiva cresce com o nº de tentativas (backoff 429)', () => {
+    assert(
+      calcularPausaProgressiva(1) >= 1000 && calcularPausaProgressiva(1) <= 1400,
+      `1ª pausa deveria ser ~1s, veio ${calcularPausaProgressiva(1)}ms`,
+    )
+    assert(
+      calcularPausaProgressiva(2) > calcularPausaProgressiva(1),
+      '2ª pausa deveria ser maior que a 1ª',
+    )
+    assert(
+      calcularPausaProgressiva(5) > calcularPausaProgressiva(3),
+      'pausa deveria crescer progressivamente',
+    )
+  })
 
   return resultados
 }

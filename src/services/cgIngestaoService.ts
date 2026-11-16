@@ -14,6 +14,7 @@
 
 import pb from '@/lib/pocketbase/client'
 import type { PdfPageText } from './pdfTextExtractor'
+import { criarItensEmLotes } from './pocketbaseWriteHelper'
 import { lerCondicoesGerais, chaveGuardaCg, guardasIguaisCg } from './cgIngestaoReader'
 import {
   calcularSimilaridadeTexto,
@@ -98,6 +99,12 @@ export interface CgIngestaoRecord {
   arquivo: string
   usuario_email: string
   created: string
+  /** Chave de idempotência da sessão (v0.0.207, migration 0050). */
+  chave_ingestao?: string
+  /** Itens já gravados quando a gravação falhou no meio (v0.0.207). */
+  itens_gravados?: number
+  /** Gravação interrompida no meio — regravar os itens faltantes pela sessão. */
+  ingestao_incompleta?: boolean
   expand?: { seguradora?: { nome: string } }
 }
 
@@ -276,25 +283,132 @@ function mapItemToRecord(it: CgIngestaoItemFila, ingestaoId: string): Record<str
   }
 }
 
-/** Cria a sessão de ingestão (cg_ingestoes) e grava os itens como pendentes. */
-export async function salvarSessaoIngestao(sessao: CgIngestaoSessao): Promise<CgIngestaoRecord> {
-  const ingestao = await pb.collection('cg_ingestoes').create({
-    seguradora: sessao.seguradoraId,
-    seguradora_nome: sessao.seguradoraNome,
-    produto_versao: sessao.produtoVersao,
-    processo_susep: sessao.processoSusep,
-    total_itens: sessao.totalItens,
-    total_exclusoes: sessao.totalExclusoes,
-    fonte_arquivo: sessao.fonteArquivo,
-    // PDF da CG anexado à sessão (quando o upload veio com arquivo).
-    ...(sessao.arquivoPdf ? { arquivo: sessao.arquivoPdf } : {}),
-  })
-  for (const it of sessao.itens) {
-    await pb.collection('cg_ingestao_itens').create(mapItemToRecord(it, ingestao.id))
+/**
+ * Cria a sessão de ingestão (cg_ingestoes) e grava os itens como pendentes em
+ * LOTES PEQUENOS (pocketbaseWriteHelper.criarItensEmLotes: batch da API do
+ * PocketBase, 20 por requisição, com pausa/retry progressivo no 429).
+ *
+ * Idempotência (regra: retentar NUNCA cria sessão duplicada nem itens
+ * duplicados):
+ * 1. Sessão — se `idempotenciaKey` casar com uma sessão existente
+ *    (chave_ingestao), ela é REAPROVEITADA (update dos metadados), nunca
+ *    recriada. A UNICIDADE é garantida por índice único parcial no banco
+ *    (migration 0050) — mesmo com a fila perdida na memória ao fechar o modal,
+ *    retomar e Confirmar de novo reaproveita a MESMA sessão.
+ * 2. Itens — o 1º lote bem-sucedido avança `itens_gravados`; falha no meio
+ *    devolve { sucesso: false, sessao, itensGravados } SEM lançar: a fila
+ *    continua na memória do modal e `regravarItensFaltantes` completa o resto
+ *    pela MESMA sessão, sem duplicar. A sessão fica marcada com
+ *    ingestao_incompleta=true, e o total cheio só é gravado quando TUDO entra.
+ *
+ * Helpers definidos após listarSessoesPendentes (fim do arquivo):
+ * idempotenciaSessoes, chaveIdempotenciaParaFiltro, listarChavesGravadas,
+ * fecharTotaisSessao, contarItens.
+ */
+export async function salvarSessaoIngestao(
+  sessao: CgIngestaoSessao,
+  idempotenciaKey?: string,
+): Promise<{
+  sucesso: boolean
+  sessao: CgIngestaoRecord
+  itensGravados: number
+  erro?: string
+}> {
+  if (!sessao.itens.length) {
+    throw new Error('Nenhum item para gravar — a fila de revisão está vazia.')
   }
-  return ingestao as unknown as CgIngestaoRecord
+
+  // ---- Sessão única por ingestão (chave de idempotência) ----
+  let ingestao: CgIngestaoRecord | null = null
+  if (idempotenciaKey) {
+    // (1) in-memory (2ª tentativa na mesma aba), (2) banco (aba recarregada,
+    // fila perdida, retomada pelo painel de sessões pendentes).
+    const local = idempotenciaSessoes.get(idempotenciaKey)
+    if (local) {
+      ingestao = local
+    } else {
+      const chave = chaveIdempotenciaParaFiltro(idempotenciaKey)
+      try {
+        ingestao = (await pb
+          .collection('cg_ingestoes')
+          .getFirstListItem(`chave_ingestao="${chave}"`)) as unknown as CgIngestaoRecord
+        idempotenciaSessoes.set(idempotenciaKey, ingestao)
+      } catch (_) {
+        ingestao = null // nenhuma sessão com essa chave — cria abaixo
+      }
+    }
+  }
+
+  if (!ingestao) {
+    ingestao = (await pb.collection('cg_ingestoes').create({
+      seguradora: sessao.seguradoraId,
+      seguradora_nome: sessao.seguradoraNome,
+      produto_versao: sessao.produtoVersao,
+      processo_susep: sessao.processoSusep,
+      chave_ingestao: idempotenciaKey ? chaveIdempotenciaParaFiltro(idempotenciaKey) : '',
+      // total cheio só quando TUDO está gravado (evita "totais cheios,
+      // itens faltando" — o painel usa itens_gravados para o badge).
+      total_itens: 0,
+      total_exclusoes: 0,
+      itens_gravados: 0,
+      ingestao_incompleta: true,
+      fonte_arquivo: sessao.fonteArquivo,
+      // PDF da CG anexado à sessão (quando o upload veio com arquivo).
+      ...(sessao.arquivoPdf ? { arquivo: sessao.arquivoPdf } : {}),
+    })) as unknown as CgIngestaoRecord
+    if (idempotenciaKey) idempotenciaSessoes.set(idempotenciaKey, ingestao)
+  } else {
+    // Sessão reaproveitada: atualiza metadados (produto/processo podem ter sido
+    // detectados/corrigidos entre uma tentativa e outra) sem recriar nada.
+    await pb.collection('cg_ingestoes').update(ingestao.id, {
+      seguradora: sessao.seguradoraId,
+      seguradora_nome: sessao.seguradoraNome,
+      produto_versao: sessao.produtoVersao,
+      processo_susep: sessao.processoSusep,
+      ...(sessao.arquivoPdf ? { arquivo: sessao.arquivoPdf } : {}),
+    })
+
+    ingestao = {
+      ...ingestao,
+      produto_versao: sessao.produtoVersao,
+      processo_susep: sessao.processoSusep,
+    }
+  }
+
+  // ---- Itens em lotes pequenos com retry no 429 ----
+  // Itens já gravados NÃO são recriados (sessão reaproveitada no retry): cada
+  // item tem a chave_normalizada (chaveGuardaCg) — os que já estão no banco são
+  // pulados, só os faltantes vão para criarItensEmLotes.
+  const gravados = await listarChavesGravadas(ingestao.id)
+  const faltantes = sessao.itens.filter((it) => !gravados.has(chaveGuardaCg(it.nomeExtraido)))
+
+  if (!faltantes.length) {
+    // Tudo já está no banco (sessão criada e completa) — fecha os totais.
+    const fechada = await fecharTotaisSessao(ingestao, sessao)
+    return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
+  }
+
+  const resultado = await criarItensEmLotes(
+    faltantes.map((it) => mapItemToRecord(it, ingestao.id)),
+    'cg_ingestao_itens',
+  )
+  if (!resultado.sucesso) {
+    // Meio do caminho: DEVOLVE (não lança) com o progresso — a fila segue no
+    // modal e o painel mostra a sessão como "ingestão incompleta" para
+    // regravar os faltantes pela MESMA sessão. Nada de "totais cheios".
+    return {
+      sucesso: false,
+      sessao: ingestao,
+      itensGravados: gravados.size + resultado.gravados,
+      erro: resultado.erro,
+    }
+  }
+
+  const fechada = await fecharTotaisSessao(ingestao, sessao)
+  return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
 }
 
+/** regravarItensFaltantes está no final do arquivo (após listarSessoesPendentes). */
 /**
  * ATUALIZA os metadados editáveis da sessão (produto/versão e processo SUSEP)
  * no próprio registro cg_ingestoes — usado na retomada, onde o analista pode
@@ -395,13 +509,20 @@ export interface SessaoPendenteResumo {
    * sem produto_versao OU processo_susep — badge "Certificação incompleta".
    */
   certificacaoIncompleta: boolean
+  /**
+   * Gravação dos itens falhou no meio (429) e a sessão ficou com itens
+   * faltando — badge "Ingestão incompleta"; retomar e regravar os faltantes.
+   */
+  ingestaoIncompleta: boolean
 }
 
 /**
  * Painel "Sessões de ingestão pendentes": sessões com pelo menos 1 item
- * pendente (contagem pendentes/total) OU sessões 100% revisadas que ainda
- * estão sem produto_versao / processo_susep ("Certificação incompleta") —
- * para o analista retomá-las e preencher só esses dois campos. Só leitura.
+ * pendente (contagem pendentes/total), sessões com gravação interrompida no
+ * meio (ingestao_incompleta=true, badge "Ingestão incompleta" — regravar os
+ * itens faltantes pela MESMA sessão) OU sessões 100% revisadas que ainda estão
+ * sem produto_versao / processo_susep ("Certificação incompleta") — para o
+ * analista retomá-las. Só leitura.
  */
 export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> {
   const [sessoes, itens] = await Promise.all([
@@ -425,8 +546,72 @@ export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> 
       certificacaoIncompleta:
         s.pendentes === 0 &&
         (!(s.ingestao.produto_versao || '').trim() || !(s.ingestao.processo_susep || '').trim()),
+      ingestaoIncompleta: s.ingestao.ingestao_incompleta === true,
     }))
-    .filter((s) => s.pendentes > 0 || s.certificacaoIncompleta)
+    .filter((s) => s.pendentes > 0 || s.certificacaoIncompleta || s.ingestaoIncompleta)
+}
+
+/**
+ * REGRAVA os itens faltantes de uma sessão JÁ EXISTENTE (ingestao_incompleta) —
+ * os que falharam no meio do lote na 1ª tentativa. Usa o MESMO
+ * criarItensEmLotes (lotes de 20 + retry progressivo no 429); itens já gravados
+ * são pulados pela chave_normalizada — nada é duplicado. Ao completar, fecha os
+ * totais da sessão e desmarca ingestao_incompleta.
+ *
+ * O modal passa o mínimo ({ id, itens } da fila em memória OU da retomada);
+ * os metadados vêm do próprio registro da sessão — nada é recriado.
+ */
+export interface RegravacaoSessaoInput {
+  id: string
+  itens: Array<Pick<CgIngestaoItemFila, 'nomeExtraido' | 'exclusoes'>>
+}
+
+export async function regravarItensFaltantes(sessao: RegravacaoSessaoInput): Promise<{
+  sucesso: boolean
+  sessao: CgIngestaoRecord
+  itensGravados: number
+  erro?: string
+}> {
+  if (!sessao.id) {
+    throw new Error('Sessão sem id — retome a sessão pelo painel de pendentes antes de regravar.')
+  }
+  if (!sessao.itens.length) {
+    throw new Error('Nenhum item para regravar — a fila de revisão está vazia.')
+  }
+
+  const [ingestao, gravados] = await Promise.all([
+    pb.collection('cg_ingestoes').getOne<CgIngestaoRecord>(sessao.id),
+    listarChavesGravadas(sessao.id),
+  ])
+  const faltantes = sessao.itens.filter((it) => !gravados.has(chaveGuardaCg(it.nomeExtraido)))
+
+  if (!faltantes.length) {
+    const fechada = await fecharTotaisSessao(ingestao, { itens: faltantes })
+    return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
+  }
+
+  const resultado = await criarItensEmLotes(
+    faltantes.map((it) => ({
+      ingestao: sessao.id,
+      tipo_item: 'cobertura',
+      nome_extraido: it.nomeExtraido,
+      chave_normalizada: chaveGuardaCg(it.nomeExtraido),
+      status: 'pendente',
+      exclusoes: it.exclusoes,
+    })),
+    'cg_ingestao_itens',
+  )
+  if (!resultado.sucesso) {
+    return {
+      sucesso: false,
+      sessao: ingestao,
+      itensGravados: gravados.size + resultado.gravados,
+      erro: resultado.erro,
+    }
+  }
+
+  const fechada = await fecharTotaisSessao(ingestao, { itens: faltantes })
+  return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
 }
 
 /** Item retomado: fila da sessão com o id do registro persistido (para atualizar sem re-buscar). */
@@ -474,4 +659,69 @@ export async function carregarSessaoParaRetomada(ingestaoId: string): Promise<{
     sinonimoGravadoId: r.sinonimo_gravado_id || undefined,
   }))
   return { sessao, itens }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de idempotência e fechamento de sessão (v0.0.207)
+// ---------------------------------------------------------------------------
+
+/** Sessões criadas nesta aba por chave de idempotência — evita a 2ª busca. */
+const idempotenciaSessoes = new Map<string, CgIngestaoRecord>()
+
+/** chaves de filtro do PocketBase não escapam aspas — usa o hash hex puro. */
+function chaveIdempotenciaParaFiltro(idempotenciaKey: string): string {
+  return /[^A-Za-z0-9_-]/.test(idempotenciaKey)
+    ? idempotenciaKey
+        .split('')
+        .reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7)
+        .toString(16)
+    : idempotenciaKey
+}
+
+/**
+ * Chaves (chaveGuardaCg) dos itens JÁ gravados na sessão — usado para pular os
+ * existentes ao retentar (nunca duplica item) e para saber os faltantes.
+ */
+async function listarChavesGravadas(ingestaoId: string): Promise<Set<string>> {
+  const registros = await pb.collection('cg_ingestao_itens').getFullList({
+    filter: `ingestao="${ingestaoId}"`,
+    fields: 'chave_normalizada',
+    batch: 20,
+  })
+  return new Set(
+    registros.map((r) => (r as unknown as { chave_normalizada: string }).chave_normalizada),
+  )
+}
+
+/**
+ * Fecha a sessão: grava os totais CHEIOS (total_itens, total_exclusoes,
+ * itens_gravados = total da fila) e ingestao_incompleta=false. Só chamada
+ * quando TUDO está gravado — a sessão nunca fica com totais cheios e itens
+ * faltando.
+ */
+async function fecharTotaisSessao(
+  ingestao: CgIngestaoRecord,
+  sessao: Pick<CgIngestaoSessao, 'itens'>,
+): Promise<CgIngestaoRecord> {
+  const totalExclusoes = sessao.itens.reduce((soma, it) => soma + (it.exclusoes?.length ?? 0), 0)
+  const atualizada = (await pb.collection('cg_ingestoes').update(ingestao.id, {
+    total_itens: sessao.itens.length,
+    total_exclusoes: totalExclusoes,
+    itens_gravados: sessao.itens.length,
+    ingestao_incompleta: false,
+  })) as unknown as CgIngestaoRecord
+  if (ingestao.chave_ingestao) {
+    const chaveMap = [...idempotenciaSessoes.entries()].find(([, v]) => v.id === ingestao.id)
+    if (chaveMap) idempotenciaSessoes.set(chaveMap[0], atualizada)
+  }
+  return atualizada
+}
+
+/** Conta itens gravados na sessão (fallback de contagem, sem campos editados). */
+export async function contarItens(ingestaoId: string): Promise<number> {
+  return (
+    await pb.collection('cg_ingestao_itens').getList(1, 1, {
+      filter: `ingestao="${ingestaoId}"`,
+    })
+  ).totalItems
 }

@@ -22,6 +22,7 @@ import {
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
+  regravarItensFaltantes,
   salvarSessaoIngestao,
   atualizarMetadadosSessao,
   confirmarItemIngestao,
@@ -111,6 +112,8 @@ export default function IngestaoCgModal({
   const [salvandoSessao, setSalvandoSessao] = useState(false)
   const [fila, setFila] = useState<FilaItem[]>([])
   const [ingestaoId, setIngestaoId] = useState('')
+  /** Gravação falhou no meio (429) — retentar regrava SÓ os itens faltantes. */
+  const [gravacaoIncompleta, setGravacaoIncompleta] = useState(false)
   const [resumo, setResumo] = useState<{ confirmados: number; rejeitados: number } | null>(null)
   const [erro, setErro] = useState('')
   const [processandoUid, setProcessandoUid] = useState<string | null>(null)
@@ -252,9 +255,54 @@ export default function IngestaoCgModal({
     )
   }
 
-  /** Grava a sessão (cg_ingestoes) e os itens como pendentes — 1x por upload. */
+  /**
+   * Grava a sessão (cg_ingestoes) e os itens como pendentes — em lotes com
+   * retry no 429 (v0.0.207: fila RN da AXA ~1.300 itens estourava o
+   * rate-limit). Idempotente: retentar NUNCA cria sessão duplicada (chave de
+   * idempotência seguradora+produto+arquivo, migration 0050) nem itens
+   * duplicados (chave_normalizada já gravada é pulada).
+   * Falha no meio: lança com `sessaoIdIncompleta` — a fila segue na memória e
+   * `regravarItensFaltantes` completa pela MESMA sessão.
+   */
   const iniciarSessao = async (): Promise<string> => {
-    if (ingestaoId) return ingestaoId
+    if (ingestaoId && !gravacaoIncompleta) return ingestaoId
+    // Sessão JÁ existia e a gravação falhou no meio (429) — seja no upload de
+    // agora, seja numa sessão retomada do painel de pendentes: regrava SOMENTE
+    // os itens faltantes pela MESMA sessão — nunca duplica sessão nem itens.
+    if (ingestaoId && gravacaoIncompleta) {
+      if (!fila.length) throw new Error('Nenhum item na fila para regravar.')
+      setSalvandoSessao(true)
+      try {
+        const itens = fila.map((f) => ({
+          tipoItem: 'cobertura' as const,
+          nomeExtraido: f.extraido.nomeExtraido,
+          secaoOrigem: f.extraido.secaoOrigem,
+          pagina: f.extraido.pagina,
+          slotY: f.extraido.slotY,
+          exclusoes: f.extraido.exclusoes.map((e) => e.texto),
+          sugestaoCanonicaId: f.canonicaIdSelecionada,
+          sugestaoCanonicaNome: f.canonicaNomeSelecionada,
+          confianca: f.confianca,
+          matchType: f.matchType,
+          status: 'pendente' as const,
+        }))
+        const resultado = await regravarItensFaltantes({
+          id: ingestaoId,
+          itens,
+        })
+        if (!resultado.sucesso) {
+          const err = new Error(
+            resultado.erro || 'Falha ao regravar os itens faltantes da sessão.',
+          ) as Error & { sessaoIdIncompleta?: string }
+          err.sessaoIdIncompleta = ingestaoId
+          throw err
+        }
+        setGravacaoIncompleta(false)
+        return ingestaoId
+      } finally {
+        setSalvandoSessao(false)
+      }
+    }
     if (!arquivo || !seguradoraId) throw new Error('Seguradora e PDF são obrigatórios.')
     setSalvandoSessao(true)
     try {
@@ -271,21 +319,35 @@ export default function IngestaoCgModal({
         matchType: f.matchType,
         status: 'pendente' as const,
       }))
-      const sessaoSalva = await salvarSessaoIngestao({
-        seguradoraId,
-        seguradoraNome: seguradoraNome.trim(),
-        produtoVersao: produtoVersao.trim(),
-        processoSusep: processoSusep.trim(),
-        fonteArquivo: arquivo.name,
-        arquivoPdf: arquivo,
-        totalItens: itens.length,
-        totalExclusoes: itens.reduce((acc, i) => acc + i.exclusoes.length, 0),
-        itens,
-      })
-      setIngestaoId(sessaoSalva.id)
+      const chaveIngestao = `${seguradoraId}-${produtoVersao.trim()}-${arquivo.name}`
+      const resultado = await salvarSessaoIngestao(
+        {
+          seguradoraId,
+          seguradoraNome: seguradoraNome.trim(),
+          produtoVersao: produtoVersao.trim(),
+          processoSusep: processoSusep.trim(),
+          fonteArquivo: arquivo.name,
+          arquivoPdf: arquivo,
+          totalItens: itens.length,
+          totalExclusoes: itens.reduce((acc, i) => acc + i.exclusoes.length, 0),
+          itens,
+        },
+        chaveIngestao,
+      )
+      if (!resultado.sucesso) {
+        setIngestaoId(resultado.sessao.id)
+        setGravacaoIncompleta(true)
+        const err = new Error(resultado.erro || 'Falha ao gravar os itens da sessão.') as Error & {
+          sessaoIdIncompleta?: string
+        }
+        err.sessaoIdIncompleta = resultado.sessao.id
+        throw err
+      }
+      setIngestaoId(resultado.sessao.id)
+      setGravacaoIncompleta(false)
       // Sessão nova: o PDF acaba de ser gravado em cg_ingestoes.arquivo.
-      setUrlPdfSessao(urlArquivoPdfSessao(sessaoSalva))
-      return sessaoSalva.id
+      setUrlPdfSessao(urlArquivoPdfSessao(resultado.sessao))
+      return resultado.sessao.id
     } finally {
       setSalvandoSessao(false)
     }
@@ -338,7 +400,13 @@ export default function IngestaoCgModal({
       }))
       onIngestaoConcluida()
     } catch (e: unknown) {
-      setErro(e instanceof Error ? e.message : String(e))
+      setErro(
+        e instanceof Error && (e as Error & { sessaoIdIncompleta?: string }).sessaoIdIncompleta
+          ? `${e.message} — a sessão ficou "Ingestão incompleta"; revise a conexão e confirme/rejeite de novo (os itens já gravados não são duplicados).`
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      )
     } finally {
       setProcessandoUid(null)
     }
@@ -369,7 +437,13 @@ export default function IngestaoCgModal({
       }))
       onIngestaoConcluida()
     } catch (e: unknown) {
-      setErro(e instanceof Error ? e.message : String(e))
+      setErro(
+        e instanceof Error && (e as Error & { sessaoIdIncompleta?: string }).sessaoIdIncompleta
+          ? `${e.message} — a sessão ficou "Ingestão incompleta"; revise a conexão e confirme/rejeite de novo (os itens já gravados não são duplicados).`
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      )
     } finally {
       setProcessandoUid(null)
     }
@@ -399,6 +473,9 @@ export default function IngestaoCgModal({
       setIngestaoId(sessao.id)
       setUrlPdfSessao(urlArquivoPdfSessao(sessao))
       setModoRetomada(true)
+      // Sessão com gravação interrompida (badge "Ingestão incompleta" no painel):
+      // a 1ª ação do analista regrava SÓ os itens faltantes pela MESMA sessão.
+      if (sessao.ingestao_incompleta) setGravacaoIncompleta(true)
       const filaRetomada: FilaItem[] = itens.map((it: CgIngestaoItemRetomada) => ({
         uid: `cg_ret_${it.itemRecordId}`,
         extraido: {
