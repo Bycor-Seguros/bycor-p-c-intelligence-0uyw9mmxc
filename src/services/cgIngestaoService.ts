@@ -14,7 +14,7 @@
 
 import pb from '@/lib/pocketbase/client'
 import type { PdfPageText } from './pdfTextExtractor'
-import { criarItensEmLotes } from './pocketbaseWriteHelper'
+import { criarItensEmLotes } from './pocketbaseWriteHelper' // ondas de creates individuais (sem /api/batch)
 import { lerCondicoesGerais, chaveGuardaCg, guardasIguaisCg } from './cgIngestaoReader'
 import {
   calcularSimilaridadeTexto,
@@ -285,8 +285,10 @@ function mapItemToRecord(it: CgIngestaoItemFila, ingestaoId: string): Record<str
 
 /**
  * Cria a sessão de ingestão (cg_ingestoes) e grava os itens como pendentes em
- * LOTES PEQUENOS (pocketbaseWriteHelper.criarItensEmLotes: batch da API do
- * PocketBase, 20 por requisição, com pausa/retry progressivo no 429).
+ * ONDAS de requisições INDIVIDUAIS (pocketbaseWriteHelper.criarItensEmLotes:
+ * POST /api/collections/cg_ingestao_itens/records, 20 por onda, com pausa/retry
+ * progressivo no 429). SEM /api/batch — o Skip Cloud responde 403 "Batch
+ * requests are not allowed.".
  *
  * Idempotência (regra: retentar NUNCA cria sessão duplicada nem itens
  * duplicados):
@@ -375,7 +377,7 @@ export async function salvarSessaoIngestao(
     }
   }
 
-  // ---- Itens em lotes pequenos com retry no 429 ----
+  // ---- Itens em ondas de creates individuais com retry no 429 ----
   // Itens já gravados NÃO são recriados (sessão reaproveitada no retry): cada
   // item tem a chave_normalizada (chaveGuardaCg) — os que já estão no banco são
   // pulados, só os faltantes vão para criarItensEmLotes.
@@ -559,10 +561,11 @@ export async function listarSessoesPendentes(): Promise<SessaoPendenteResumo[]> 
 
 /**
  * REGRAVA os itens faltantes de uma sessão JÁ EXISTENTE (ingestao_incompleta) —
- * os que falharam no meio do lote na 1ª tentativa. Usa o MESMO
- * criarItensEmLotes (lotes de 20 + retry progressivo no 429); itens já gravados
- * são pulados pela chave_normalizada — nada é duplicado. Ao completar, fecha os
- * totais da sessão e desmarca ingestao_incompleta.
+ * os que falharam no meio da gravação na 1ª tentativa. Usa o MESMO
+ * criarItensEmLotes (ondas de creates individuais — SEM /api/batch — de 20 por
+ * onda + retry progressivo no 429); itens já gravados são pulados pela
+ * chave_normalizada — nada é duplicado. Ao completar, fecha os totais da
+ * sessão e desmarca ingestao_incompleta.
  *
  * O modal passa o mínimo ({ id, itens } da fila em memória OU da retomada);
  * os metadados vêm do próprio registro da sessão — nada é recriado.
