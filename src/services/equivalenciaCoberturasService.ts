@@ -177,7 +177,23 @@ export async function listarFeedbackEquivalenciaIa(
  * Normaliza string para indexação e casamento de termos (alias, nome de cobertura)
  */
 export function normalizarTermoEquivalencia(str: string): string {
-  return normalizeMatchText(str || '')
+  return normalizarTermoC3(normalizeMatchText(str || ''))
+}
+
+/**
+ * Normalização semântica do motor C3 (aplicada DEPOIS do normalizeMatchText).
+ * Expande abreviações recorrentes vindas de PDFs de CG para a forma por extenso:
+ *   "resp. civil" / "resp civil" / "resp civ" → "responsabilidade civil"
+ *   "rc" (token isolado)                      → "responsabilidade civil"
+ * Assim "Resp. Civil Guarda de Veículos" vindo do PDF casa EXATAMENTE com a
+ * canônica "RC Guarda de Veículos..." (v0.0.214 — equivalência do usuário).
+ */
+export function normalizarTermoC3(norm: string): string {
+  return norm
+    .replace(/\bresp\.?\s*civ(?:il|al)?\b/g, 'responsabilidade civil')
+    .replace(/\brc\b/g, 'responsabilidade civil')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /**

@@ -71,18 +71,41 @@ import IngestaoCgModal from '@/components/comercial/IngestaoCgModal'
  * motor C3 e mostra fila de revisão; nada é gravado sem confirmação humana.
  */
 
-// Categorias exibidas no filtro (derivadas do campo `ramo` da canônica).
-const CATEGORIAS_FILTRO = ['Todas', 'DM', 'RC', 'LC', 'Property', 'Patrimonial']
+// Taxonomia final das coberturas canônicas (v0.0.214): DM, RC e LC.
+// As opções do filtro NUNCA vêm de lista fixa: derivam dos valores de `ramo`
+// presentes no banco (via categoriasDeRamos), sem opções sem resultado.
+const RAMO_LABEL: Record<string, string> = {
+  DM: 'Danos Materiais',
+  RC: 'Responsabilidade Civil',
+  LC: 'Lucros Cessantes',
+}
+const ORDEM_CATEGORIAS = ['DM', 'RC', 'LC'] as const
+
+// Deriva, dos ramos presentes no banco, as categorias por extenso (ordenadas
+// DM → RC → LC). Ramo fora da taxonomia (legado) entra com o valor bruto.
+function categoriasDeRamos(ramos: string[]): string[] {
+  const siglas = new Set<string>()
+  for (const ramo of ramos) {
+    const sigla = (ramo || '').trim().toUpperCase()
+    if (sigla) siglas.add(sigla)
+  }
+  return [...siglas].sort(
+    (a, b) =>
+      (ORDEM_CATEGORIAS.indexOf(a as (typeof ORDEM_CATEGORIAS)[number]) + 1 || 99) -
+      (ORDEM_CATEGORIAS.indexOf(b as (typeof ORDEM_CATEGORIAS)[number]) + 1 || 99),
+  )
+}
+
+function labelCategoria(sigla: string): string {
+  return RAMO_LABEL[sigla] || sigla
+}
 
 // Cor do badge por categoria de ramo.
 function corBadgeRamo(ramo: string): string {
-  const norm = (ramo || '').toLowerCase()
-  if (norm.includes('property')) return 'bg-purple-50 text-purple-800 border-purple-200'
-  if (norm === 'rc' || norm.includes('responsabilidade'))
-    return 'bg-amber-50 text-amber-800 border-amber-200'
-  if (norm === 'lc' || norm.includes('lucros')) return 'bg-cyan-50 text-cyan-800 border-cyan-200'
-  if (norm === 'dm' || norm.includes('danos') || norm.includes('patrimonial'))
-    return 'bg-blue-50 text-[#16578B] border-blue-200'
+  const norm = (ramo || '').trim().toUpperCase()
+  if (norm === 'DM') return 'bg-blue-50 text-[#16578B] border-blue-200'
+  if (norm === 'RC') return 'bg-amber-50 text-amber-800 border-amber-200'
+  if (norm === 'LC') return 'bg-cyan-50 text-cyan-800 border-cyan-200'
   return 'bg-gray-100 text-gray-700 border-gray-200'
 }
 
@@ -185,13 +208,18 @@ export default function BibliotecaCgsPage() {
     return Array.from(set).sort()
   }, [sinonimos])
 
+  // ---- Categorias do filtro: derivadas do banco (ramos existentes), nunca fixas ----
+  const categoriasFiltro = useMemo(
+    () => categoriasDeRamos(canonicas.map((c) => c.ramo || '')),
+    [canonicas],
+  )
+
   // ---- Filtro/busca ----
   const canonicasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase()
     return canonicas.filter((c) => {
       const bateCategoria =
-        filtroCategoria === 'Todas' ||
-        (c.ramo || '').toLowerCase() === filtroCategoria.toLowerCase()
+        filtroCategoria === 'Todas' || (c.ramo || '').trim().toUpperCase() === filtroCategoria
       if (!bateCategoria) return false
       if (!termo) return true
       const sinonimosDaCg = sinonimosPorCanonica.get(c.nome) || []
@@ -384,9 +412,10 @@ export default function BibliotecaCgsPage() {
             onChange={(e) => setFiltroCategoria(e.target.value)}
             className="h-9 text-xs border rounded bg-white px-2 focus:outline-none"
           >
-            {CATEGORIAS_FILTRO.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
+            <option value="Todas">Todas</option>
+            {categoriasFiltro.map((sigla) => (
+              <option key={sigla} value={sigla}>
+                {labelCategoria(sigla)}
               </option>
             ))}
           </select>
@@ -546,7 +575,7 @@ export default function BibliotecaCgsPage() {
                           <span
                             className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${corBadgeRamo(can.ramo)}`}
                           >
-                            {can.ramo}
+                            {labelCategoria(can.ramo.trim().toUpperCase())}
                           </span>
                         )}
                         {can.origem_matriz && (
@@ -849,7 +878,7 @@ export default function BibliotecaCgsPage() {
             {/* Realocações de evento */}
             <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-lg space-y-2">
               <span className="font-bold text-purple-900 flex items-center gap-1.5">
-                <Split className="w-3.5 h-3.5 text-purple-600" />
+                <Split className="w-3.5 h-3.5 text-amber-600" />
                 Realocação: evento coberto em outra cobertura da mesma cia
               </span>
               <p className="text-[10px] text-purple-700">
