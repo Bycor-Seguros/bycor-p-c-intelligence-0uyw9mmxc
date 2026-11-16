@@ -15,6 +15,8 @@ import {
   ehFragmentoFraseCg,
   ehLinhaSumario,
   extrairExclusoesDoBloco,
+  ehContinuacaoCabecalhoExclusoes,
+  RE_INICIO_EXCLUSOES,
   chaveGuardaCg,
   chaveDedupTituloCg,
   detectarProcessoSusepCg,
@@ -669,6 +671,145 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       assert(
         normalizarTermoC3(normalizeMatchText('circuitos eletricos')) === 'circuitos eletricos',
         'substring "rc" não deveria expandir (\\b)',
+      )
+    },
+  )
+
+  // ------------------------------------------------------------------
+  // 9) Formato Chubb — seção de exclusões QUEBRADA em duas linhas dentro de
+  //    Condição Especial (v0.0.219). Seção NOVA: nenhuma asserção existente
+  //    foi alterada ou removida (pacto anti-regressão).
+  //    Caso real: CG RN Chubb, cada Condição Especial traz o cabeçalho de
+  //    exclusões numerado ("2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO INDENIZÁVEIS /
+  //    BENS NÃO COMPREENDIDOS NO SEGURO:") que o pdf.js quebra em 2 linhas
+  //    caixa alta. A 2ª linha fechava o bloco antes da 1ª alínea — as sessões
+  //    Chubb gravavam total_exclusoes: 0.
+  // ------------------------------------------------------------------
+
+  t('Ingestão CG: cabeçalho de exclusões Chubb quebrado em 2 linhas não fecha o bloco', () => {
+    // Linha 1 do cabeçalho: "RISCOS EXCLUIDOS" sem acento e com numeração "2."
+    // já casam em RE_INICIO_EXCLUSOES — abre o bloco de exclusões.
+    assert(
+      RE_INICIO_EXCLUSOES.test('2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO INDENIZÁVEIS / BENS NÃO'),
+      'linha 1 do cabeçalho Chubb deveria abrir o bloco de exclusões',
+    )
+    // Linha 2 ("COMPREENDIDOS NO SEGURO:") casa a guarda de continuação —
+    // não fecha o bloco antes da 1ª alínea.
+    assert(
+      ehContinuacaoCabecalhoExclusoes('COMPREENDIDOS NO SEGURO:'),
+      'linha 2 do cabeçalho Chubb deveria casar como continuação de cabeçalho',
+    )
+    // Subtítulo de fechamento legítimo NÃO casa a guarda — o formato AXA
+    // continua fechando o bloco normalmente.
+    assert(
+      !ehContinuacaoCabecalhoExclusoes('1.3 LIMITE DE INDENIZAÇÃO'),
+      'subtítulo de fechamento não deveria casar como continuação',
+    )
+  })
+  t(
+    'Ingestão CG: exclusões extraídas da Condição Especial Chubb com cabeçalho quebrado em 2 linhas',
+    () => {
+      // Estrutura genérica de uma Condição Especial Chubb: título, riscos
+      // cobertos, cabeçalho de exclusões QUEBRADO em duas linhas caixa alta e
+      // alíneas a), b), c). Frases ESTRUTURAIS genéricas, sem conteúdo real.
+      const corpo = [
+        {
+          texto: '2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO INDENIZÁVEIS / BENS NÃO',
+          pagina: 4,
+          slotY: 500,
+        },
+        { texto: 'COMPREENDIDOS NO SEGURO:', pagina: 4, slotY: 485 },
+        {
+          texto: 'a) perdas decorrentes de fato gerador anterior ao período',
+          pagina: 4,
+          slotY: 460,
+        },
+        {
+          texto: 'b) danos causados por atos de quem detém a guarda do bem',
+          pagina: 4,
+          slotY: 440,
+        },
+        { texto: 'c) multas ou penalidades aplicadas por autoridade', pagina: 4, slotY: 420 },
+        // Fechamento do bloco: subtítulo numerado em caixa alta.
+        { texto: '3. LIMITE DE INDENIZAÇÃO', pagina: 4, slotY: 400 },
+        { texto: 'texto de limite da seção', pagina: 4, slotY: 380 },
+      ]
+      const r = extrairExclusoesDoBloco(corpo)
+      assert(r.length === 3, `esperava 3 exclusões, veio ${r.length}: ${JSON.stringify(r)}`)
+      assert(r[0].texto.startsWith('perdas decorrentes de fato gerador anterior'), 'alínea a)')
+      assert(r[1].texto.startsWith('danos causados por atos de quem detém a guarda'), 'alínea b)')
+      assert(r[2].texto.startsWith('multas ou penalidades aplicadas por autoridade'), 'alínea c)')
+    },
+  )
+
+  t(
+    'Ingestão CG: leitura completa da Condição Especial Chubb liga exclusões à cobertura certa',
+    () => {
+      // Documento mínimo no formato Chubb: Condição Especial numerada com nome
+      // quebrado em 2 linhas, cabeçalho de exclusões quebrado em 2 linhas e
+      // alíneas. A cobertura deve herdar as exclusões do SEU bloco.
+      const pages = [
+        page(1, [
+          ['Sumário', 700],
+          ['1. CONDIÇÃO ESPECIAL 21 - CONDIÇÕES ESPECIAIS ..... 3', 650],
+        ]),
+        page(3, [
+          ['CONDIÇÃO ESPECIAL 21 - CONDIÇÕES ESPECIAIS', 700],
+          ['PARA O SEGURO DE RECOMPOSIÇÃO DE REGISTROS', 680],
+          ['1.1 RISCOS COBERTOS', 650],
+          ['texto de riscos cobertos da seção', 620],
+          ['2. RISCOS EXCLUIDOS / PREJUÍZOS NÃO INDENIZÁVEIS / BENS NÃO', 580],
+          ['COMPREENDIDOS NO SEGURO:', 560],
+          ['a) perdas decorrentes de fato gerador anterior ao período', 530],
+          ['b) multas ou penalidades aplicadas por autoridade', 510],
+          ['3. LIMITE DE INDENIZAÇÃO', 480],
+          ['texto de limite da seção', 450],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1,
+        `esperava 1 cobertura, veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      const cov = coberturas[0]
+      // Título quebrado: as 2 linhas do título se juntam num só nome.
+      assert(
+        cov.nomeExtraido.includes('RECOMPOSIÇÃO DE REGISTROS'),
+        `título quebrado deveria juntar as 2 linhas, veio: ${cov.nomeExtraido}`,
+      )
+      assert(cov.pagina === 3, `esperava página 3, veio ${cov.pagina}`)
+      assert(
+        cov.exclusoes.length === 2,
+        `esperava 2 exclusões ligadas à cobertura (total_exclusoes > 0), veio ${cov.exclusoes.length}: ${JSON.stringify(cov.exclusoes)}`,
+      )
+      assert(
+        cov.exclusoes[0].texto.startsWith('perdas decorrentes de fato gerador anterior'),
+        `alínea a) inesperada: ${cov.exclusoes[0].texto}`,
+      )
+      assert(cov.exclusoes[0].pagina === 3, 'exclusão deveria vir da página 3')
+    },
+  )
+
+  // Falso-positivo: as OUTRAS seções (formato AXA, cabeçalho em 1 linha) não
+  // podem ser afetadas pela guarda Chubb — subtítulo de fechamento continua
+  // fechando o bloco e a guarda só age na linha 2 do cabeçalho quebrado.
+  t(
+    'Ingestão CG: guarda Chubb não captura falso-positivo no formato AXA (cabeçalho em 1 linha)',
+    () => {
+      const corpo = [
+        { texto: '1.2 RISCOS EXCLUÍDOS', pagina: 2, slotY: 500 },
+        { texto: 'a) veículos conduzidos por pessoa não habilitada', pagina: 2, slotY: 480 },
+        { texto: 'b) veículos em teste de direção', pagina: 2, slotY: 460 },
+        { texto: '1.3 LIMITE DE INDENIZAÇÃO', pagina: 2, slotY: 440 },
+        { texto: 'texto de limite', pagina: 2, slotY: 420 },
+      ]
+      const r = extrairExclusoesDoBloco(corpo)
+      assert(r.length === 2, `esperava 2 exclusões (formato AXA intocado), veio ${r.length}`)
+      // Subtítulos de fechamento sem vocabulário do cabeçalho Chubb fecham o bloco.
+      assert(
+        !r.some((e) => e.texto.includes('texto de limite')),
+        'linha após fechamento não deveria ser capturada',
       )
     },
   )

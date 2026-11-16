@@ -245,7 +245,9 @@ export function tituloEhCobertura(titulo: string): boolean {
 // Extração de exclusões de um bloco de corpo (função pura — testada na golden)
 // ---------------------------------------------------------------------------
 
-const RE_INICIO_EXCLUSOES =
+// Exportado para a suíte golden (seção 9 — formato Chubb): a asserção trava
+// que a linha 1 do cabeçalho quebrado abre o bloco de exclusões.
+export const RE_INICIO_EXCLUSOES =
   /^(?:\d+(?:\.\d+)*[.)]?\s*)?(riscos?\s+exclu[íi]dos|exclus[õo]es|exclus[ãa]o|riscos?\s+n[ãa]o\s+cobertos|n[ãa]o\s+est[ãa]o\s+cobertos|bens\s+n[ãa]o\s+cobertos|bens\s+e\s+locais\s+n[ãa]o\s+cobertos)/i
 
 // Alíneas a), b), ..., z), aa), bb), aaa) — CGs usam letras repetidas quando a
@@ -285,7 +287,9 @@ function ehCabecalhoSecaoNumerado(t: string): boolean {
  * "EXCLUIDOS" sem acento, " / " com espaços e numeração "2." já casam em
  * RE_INICIO_EXCLUSOES — a quebra de linha era a variação faltante.
  */
-function ehContinuacaoCabecalhoExclusoes(t: string): boolean {
+// Exportada para a suíte golden (seção 9 — formato Chubb): a asserção trava
+// que a linha 2 ("BENS NÃO COMPREENDIDOS NO SEGURO:") casa como continuação.
+export function ehContinuacaoCabecalhoExclusoes(t: string): boolean {
   const norm = normalizarTituloCg(t)
   if (!norm) return false
   if (/compreendid/.test(norm)) return true // "BENS NÃO COMPREENDIDOS NO SEGURO:"
