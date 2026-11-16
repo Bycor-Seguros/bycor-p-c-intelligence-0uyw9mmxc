@@ -163,6 +163,24 @@ export function ehFragmentoFraseCg(titulo: string): boolean {
 }
 
 /**
+ * Guarda v0.0.212 — um título de seção de CG nunca deixa PARÊNTESE ABERTO:
+ * se a linha tem mais "(" do que ")", é continuação truncada de frase (ex.:
+ * "COBERTURA BÁSICA (INCÊNDIO, INCLUSIVE DECORRENTE DE TUMULTOS" — caixa alta
+ * do parágrafo 15.2 do RN AXA, que escapava das guardas v0.0.211 porque não
+ * tem minúscula inicial, ponto final, alínea nem verbo de cláusula). Títulos
+ * legítimos com parênteses balanceados ("... (Sprinklers)", "... (Período
+ * Indenitário = 12 Meses)") passam normalmente. Contagem simples, sem pilha:
+ * mais "(" do que ")" no fim da linha é fragmento — determinístico.
+ */
+export function temPareneseAbertoCg(titulo: string): boolean {
+  const t = (titulo || '').trim()
+  if (!t) return false
+  const abre = (t.match(/\(/g) || []).length
+  const fecha = (t.match(/\)/g) || []).length
+  return abre > fecha
+}
+
+/**
  * Título é uma seção de cobertura? (função pura — testada na suíte golden)
  */
 export function tituloEhCobertura(titulo: string): boolean {
@@ -172,6 +190,11 @@ export function tituloEhCobertura(titulo: string): boolean {
   const norm = normalizarTituloCg(t)
   if (RE_NAO_COBERTURA.test(norm)) return false
   if (RE_MARCADOR_BLOCO.test(norm)) return false
+
+  // v0.0.212: parêntese aberto sem fechar = continuação truncada de frase,
+  // nunca título de seção (roda ANTES dos prefixos de cobertura, que só
+  // recebem títulos legítimos — pacto anti-regressão).
+  if (temPareneseAbertoCg(t)) return false
 
   // v0.0.211: fragmento de frase (continuação de cláusula 15.x, alínea a/b/c,
   // fim de período) nunca é título de seção — vale mesmo quando a frase usa
