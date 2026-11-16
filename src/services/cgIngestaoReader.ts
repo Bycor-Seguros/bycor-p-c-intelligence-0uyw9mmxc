@@ -16,12 +16,13 @@
  * Heurísticas:
  *  - Candidatas a COBERTURA: seções "COBERTURA BÁSICA/ADICIONAL/ESPECIAL
  *    <nome>" (e "COBERTURA ADICIONAL RESPONSABILIDADE CIVIL <nome>"), entradas
- *    de Sumário que apontam para essas seções e "CONDIÇÕES ESPECIAIS PARA O
+ *    de Sumário que apontam essas seções e "CONDIÇÕES ESPECIAIS PARA O
  *    SEGURO DE <nome>".
  *  - NÃO coberturas: cabeçalhos estruturais (Sumário, Apresentação,
  *    Disposições Gerais, glossário...) e CLÁUSULA PARTICULAR/ESPECÍFICA/DE
  *    EXCLUSÃO — cláusulas particulares em geral são extensão/exclusão/ajuste,
- *    nunca cobertura (salvo cláusula de cobertura explícita, ex. salvamento).
+ *    nunca cobertura (salvo cláusula de cobertura explícita, ex. salvamento,
+ *    e a extensão de garantia do formato Tokio).
  *  - EXCLUSÕES: bloco "RISCOS EXCLUÍDOS"/"NÃO ESTÃO COBERTOS" dentro da seção
  *    de cobertura; cada alínea a), b)... é uma exclusão da seção.
  */
@@ -118,6 +119,14 @@ const RE_CLAUSULA_NAO_COBERTURA = /cl[aá]usula\s+(particular|espec[ií]fica|de 
 const RE_CLAUSULA_COBERTURA_EXPLICITA =
   /cobertura\s+(de\s+|adicional\s+de\s+)?(despesas|salvamento|conten)|custo\s+de\s+defesa/i
 
+/**
+ * Exceção v0.0.223 (Tokio) — "CLÁUSULA PARTICULAR DE EXTENSÃO DE COBERTURA/
+ * GARANTIA ..." É extensão real de garantia: o formato Tokio usa dezenas
+ * dessas seções como coberturas extensivas (Sumário, várias páginas).
+ */
+const RE_CLAUSULA_PARTICULAR_EXTENSAO =
+  /cl[aá]usula\s+particular\s+de\s+extens[aã]o\s+de\s+(cobertura|garantia)/i
+
 /** Subtítulos "COBERTURA BÁSICA" / "COBERTURAS ADICIONAIS" soltos (marcadores de bloco). */
 const RE_MARCADOR_BLOCO =
   /^(cobertura(s)?\s+(basica|básica|adicional(is)?|especial)(is)?|cl[aá]usulas particulares|condi[cç][oõ]es (especiais|particulares))\s*$/i
@@ -160,12 +169,12 @@ const RE_CAUDA_PERIODO_ABERTO = /[;,…]$|,\s*$/
 
 /**
  * Guarda v0.0.222 (Tokio) — MEIO de frase em caixa alta: título de seção não
- * contém conectores de frase do corpo (" este último,", " e jamais ", " e, "
- * " aplicando-se") nem abre com vírgula (linha que começa após quebra de
- * fragmento). Determinístico, sem listas de palavras da cia.
+ * contém conectores de frase do corpo (" este último,", " e jamais ", " e, ",
+ * " aplicando-se", ", segue ...") nem abre com vírgula (linha que começa após
+ * quebra de fragmento). Determinístico, sem listas de palavras da cia.
  */
 const RE_MEIO_FRASE_CAIXA_ALTA =
-  /,\s+este\s|,\s+o\s+qual|,\s+a\s+qual|\be\s+jamais\b|\baplicando-se\b|\be,\s/i
+  /,\s+este\s|,\s+o\s+qual|,\s+a\s+qual|\be\s+jamais\b|\baplicando-se\b|\be,\s|,\s+segue\b/i
 
 /**
  * A linha é um FRAGMENTO de frase (continuação de parágrafo, texto dentro de
@@ -228,8 +237,10 @@ export function tituloEhCobertura(titulo: string): boolean {
   if (ehFragmentoFraseCg(t)) return false
 
   // Cláusula particular/específica/de exclusão: regra geral é NÃO cobertura,
-  // salvo cláusula de cobertura explícita (salvamento/contenção/defesa etc.)
+  // salvo a extensão real de garantia/cobertura (formato Tokio, v0.0.223) e
+  // cláusula de cobertura explícita (salvamento/contenção/defesa etc.)
   if (RE_CLAUSULA_NAO_COBERTURA.test(norm)) {
+    if (RE_CLAUSULA_PARTICULAR_EXTENSAO.test(norm)) return true
     return RE_CLAUSULA_COBERTURA_EXPLICITA.test(norm)
   }
 
@@ -253,6 +264,10 @@ export function tituloEhCobertura(titulo: string): boolean {
   if (/^condi[cç][aã]o\s+(especial)\s*\d+\s*-\s*\S/i.test(t)) return true
   if (/^cobertura\s+adicional\s*-\s*\S/i.test(t)) return true
   if (/condi[cç][oõ]es especiais para o seguro de /i.test(norm)) return true
+  // v0.0.223 (Tokio): "COBERTURA ADICIONAL Nº. NN - ..." e "COBERTURA BÁSICA
+  // nº. NNNC - ..." com código e nome no resto da linha (o nome em caixa alta
+  // pode quebrar em 2 linhas — a junção no lerCondicoesGerais cuida disso).
+  if (/^cobertura\s+(b[aá]sica|adicional)\s+n[ºo°.]*/i.test(norm)) return true
   if (/^responsabilidade civil\b/i.test(norm)) return true
   if (/^lucros cessantes/i.test(norm)) return true
   if (/^perda de receita bruta/i.test(norm)) return true
@@ -366,6 +381,18 @@ export function extrairExclusoesDoBloco(
         ehContinuacaoCabecalhoExclusoes(t)
       ) {
         // linha 2+ do cabeçalho de exclusões quebrado — NÃO fecha o bloco
+        continue
+      }
+      // v0.0.223 (Tokio): fragmento de frase em CAIXA ALTA (cauda ";"/"," ou
+      // conector de meio de frase) dentro do bloco NÃO fecha o bloco nem entra
+      // como exclusão — subtítulo numerado legítimo continua fechando.
+      if (
+        !ehCabecalhoSecaoNumerado(t) &&
+        iniciaPalavra &&
+        t === t.toUpperCase() &&
+        t.length > 3 &&
+        ehFragmentoFraseCg(t)
+      ) {
         continue
       }
       if ((iniciaPalavra && t === t.toUpperCase() && t.length > 3) || ehCabecalhoSecaoNumerado(t)) {
@@ -635,7 +662,17 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       while (j < linhas.length && linhasTitulo.length < 3) {
         if (flags[j]) break
         const prox = limparLinhaSumario(linhas[j].texto)
-        if (prox && prox === prox.toUpperCase() && !ehInicioSubtitulo(prox)) {
+        // v0.0.223 (Tokio): fragmento de frase em caixa alta (cauda ";"/","
+        // ou conector de meio de frase) NÃO é juntado ao título — título
+        // quebrado legítimo (2 linhas caixa alta sem cauda aberta) continua
+        // sendo juntado (ex.: "COBERTURA ADICIONAL nº. 023 - ANÚNCIOS" +
+        // "LUMINOSOS").
+        if (
+          prox &&
+          prox === prox.toUpperCase() &&
+          !ehInicioSubtitulo(prox) &&
+          !ehFragmentoFraseCg(prox)
+        ) {
           linhasTitulo.push(prox)
           j++
         } else break
