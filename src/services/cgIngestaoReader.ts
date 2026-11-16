@@ -62,6 +62,29 @@ export function normalizarTituloCg(t: string): string {
     .replace(/\s+/g, ' ')
 }
 
+/**
+ * Cauda numérica de índice de Sumário que escapou da detecção de pontilhado:
+ * no FIM do título, um número solto ("... 23") ou sequência de números soltos
+ * ligados por conectores curtos entre espaços ("... 9999 x 2"). Números que
+ * fazem parte de nomes legítimos de cobertura não são tocados — a cauda precisa
+ * TERMINAR em dígito (ex.: "Danos Elétricos 24h" preserva o "24h", que não é
+ * índice) e os conectores são tokens isolados (x, ×, e, /), nunca letras de
+ * palavra.
+ */
+const RE_CAUDA_INDICE_SUMARIO = /\s+\d[\d.,]*(?:\s+(?:x|×|e|\/)\s+\d[\d.,]*)+\s*$|\s+\d[\d.,]*\s*$/
+
+/**
+ * Chave de dedup de seções por título: igual a normalizarTituloCg, mas remove
+ * a cauda numérica de índice de Sumário do FIM, para que a entrada de índice
+ * que escapou do pontilhado ("COBERTURA ADICIONAL DANOS ELÉTRICOS 9999 x 2")
+ * e a seção real ("COBERTURA ADICIONAL DANOS ELÉTRICOS") caiam na MESMA chave
+ * e a última ocorrência (seção real) vença. NÃO altera o nome exibido ao
+ * analista — usada apenas como chave de agrupamento.
+ */
+export function chaveDedupTituloCg(t: string): string {
+  return normalizarTituloCg(t).replace(RE_CAUDA_INDICE_SUMARIO, '').trim()
+}
+
 // ---------------------------------------------------------------------------
 // Classificação de título de seção
 // ---------------------------------------------------------------------------
@@ -465,7 +488,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
     string,
     { nome: string; pagina: number; slotY: number; ordem: number }
   >()
-  for (const o of ocorrencias) ultimaPorChave.set(normalizarTituloCg(o.nome), o)
+  for (const o of ocorrencias) ultimaPorChave.set(chaveDedupTituloCg(o.nome), o)
   const secoes: SecaoCobertura[] = [...ultimaPorChave.values()]
     .sort((a, b) => a.ordem - b.ordem)
     .map((o) => ({ nome: o.nome, pagina: o.pagina, slotY: o.slotY, corpo: [] }))

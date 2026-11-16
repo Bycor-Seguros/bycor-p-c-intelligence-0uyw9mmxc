@@ -15,6 +15,7 @@ import {
   ehLinhaSumario,
   extrairExclusoesDoBloco,
   chaveGuardaCg,
+  chaveDedupTituloCg,
   detectarProcessoSusepCg,
   detectarProcessoSusepNomeArquivo,
   detectarProdutoVersaoCg,
@@ -457,6 +458,17 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
         coberturas[0].pagina === 5,
         `seção real (última ocorrência) deveria vencer, veio página ${coberturas[0].pagina}`,
       )
+      // O nome EXIBIDO é o da seção real — o lixo de índice nunca vira nome.
+      assert(
+        !coberturas[0].nomeExtraido.includes('9999'),
+        `nome exibido não deveria carregar cauda de índice, veio: ${coberturas[0].nomeExtraido}`,
+      )
+      // Números legítimos no nome não são removidos da chave de dedup.
+      assert(
+        chaveDedupTituloCg('COBERTURA ADICIONAL DANOS ELÉTRICOS 24H') ===
+          'cobertura adicional danos eletricos 24h',
+        `número legítimo do nome não deveria ser removido, veio: ${chaveDedupTituloCg('COBERTURA ADICIONAL DANOS ELÉTRICOS 24H')}`,
+      )
     },
   )
 
@@ -480,11 +492,11 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
         matchType: 'sem_sugestao' as const,
         status: 'pendente' as const,
       }))
-      // 113 itens / 20 por lote = 6 lotes completos + 1 de 13 → 7 lotes.
+      // 113 itens / 20 por lote = 5×20 + 1×13 → 6 lotes (helper correto; correção v0.0.209 da asserção).
       const lotes = dividirEmLotes(itens)
-      assert(lotes.length === 7, `esperava 7 lotes, veio ${lotes.length}`)
+      assert(lotes.length === 6, `esperava 6 lotes, veio ${lotes.length}`)
       assert(lotes[0].length === 20, `1º lote deveria ter 20, veio ${lotes[0].length}`)
-      assert(lotes[6].length === 13, `último lote deveria ter 13, veio ${lotes[6].length}`)
+      assert(lotes[5].length === 13, `último lote deveria ter 13, veio ${lotes[5].length}`)
       assert(
         lotes.reduce((a, l) => a + l.length, 0) === itens.length,
         'soma dos lotes deveria ser o total de itens',
