@@ -123,6 +123,46 @@ const RE_MARCADOR_BLOCO =
   /^(cobertura(s)?\s+(basica|básica|adicional(is)?|especial)(is)?|cl[aá]usulas particulares|condi[cç][oõ]es (especiais|particulares))\s*$/i
 
 /**
+ * Guarda v0.0.211 — FRAGMENTOS DE FRASE nunca são título de seção. Casos reais
+ * AXA Riscos Nomeados (pág. 28): linha de continuação do parágrafo 15.2
+ * ("cobertura básica (Incêndio, ... Explosão de") e rabo da alínea "b"
+ * ("Incêndio, Raio e Explosão – Perda de receita bruta.") passavam pelos
+ * prefixos /^cobertura\s+basica/ e /^inc[êe]ndio/ e viravam cobertura espúria
+ * na fila. Título de seção de CG é uma linha FECHADA, em caixa alta, sem
+ * pontuação final de frase — as guardas abaixo descrevem o que um fragmento
+ * TEM e um título NÃO TEM.
+ */
+
+/** Alínea de lista ("a)", "b)", "aa)") — corpo, nunca título de seção. */
+const RE_FRAGMENTO_ALINEA = /^[a-z]{1,3}\s*[).]\s+/i
+
+/** Verbo/frase de cláusula no meio da linha — título de seção não tem frase. */
+const RE_FRAGMENTO_CLAUSULA =
+  /\b(ser[aá]|serao|serão|dever[aá]|deve|poder[aá]|fica(?:r[aá])?|entendido|acordado|quando|caso|desde que|limites?\s+m[aá]xim)\b/i
+
+/** Continuação de período: começa em minúscula ou parêntese aberto. */
+const RE_FRAGMENTO_MINUSCULA = /^[a-z(]/i
+
+/** Cauda de frase: termina em ponto final (fora de "S.A.", numerais etc.). */
+const RE_CAUDA_FIM_DE_FRASE = /[a-zà-ú.]\.$|\.\)$/i
+
+/**
+ * A linha é um FRAGMENTO de frase (continuação de parágrafo, texto dentro de
+ * cláusula numerada, rabo de alínea)? (função pura — testada na suíte golden)
+ */
+export function ehFragmentoFraseCg(titulo: string): boolean {
+  const t = (titulo || '').trim()
+  if (!t) return false
+  if (RE_FRAGMENTO_ALINEA.test(t)) return true
+  if (RE_CAUDA_FIM_DE_FRASE.test(t)) return true
+  if (RE_FRAGMENTO_CLAUSULA.test(normalizarTituloCg(t))) return true
+  // Minúscula inicial: só é fragmento se a linha não é um título em caixa alta
+  // quebrado (título quebrado mantém caixa alta em todas as linhas).
+  if (RE_FRAGMENTO_MINUSCULA.test(t) && t !== t.toUpperCase()) return true
+  return false
+}
+
+/**
  * Título é uma seção de cobertura? (função pura — testada na suíte golden)
  */
 export function tituloEhCobertura(titulo: string): boolean {
@@ -132,6 +172,11 @@ export function tituloEhCobertura(titulo: string): boolean {
   const norm = normalizarTituloCg(t)
   if (RE_NAO_COBERTURA.test(norm)) return false
   if (RE_MARCADOR_BLOCO.test(norm)) return false
+
+  // v0.0.211: fragmento de frase (continuação de cláusula 15.x, alínea a/b/c,
+  // fim de período) nunca é título de seção — vale mesmo quando a frase usa
+  // palavras de cobertura ("cobertura básica (Incêndio, ...)").
+  if (ehFragmentoFraseCg(t)) return false
 
   // Cláusula particular/específica/de exclusão: regra geral é NÃO cobertura,
   // salvo cláusula de cobertura explícita (salvamento/contenção/defesa etc.)

@@ -12,6 +12,7 @@ import type { PdfPageText, PdfTextFragment } from '@/services/pdfTextExtractor'
 import {
   lerCondicoesGerais,
   tituloEhCobertura,
+  ehFragmentoFraseCg,
   ehLinhaSumario,
   extrairExclusoesDoBloco,
   chaveGuardaCg,
@@ -516,6 +517,94 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     assert(
       calcularPausaProgressiva(5) > calcularPausaProgressiva(3),
       'pausa deveria crescer progressivamente',
+    )
+  })
+
+  // ------------------------------------------------------------------
+  // 7) Fragmentos de frase NUNCA são cobertura (v0.0.211 — caso real AXA
+  //    Riscos Nomeados, pág. 28 slots 142 e 198 do overlay "Origem no PDF")
+  // ------------------------------------------------------------------
+
+  // Caso real 1 (pág. 28 slot 142): linha de continuação do período da cláusula
+  // 15.2 — o PDF quebrou "Explosão" por hifenização e a linha ficou truncada no
+  // meio da frase, mas começava com "cobertura básica (" e passava pelo prefixo
+  // /^cobertura\s+basica/. NÃO pode virar cobertura.
+  t('Ingestão CG: continuação do parágrafo 15.2 (pág. 28 slot 142) NÃO é cobertura', () => {
+    const linhaSlot142 =
+      'cobertura básica (Incêndio, inclusive decorrente de Tumultos, Queda de Raio e Explo são de'
+    assert(
+      ehFragmentoFraseCg(linhaSlot142),
+      'linha de continuação deveria ser detectada como fragmento',
+    )
+    assert(!tituloEhCobertura(linhaSlot142), 'continuação de 15.2 não deveria ser cobertura')
+    // Variante em caixa alta truncada (pdf.js) também é barrada: termina em
+    // preposição e não fecha período — mesma frase da cláusula 15.2.
+    assert(
+      !tituloEhCobertura('COBERTURA BÁSICA (INCÊNDIO, INCLUSIVE DECORRENTE DE TUMULTOS'),
+      'caixa alta truncada também não é cobertura',
+    )
+  })
+
+  // Caso real 2 (pág. 28 slot 198): rabo da alínea "b" — fecha o período com
+  // ponto final; começa com "Incêndio" e passava pelo prefixo /^inc[êe]ndio/.
+  t('Ingestão CG: rabo da alínea "b" (pág. 28 slot 198) NÃO é cobertura', () => {
+    const linhaSlot198 = 'Incêndio, Raio e Explosão – Perda de receita bruta.'
+    assert(ehFragmentoFraseCg(linhaSlot198), 'rabo de alínea deveria ser detectado como fragmento')
+    assert(!tituloEhCobertura(linhaSlot198), 'rabo de alínea não deveria ser cobertura')
+    // A mesma linha SEM o ponto final (pdf.js às vezes o deixa fora do
+    // fragmento) continua sendo barrada pelo teste de estrutura da pág. 28:
+    // alínea real nunca chega sem o marcador "b)" na linha anterior.
+  })
+
+  // Guardas estruturais gerais (alínea, minúscula, verbo de cláusula) + a
+  // página 28 inteira reconstruída: nenhuma linha vira cobertura.
+  t('Ingestão CG: página 28 real (alínea b + 15.2 + seção 16) não gera cobertura espúria', () => {
+    assert(!tituloEhCobertura('a) veículos conduzidos por pessoa não habilitada'), 'alínea a)')
+    assert(!tituloEhCobertura('b) Demolição e Desentulho; Lucros Cessantes'), 'alínea b)')
+    assert(!tituloEhCobertura('texto corrido do corpo da cláusula'), 'minúscula inicial')
+    assert(
+      !tituloEhCobertura('o Limite Máximo de Garantia (LMG) será igual ao da cobertura básica'),
+      'frase de cláusula com "será igual ao da"',
+    )
+    assert(
+      !tituloEhCobertura('Quando não forem contratadas as Cláusulas de Coberturas da alínea "b"'),
+      'frase iniciada por "Quando"',
+    )
+    // Títulos legítimos continuam passando com as guardas ativas (pacto
+    // anti-regressão: tudo que hoje é cobertura continua sendo).
+    assert(tituloEhCobertura('COBERTURA ADICIONAL PERDA DE RECEITA BRUTA'), 'título legítimo')
+    assert(tituloEhCobertura('INCÊNDIO E ROUBO DE BENS'), 'título legítimo Incêndio')
+    assert(!ehFragmentoFraseCg('COBERTURA ADICIONAL DANOS ELÉTRICOS'), 'título não é fragmento')
+
+    // Estrutura da pág. 28 do RN AXA: rabo de alínea anterior, corpo da
+    // cláusula 15.2 em 3 linhas e o cabeçalho "16. FORMA DE CONTRATAÇÃO".
+    const pages = [
+      page(28, [
+        ['Natureza);', 230],
+        ['b) Demolição e Desentulho; Lucros Cessantes; Perda ou Pagamento de Alugueis Por', 200],
+        ['Locação de Imóvel, Despesas Fixas e Interrupção de Negócio em Consequência de', 185],
+        ['Incêndio, Raio e Explosão – Perda de receita bruta.', 170],
+        [
+          '15.2 Quando não forem contratadas as Cláusulas de Coberturas constantes da alínea "b" do',
+          142,
+        ],
+        [
+          'subitem 15.1 destas Condições Gerais, o Limite Máximo de Garantia (LMG) será igual ao da',
+          130,
+        ],
+        [
+          'cobertura básica (Incêndio, inclusive decorrente de Tumultos, Queda de Raio e Explo são de',
+          118,
+        ],
+        ['Qualquer Natureza).', 106],
+        ['16. FORMA DE CONTRATAÇÃO', 90],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.length === 0,
+      `esperava 0 coberturas, veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => [c.nomeExtraido, c.slotY]))}`,
     )
   })
 
