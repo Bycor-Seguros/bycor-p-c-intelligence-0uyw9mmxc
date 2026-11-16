@@ -27,7 +27,12 @@ import {
   LIMIAR_CONFIANCA_CG,
 } from '@/services/cgIngestaoService'
 import { dividirEmLotes, calcularPausaProgressiva } from '@/services/pocketbaseWriteHelper'
-import type { CoberturaCanonicaRecord } from '@/services/equivalenciaCoberturasService'
+import {
+  normalizarTermoC3,
+  normalizarTermoEquivalencia,
+  type CoberturaCanonicaRecord,
+} from '@/services/equivalenciaCoberturasService'
+import { normalizeMatchText } from '@/services/guardiaImporter'
 
 // ---------------------------------------------------------------------------
 // Helpers de fixture (estrutura genérica, zero texto real)
@@ -607,6 +612,66 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       `esperava 0 coberturas, veio ${coberturas.length}: ${JSON.stringify(coberturas.map((c) => [c.nomeExtraido, c.slotY]))}`,
     )
   })
+
+  // ------------------------------------------------------------------
+  // 8) Equivalência C3: "Resp. Civil" ≡ "Responsabilidade Civil" (v0.0.214)
+  //    A abreviação recorrente em PDFs de CG casa com a canônica RC por
+  //    extenso — validado ANTES do pareamento (parser/interface separados).
+  // ------------------------------------------------------------------
+  t(
+    'Ingestão CG: C3 normaliza "Resp. Civil"/"Resp Civ"/"rc" para "responsabilidade civil" e casa com a canônica RC Compreensiva',
+    () => {
+      // Normalização direta (normalizarTermoC3 roda sobre o texto JÁ
+      // normalizado por normalizeMatchText — pontuação e acentos saem antes).
+      assert(
+        normalizarTermoC3(normalizeMatchText('Resp. Civil')) === 'responsabilidade civil',
+        `"Resp. Civil" deveria virar "responsabilidade civil", veio: ${normalizarTermoC3(normalizeMatchText('Resp. Civil'))}`,
+      )
+      assert(
+        normalizarTermoC3(normalizeMatchText('Resp Civ')) === 'responsabilidade civil',
+        '"Resp Civ" deveria virar "responsabilidade civil"',
+      )
+      assert(
+        normalizarTermoC3(normalizeMatchText('Resp. Civil Guarda de Veículos de Terceiros')) ===
+          'responsabilidade civil guarda de veiculos de terceiros',
+        'abreviação no meio do título deveria expandir',
+      )
+      assert(
+        normalizarTermoC3(normalizeMatchText('RC Guarda de Veículos de Terceiros')) ===
+          'responsabilidade civil guarda de veiculos de terceiros',
+        'token isolado "rc" da canônica deveria expandir',
+      )
+      // Vias de entrada com acento e ponto ("resp. cív.", pdf.js) também normalizam.
+      assert(
+        normalizarTermoEquivalencia('Resp. Cív.') === 'responsabilidade civil',
+        'variante com acento deveria normalizar',
+      )
+
+      // Casamento com a canônica real (migration 0051): a abreviação do PDF
+      // alcança o limiar de pareamento do motor C3 contra
+      // "RC Guarda de Veículos de Terceiros - Compreensiva / Ampla".
+      const CANONICA_RC_COMPREENSIVA: CoberturaCanonicaRecord = {
+        id: 'can_rc_compreensiva',
+        nome: 'RC Guarda de Veículos de Terceiros - Compreensiva / Ampla',
+        ramo: 'RC',
+        eventos_tipicos: ['Roubo de veículos sob guarda'],
+      }
+      for (const termo of ['Resp. Civil', 'Resp Civ', 'RC', 'rc']) {
+        const r = casarComMotorC3(termo, [CANONICA_RC_COMPREENSIVA])
+        assert(
+          r.canonicaId === 'can_rc_compreensiva' && r.confianca >= LIMIAR_CONFIANCA_CG,
+          `termo "${termo}" deveria casar com a canônica RC Compreensiva acima do limiar ${LIMIAR_CONFIANCA_CG}, veio: ${JSON.stringify(r)}`,
+        )
+        // "rc" isolado não deve escorrer para outra canônica (só RC na fixture).
+      }
+
+      // Regressão: token que apenas CONTÉM "rc" (ex.: "circuito") NÃO expande.
+      assert(
+        normalizarTermoC3(normalizeMatchText('circuitos eletricos')) === 'circuitos eletricos',
+        'substring "rc" não deveria expandir (\\b)',
+      )
+    },
+  )
 
   return resultados
 }
