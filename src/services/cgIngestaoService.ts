@@ -384,7 +384,10 @@ export async function salvarSessaoIngestao(
 
   if (!faltantes.length) {
     // Tudo já está no banco (sessão criada e completa) — fecha os totais.
-    const fechada = await fecharTotaisSessao(ingestao, sessao)
+    const fechada = await fecharTotaisSessao(ingestao, {
+      totalItens: sessao.itens.length,
+      totalExclusoes: sessao.itens.reduce((soma, it) => soma + (it.exclusoes?.length ?? 0), 0),
+    })
     return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
   }
 
@@ -404,7 +407,10 @@ export async function salvarSessaoIngestao(
     }
   }
 
-  const fechada = await fecharTotaisSessao(ingestao, sessao)
+  const fechada = await fecharTotaisSessao(ingestao, {
+    totalItens: sessao.itens.length,
+    totalExclusoes: sessao.itens.reduce((soma, it) => soma + (it.exclusoes?.length ?? 0), 0),
+  })
   return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
 }
 
@@ -586,7 +592,8 @@ export async function regravarItensFaltantes(sessao: RegravacaoSessaoInput): Pro
   const faltantes = sessao.itens.filter((it) => !gravados.has(chaveGuardaCg(it.nomeExtraido)))
 
   if (!faltantes.length) {
-    const fechada = await fecharTotaisSessao(ingestao, { itens: faltantes })
+    // A fila do modal é a COMPLETA: totais cheios saem dela, não do subconjunto faltante.
+    const fechada = await fecharTotaisSessao(ingestao, totaisFilaCompleta(sessao.itens))
     return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
   }
 
@@ -610,7 +617,7 @@ export async function regravarItensFaltantes(sessao: RegravacaoSessaoInput): Pro
     }
   }
 
-  const fechada = await fecharTotaisSessao(ingestao, { itens: faltantes })
+  const fechada = await fecharTotaisSessao(ingestao, totaisFilaCompleta(sessao.itens))
   return { sucesso: true, sessao: fechada, itensGravados: sessao.itens.length }
 }
 
@@ -693,21 +700,33 @@ async function listarChavesGravadas(ingestaoId: string): Promise<Set<string>> {
   )
 }
 
+/** Totais cheios da fila COMPLETA (itens + exclusões) — nunca do subconjunto faltante. */
+function totaisFilaCompleta(itens: Array<Pick<CgIngestaoItemFila, 'exclusoes'>>): {
+  totalItens: number
+  totalExclusoes: number
+} {
+  return {
+    totalItens: itens.length,
+    totalExclusoes: itens.reduce((soma, it) => soma + (it.exclusoes?.length ?? 0), 0),
+  }
+}
+
 /**
  * Fecha a sessão: grava os totais CHEIOS (total_itens, total_exclusoes,
  * itens_gravados = total da fila) e ingestao_incompleta=false. Só chamada
  * quando TUDO está gravado — a sessão nunca fica com totais cheios e itens
- * faltando.
+ * faltando. Recebe os totais EXPLÍCITOS da fila completa: os call sites de
+ * regravarItensFaltantes passam os totais da fila inteira (não do subconjunto
+ * faltante).
  */
 async function fecharTotaisSessao(
   ingestao: CgIngestaoRecord,
-  sessao: Pick<CgIngestaoSessao, 'itens'>,
+  totais: { totalItens: number; totalExclusoes: number },
 ): Promise<CgIngestaoRecord> {
-  const totalExclusoes = sessao.itens.reduce((soma, it) => soma + (it.exclusoes?.length ?? 0), 0)
   const atualizada = (await pb.collection('cg_ingestoes').update(ingestao.id, {
-    total_itens: sessao.itens.length,
-    total_exclusoes: totalExclusoes,
-    itens_gravados: sessao.itens.length,
+    total_itens: totais.totalItens,
+    total_exclusoes: totais.totalExclusoes,
+    itens_gravados: totais.totalItens,
     ingestao_incompleta: false,
   })) as unknown as CgIngestaoRecord
   if (ingestao.chave_ingestao) {
