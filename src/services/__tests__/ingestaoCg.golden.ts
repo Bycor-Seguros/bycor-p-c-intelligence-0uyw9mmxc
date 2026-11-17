@@ -24,6 +24,7 @@ import {
   detectarProdutoVersaoCg,
   detectarPdfSemTextoCg,
   mensagemPdfSemTextoCg,
+  tituloEhCoberturaZurich,
 } from '@/services/cgIngestaoReader'
 import {
   casarComMotorC3,
@@ -1047,6 +1048,153 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     assert(
       detectarPdfSemTextoCg(paginasEsparsas).semTexto,
       'páginas só com espaços também deveriam ser detectadas como escaneadas',
+    )
+  })
+
+  // ------------------------------------------------------------------
+  // 12) ASSINATURA ESTRUTURAL ZURICH — v0.0.226 (tarefa 2a). Títulos de
+  //     cobertura em CAIXA MISTA sem prefixo ("Danos ao Cais", "Erros e
+  //     Omissões"), ancorados na linha seguinte "1. Riscos Cobertos"
+  //     (as exclusões variam entre "2." e "3. Riscos Excluídos" — a
+  //     numeração seguinte NÃO é âncora). Guardas: linha de Sumário
+  //     pontilhada e cláusula "1. Fica entendido…" NÃO viram cobertura.
+  //     Fixtures ESTRUTURAIS genéricos (pacto anti-regressão: seção NOVA,
+  //     nenhuma asserção anterior alterada ou removida).
+  // ------------------------------------------------------------------
+
+  t('Ingestão CG: título Zurich em caixa mista ("Danos ao Cais") é cobertura', () => {
+    // Assinatura pura: título seguido da linha âncora "1. Riscos Cobertos".
+    assert(
+      tituloEhCoberturaZurich('Danos ao Cais', '1. Riscos Cobertos'),
+      '"Danos ao Cais" + "1. Riscos Cobertos" deveria ser reconhecido como cobertura Zurich',
+    )
+    // E também via leitura completa: seção vira item do tipo cobertura.
+    const pages = [
+      page(1, [
+        ['Danos ao Cais', 700],
+        ['1. Riscos Cobertos', 660],
+      ]),
+      page(2, [
+        ['Mediante contratação desta cláusula, estarão cobertos os danos ao cais', 680],
+        ['3. Riscos Excluídos', 640],
+        ['a) danos consequentes de defeito ou vício próprio do bem', 600],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.some((c) => c.nomeExtraido === 'Danos ao Cais'),
+      `leitura completa deveria extrair a cobertura "Danos ao Cais", veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+    )
+  })
+
+  t(
+    'Ingestão CG: título Zurich ("Erros e Omissões") é cobertura mesmo com exclusões no bloco 3',
+    () => {
+      // A ancoragem é na linha "1. Riscos Cobertos" — a exclusão pode vir no
+      // bloco "3." (numeração seguinte variável, não é âncora).
+      assert(
+        tituloEhCoberturaZurich('Erros e Omissões', '1. Riscos Cobertos'),
+        '"Erros e Omissões" deveria ser reconhecido como cobertura Zurich',
+      )
+      const pages = [
+        page(1, [
+          ['Erros e Omissões', 700],
+          ['1. Riscos Cobertos', 660],
+        ]),
+        page(2, [
+          ['texto de riscos cobertos da seção', 680],
+          ['3. Riscos Excluídos', 640],
+          ['a) omissão de registro em sistema da companhia', 600],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.some((c) => c.nomeExtraido === 'Erros e Omissões'),
+        `leitura completa deveria extrair a cobertura "Erros e Omissões", veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+    },
+  )
+
+  t('Ingestão CG: linha de Sumário pontilhada Zurich não vira cobertura', () => {
+    // No Sumário real, a entrada de cobertura em caixa mista vem com
+    // pontilhado e número de página — nunca deve casar a assinatura.
+    assert(
+      !tituloEhCoberturaZurich('Danos ao Cais ......... 55', '1. Riscos Cobertos'),
+      'linha de Sumário pontilhada não deveria casar a assinatura Zurich',
+    )
+    // E via leitura completa: uma linha pontilhada seguida de "1. Riscos
+    // Cobertos" não gera item (o pontilhado já é limpo antes do teste —
+    // a guarda ehLinhaSumario trava o resto).
+    const pages = [
+      page(1, [['Danos ao Cais ......... 55', 700]]),
+      page(2, [['texto de riscos cobertos da seção', 680]]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      !coberturas.some((c) => c.nomeExtraido.includes('Danos ao Cais')),
+      'entrada de Sumário não deveria virar cobertura',
+    )
+  })
+
+  t('Ingestão CG: cláusula "1. Fica entendido…" não vira cobertura Zurich', () => {
+    // Cláusulas particulares/exclusões (págs. 137–146 do formato real) têm
+    // título em caixa mista seguido de "1. Fica entendido e acordado…" —
+    // NÃO da âncora "1. Riscos Cobertos".
+    assert(
+      !tituloEhCoberturaZurich('Cláusula de 1º Risco Absoluto', '1. Fica entendido e acordado que'),
+      'cláusula não deveria casar a assinatura Zurich',
+    )
+    assert(
+      !tituloEhCoberturaZurich(
+        'Cláusula de Exclusão de Asbestos',
+        '1. Fica entendido e acordado que',
+      ),
+      'cláusula de exclusão não deveria casar a assinatura Zurich',
+    )
+  })
+
+  t('Ingestão CG: assinatura Zurich não afeta formatos Tokio/Chubb/AXA', () => {
+    // Guardas de proteção: CAIXA ALTA e "Cláusula..." nunca passam pela
+    // assinatura nova; os formatos existentes continuam pelos prefixos.
+    assert(
+      !tituloEhCoberturaZurich('COBERTURA ADICIONAL DE EXEMPLO', '1. RISCOS COBERTOS'),
+      'título em CAIXA ALTA não deveria passar pela assinatura Zurich',
+    )
+    assert(
+      !tituloEhCoberturaZurich('Cláusulas Particulares', '1. Riscos Cobertos'),
+      'cabeçalho agrupador "Cláusulas Particulares" não deveria ser cobertura',
+    )
+    // Formato AXA intacto: prefixo caixa alta + "1.1 RISCOS COBERTOS".
+    const pages = [
+      page(1, [
+        ['COBERTURA ADICIONAL DE EXEMPLO', 700],
+        ['1.1 RISCOS COBERTOS', 660],
+        ['texto de riscos cobertos da seção', 620],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.some((c) => c.nomeExtraido === 'COBERTURA ADICIONAL DE EXEMPLO'),
+      'formato AXA (prefixo caixa alta) deveria continuar reconhecendo a cobertura',
+    )
+    // A mesma página com título Zurich + prefixo caixa alto não duplica.
+    const pages2 = [
+      page(1, [
+        ['Danos ao Cais', 700],
+        ['1. Riscos Cobertos', 660],
+        ['COBERTURA ADICIONAL DE EXEMPLO', 600],
+        ['1.1 RISCOS COBERTOS', 560],
+      ]),
+    ]
+    const leitura2 = lerCondicoesGerais(pages2)
+    const coberturas2 = leitura2.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas2.length === 2,
+      `deveria reconhecer as 2 coberturas (Zurich + AXA), veio ${JSON.stringify(coberturas2.map((c) => c.nomeExtraido))}`,
     )
   })
 

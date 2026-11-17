@@ -18,6 +18,12 @@
  *    <nome>" (e "COBERTURA ADICIONAL RESPONSABILIDADE CIVIL <nome>"), entradas
  *    de Sumário que apontam essas seções e "CONDIÇÕES ESPECIAIS PARA O
  *    SEGURO DE <nome>".
+ *  - Assinatura estrutural Zurich (v0.0.226): título de cobertura em CAIXA
+ *    MISTA sem prefixo ("Danos ao Cais", "Erros e Omissões"), ancorado na
+ *    linha seguinte "1. Riscos Cobertos" — as exclusões variam entre "2." e
+ *    "3. Riscos Excluídos", por isso a numeração dos blocos seguintes NÃO é
+ *    âncora. Cláusulas ("1. Fica entendido…") e linhas de Sumário pontilhadas
+ *    são guardadas.
  *  - NÃO coberturas: cabeçalhos estruturais (Sumário, Apresentação,
  *    Disposições Gerais, glossário...) e CLÁUSULA PARTICULAR/ESPECÍFICA/DE
  *    EXCLUSÃO — cláusulas particulares em geral são extensão/exclusão/ajuste,
@@ -330,6 +336,42 @@ export function tituloEhCobertura(titulo: string): boolean {
   if (/^vendaval/i.test(norm)) return true
   if (/^quebra de m/i.test(norm)) return true
   return false
+}
+
+// ---------------------------------------------------------------------------
+// Assinatura estrutural Zurich (v0.0.226) — coberturas em caixa mista sem
+// prefixo ("Danos ao Cais", "Danos por Água", "Erros e Omissões"), sempre
+// seguidas da linha âncora "1. Riscos Cobertos". A ancoragem é NO bloco 1:
+// as exclusões variam entre "2." e "3. Riscos Excluídos", logo a numeração
+// dos blocos seguintes não serve de âncora. Função pura — testada na suíte
+// golden (seção 12).
+// ---------------------------------------------------------------------------
+
+/** Âncora: a linha IMEDIATAMENTE abaixo do título ("1. Riscos Cobertos"). */
+const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
+
+/** Família "Cláusula ..." nunca é cobertura Zurich (particulares, exclusões, agrupadores). */
+const RE_CLAUSULA_ZURICH = /^cl[aá]usula\b/i
+
+export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const t = (titulo || '').trim()
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira.
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  if (ehFragmentoFraseCg(t)) return false
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -705,7 +747,25 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
     for (let i = 0; i < linhas.length; i++) {
       if (flags[i]) continue
       const bruto = limparLinhaSumario(linhas[i].texto)
-      if (!bruto || !tituloEhCobertura(bruto)) continue
+      if (!bruto) continue
+      // v0.0.226 (Zurich): assinatura estrutural — título em caixa mista sem
+      // prefixo seguido da linha âncora "1. Riscos Cobertos". Avaliada ANTES
+      // dos prefixos de cobertura: o nome Zurich ("Danos ao Cais") não casa
+      // nenhum prefixo. A linha do título NÃO entra no join de caixa alta
+      // (o formato Zurich não quebra o título em caixa alta).
+      const proximaLinhaTitulo =
+        i + 1 < linhas.length ? limparLinhaSumario(linhas[i + 1].texto) : ''
+      if (tituloEhCoberturaZurich(bruto, proximaLinhaTitulo)) {
+        ocorrencias.push({
+          nome: bruto,
+          pagina: page.pageNumber,
+          slotY: linhas[i].slotY,
+          ordem: ordem++,
+          ateLinhaTitulo: i,
+        })
+        continue
+      }
+      if (!tituloEhCobertura(bruto)) continue
 
       const linhasTitulo = [bruto]
       let j = i + 1
@@ -774,7 +834,12 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         const limpo = limparLinhaSumario(linha.texto)
         if (!limpo) continue
         if (page.pageNumber === secao.pagina && idx <= secao.ateLinhaTitulo) continue
-        if (tituloEhCobertura(limpo)) {
+        // v0.0.226 (Zurich): o título da próxima seção em caixa mista não casa
+        // os prefixos — corta também pela assinatura Zurich, senão o corpo da
+        // seção anterior engolia o título seguinte (que virava "exclusão").
+        const proximaLinhaCorpo =
+          idx + 1 < linhas.length ? limparLinhaSumario(linhas[idx + 1].texto) : ''
+        if (tituloEhCobertura(limpo) || tituloEhCoberturaZurich(limpo, proximaLinhaCorpo)) {
           // próxima seção começa no meio desta página: corta o corpo aqui
           break
         }
