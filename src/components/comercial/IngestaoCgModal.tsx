@@ -18,6 +18,8 @@ import {
   detectarProcessoSusepCg,
   detectarProcessoSusepNomeArquivo,
   detectarProdutoVersaoCg,
+  detectarPdfSemTextoCg,
+  mensagemPdfSemTextoCg,
   chaveGuardaCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
@@ -197,6 +199,15 @@ export default function IngestaoCgModal({
     try {
       const pages = await extractTextFromPdf(f, 350)
       if (!pages.length) throw new Error('Nenhum texto extraído do PDF.')
+
+      // Guarda v0.0.223: PDF escaneado (só imagem, sem camada de texto) falha
+      // AQUI — mensagem clara ao analista, ANTES de qualquer leitura ou gravação.
+      // Como o erro acontece em handleSelecionarArquivo, nenhuma sessão de
+      // ingestão (cg_ingestoes) é criada: a fila fica vazia e o fluxo para.
+      const deteccao = detectarPdfSemTextoCg(pages)
+      if (deteccao.semTexto) {
+        throw new Error(mensagemPdfSemTextoCg(deteccao.paginas))
+      }
 
       const textoCompleto = pages.map((p) => p.text).join('\n')
       // Processo SUSEP: detecta do TEXTO (autoridade) e só cai para o NOME do
@@ -671,7 +682,8 @@ export default function IngestaoCgModal({
           {erro && (
             <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{erro}</span>
+              {/* mensagens longas (ex.: PDF escaneado) quebram em várias linhas */}
+              <span className="min-w-0 flex-1 whitespace-pre-line">{erro}</span>
             </div>
           )}
 

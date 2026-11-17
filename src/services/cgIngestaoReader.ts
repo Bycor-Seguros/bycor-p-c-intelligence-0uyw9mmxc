@@ -29,6 +29,56 @@
 
 import type { PdfPageText } from './pdfTextExtractor'
 
+// ---------------------------------------------------------------------------
+// Guarda de PDF sem camada de texto (escaneado) — v0.0.223
+// ---------------------------------------------------------------------------
+
+/** Mensagem de erro para PDF escaneado — exibida ao analista no modal de ingestão. */
+export const MSG_PDF_SEM_TEXTO_CG =
+  'Este PDF parece ser escaneado: só contém imagens, sem texto selecionável (a extração das ' +
+  '{{PAGINAS}} página(s) retornou praticamente nenhum caractere). O leitor de CGs não consegue ' +
+  'ler um documento assim. Obtenha a versão da CG com camada de texto — as condições gerais com ' +
+  'texto estão disponíveis no portal de cadastro de produtos da SUSEP — e tente novamente.'
+
+/**
+ * Limiar de caracteres por página abaixo do qual o documento é considerado
+ * escaneado. Um PDF de CG com texto tem dezenas/milhares de caracteres por
+ * página; um escaneado tem 0 (a extração devolve as páginas em branco).
+ * A média absorve páginas de capa/contracapa quase vazias de CGs legítimas.
+ */
+const CARACTERES_POR_PAGINA_MINIMO = 20
+
+export interface DeteccaoPdfSemTextoResultado {
+  semTexto: boolean
+  caracteres: number
+  paginas: number
+  mediaPorPagina: number
+}
+
+/**
+ * Detecta documento escaneado: a extração de texto rodou sobre TODAS as
+ * páginas e o total de caracteres é praticamente zero (média <
+ * CARACTERES_POR_PAGINA_MINIMO). Função pura — testada na suíte golden
+ * (seção 11). Não confunde com CG legítima: 19 páginas em branco (caso
+ * Zurich "CG RN LC") têm 0 caracteres; uma CG real tem milhares.
+ */
+export function detectarPdfSemTextoCg(pages: PdfPageText[]): DeteccaoPdfSemTextoResultado {
+  const paginas = pages.length
+  const caracteres = pages.reduce((acc, p) => acc + (p.text || '').trim().length, 0)
+  const mediaPorPagina = paginas > 0 ? caracteres / paginas : 0
+  return {
+    semTexto: paginas > 0 && mediaPorPagina < CARACTERES_POR_PAGINA_MINIMO,
+    caracteres,
+    paginas,
+    mediaPorPagina,
+  }
+}
+
+/** Mensagem final com o número de páginas preenchido (o modal a exibe). */
+export function mensagemPdfSemTextoCg(paginas: number): string {
+  return MSG_PDF_SEM_TEXTO_CG.replace('{{PAGINAS}}', String(paginas || 0))
+}
+
 export interface CgIngestaoExclusaoExtraida {
   texto: string
   pagina: number

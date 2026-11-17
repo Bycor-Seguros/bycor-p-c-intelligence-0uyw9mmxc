@@ -22,6 +22,8 @@ import {
   detectarProcessoSusepCg,
   detectarProcessoSusepNomeArquivo,
   detectarProdutoVersaoCg,
+  detectarPdfSemTextoCg,
+  mensagemPdfSemTextoCg,
 } from '@/services/cgIngestaoReader'
 import {
   casarComMotorC3,
@@ -972,6 +974,81 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       )
     },
   )
+
+  // ------------------------------------------------------------------
+  // 11) PDF SEM CAMADA DE TEXTO (escaneado) — v0.0.223 (caso real Zurich
+  //     "CG RN LC", 19 páginas em branco na extração). Seção NOVA: nenhuma
+  //     asserção existente alterada ou removida (pacto anti-regressão).
+  //     Fixtures ESTRUTURAIS genéricas, zero conteúdo do PDF real.
+  // ------------------------------------------------------------------
+
+  t('Ingestão CG: PDF escaneado (19 páginas em branco) é detectado como sem texto', () => {
+    // Estrutura do caso real: N páginas que a extração devolve VAZIAS —
+    // o PDF tem só imagem, sem texto selecionável. Fixtures genéricas:
+    // páginas em branco, sem nenhum caractere.
+    const paginasVazias = Array.from({ length: 19 }, (_, i) => ({
+      pageNumber: i + 1,
+      text: '',
+      items: [],
+      lines: [],
+    })) as unknown as PdfPageText[]
+    const deteccao = detectarPdfSemTextoCg(paginasVazias)
+    assert(
+      deteccao.semTexto,
+      `19 páginas em branco deveriam ser detectadas como escaneadas, veio ${JSON.stringify(deteccao)}`,
+    )
+    assert(deteccao.caracteres === 0, 'total de caracteres extraídos deveria ser 0')
+    assert(deteccao.paginas === 19, 'deveria contar as 19 páginas')
+    // Mensagem ao analista: menciona SUSEP e o número de páginas.
+    const msg = mensagemPdfSemTextoCg(deteccao.paginas)
+    assert(msg.includes('SUSEP'), 'mensagem deveria apontar o portal SUSEP')
+    assert(msg.includes('19'), 'mensagem deveria citar o número de páginas')
+    assert(msg.includes('texto'), 'mensagem deveria explicar que falta texto selecionável')
+  })
+
+  t('Ingestão CG: CG legítima com texto nunca é confundida com PDF escaneado', () => {
+    // Página de capa quase vazia + páginas de corpo com texto (frases
+    // ESTRUTURAIS genéricas) — a média por página fica bem acima do limiar.
+    const pages = [
+      page(1, [['CG DE EXEMPLO', 700]]),
+      page(2, [
+        ['COBERTURA ADICIONAL DE EXEMPLO UM', 700],
+        ['1.1 RISCOS COBERTOS', 650],
+        ['texto de riscos cobertos da seção', 610],
+        ['2. RISCOS EXCLUIDOS', 580],
+        ['a) perdas decorrentes de fato gerador anterior ao período', 540],
+      ]),
+      page(3, [
+        ['COBERTURA ADICIONAL DE EXEMPLO DOIS', 700],
+        ['1.1 RISCOS COBERTOS', 650],
+        ['texto de riscos cobertos da seção', 610],
+      ]),
+    ]
+    const deteccao = detectarPdfSemTextoCg(pages)
+    assert(
+      !deteccao.semTexto,
+      `CG com texto não deveria ser marcada como escaneada, veio ${JSON.stringify(deteccao)}`,
+    )
+    // E a leitura normal segue funcionando (a guarda não intercepta o fluxo).
+    const leitura = lerCondicoesGerais(pages)
+    assert(
+      leitura.itens.length >= 2,
+      `leitura normal deveria achar as 2 seções, veio ${leitura.itens.length}`,
+    )
+    // Caso intermediário: documento com texto esparsíssimo (abaixo do
+    // limiar por página) também é escaneado — evita falso-negativo em
+    // PDFs com OCR de rodapé.
+    const paginasEsparsas = Array.from({ length: 10 }, (_, i) => ({
+      pageNumber: i + 1,
+      text: ' ',
+      items: [],
+      lines: [],
+    })) as unknown as PdfPageText[]
+    assert(
+      detectarPdfSemTextoCg(paginasEsparsas).semTexto,
+      'páginas só com espaços também deveriam ser detectadas como escaneadas',
+    )
+  })
 
   return resultados
 }
