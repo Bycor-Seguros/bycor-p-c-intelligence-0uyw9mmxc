@@ -18,12 +18,13 @@
  *    <nome>" (e "COBERTURA ADICIONAL RESPONSABILIDADE CIVIL <nome>"), entradas
  *    de Sumário que apontam essas seções e "CONDIÇÕES ESPECIAIS PARA O
  *    SEGURO DE <nome>".
- *  - Assinatura estrutural Zurich (v0.0.226): título de cobertura em CAIXA
+ *  - Assinatura estrutural Zurich (v0.0.227): título de cobertura em CAIXA
  *    MISTA sem prefixo ("Danos ao Cais", "Erros e Omissões"), ancorado na
  *    linha seguinte "1. Riscos Cobertos" — as exclusões variam entre "2." e
  *    "3. Riscos Excluídos", por isso a numeração dos blocos seguintes NÃO é
  *    âncora. Cláusulas ("1. Fica entendido…") e linhas de Sumário pontilhadas
- *    são guardadas.
+ *    são guardadas; a guarda de fragmento usa só o núcleo INSENSÍVEL à caixa
+ *    (a regra de minúscula inicial rejeitaria todo título caixa mista).
  *  - NÃO coberturas: cabeçalhos estruturais (Sumário, Apresentação,
  *    Disposições Gerais, glossário...) e CLÁUSULA PARTICULAR/ESPECÍFICA/DE
  *    EXCLUSÃO — cláusulas particulares em geral são extensão/exclusão/ajuste,
@@ -233,24 +234,36 @@ const RE_MEIO_FRASE_CAIXA_ALTA =
   /,\s+este\s|,\s+o\s+qual|,\s+a\s+qual|\be\s+jamais\b|\baplicando-se\b|\be,\s|,\s+segue\b/i
 
 /**
- * A linha é um FRAGMENTO de frase (continuação de parágrafo, texto dentro de
- * cláusula numerada, rabo de alínea)? (função pura — testada na suíte golden)
+ * Núcleo da guarda de fragmento, INSENSÍVEL à caixa (v0.0.227): alínea, cauda
+ * de período aberto, conector de meio de frase e verbo de cláusula. Usada
+ * direto pela assinatura Zurich — o formato Zurich É caixa mista, então a
+ * regra de minúscula inicial (que depende de comparar a linha com a própria
+ * caixa alta) não pode entrar aqui: ela classificava TODO título Zurich
+ * ("Danos ao Cais") como fragmento e a assinatura nunca casava (falha
+ * v0.0.226 — golden 149/152). (função pura — testada na suíte golden)
  */
-export function ehFragmentoFraseCg(titulo: string): boolean {
+function ehFragmentoFraseInsensivelCaixaCg(titulo: string): boolean {
   const t = (titulo || '').trim()
   if (!t) return false
   if (RE_FRAGMENTO_ALINEA.test(t)) return true
   if (RE_CAUDA_FIM_DE_FRASE.test(t)) return true
-  // v0.0.222: cauda de período aberto (";" / "," / "…") e conectores de meio
-  // de frase em caixa alta — fragmento mesmo em CAIXA ALTA (caso Tokio).
   if (RE_CAUDA_PERIODO_ABERTO.test(t)) return true
   if (RE_MEIO_FRASE_CAIXA_ALTA.test(t)) return true
   if (/^,\s/.test(t)) return true
   if (RE_FRAGMENTO_CLAUSULA.test(normalizarTituloCg(t))) return true
+  return false
+}
+
+/**
+ * A linha é um FRAGMENTO de frase (continuação de parágrafo, texto dentro de
+ * cláusula numerada, rabo de alínea)? (função pura — testada na suíte golden)
+ */
+export function ehFragmentoFraseCg(titulo: string): boolean {
+  if (ehFragmentoFraseInsensivelCaixaCg(titulo)) return true
+  const t = (titulo || '').trim()
   // Minúscula inicial: só é fragmento se a linha não é um título em caixa alta
   // quebrado (título quebrado mantém caixa alta em todas as linhas).
-  if (RE_FRAGMENTO_MINUSCULA.test(t) && t !== t.toUpperCase()) return true
-  return false
+  return RE_FRAGMENTO_MINUSCULA.test(t) && t !== t.toUpperCase()
 }
 
 /**
@@ -350,13 +363,18 @@ export function tituloEhCobertura(titulo: string): boolean {
 /** Âncora: a linha IMEDIATAMENTE abaixo do título ("1. Riscos Cobertos"). */
 const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
 
-/** Família "Cláusula ..." nunca é cobertura Zurich (particulares, exclusões, agrupadores). */
-const RE_CLAUSULA_ZURICH = /^cl[aá]usula\b/i
+/** Família "Cláusula(s) ..." nunca é cobertura Zurich (particulares, exclusões, agrupadores: "Cláusulas Particulares", "Cláusulas de Coberturas Adicionais"). O plural exige \b depois do S. */
+const RE_CLAUSULA_ZURICH = /^cl[aá]usulas?\b/i
 
 export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
   const t = (titulo || '').trim()
   const prox = (linhaSeguinte || '').trim()
   if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
   if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
   // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
   if (ehLinhaSumario(t)) return false
@@ -370,7 +388,13 @@ export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): 
   // começa com "Cláusula" — bloqueia a família inteira.
   if (RE_CLAUSULA_ZURICH.test(t)) return false
   // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
-  if (ehFragmentoFraseCg(t)) return false
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
   return true
 }
 
