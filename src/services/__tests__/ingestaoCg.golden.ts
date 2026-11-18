@@ -40,7 +40,6 @@ import {
 import { normalizeMatchText } from '@/services/guardiaImporter'
 import { RE_CAUDA_VALOR_EXTESTO_ZURICH } from '@/services/cgIngestaoReader'
 
-
 // ---------------------------------------------------------------------------
 // Helpers de fixture (estrutura genérica, zero texto real)
 // ---------------------------------------------------------------------------
