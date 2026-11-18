@@ -250,6 +250,26 @@ const RE_MEIO_FRASE_CAIXA_ALTA =
 const RE_CLAUSULA_PARA_ZURICH = /^cl[aá]usulas?\s+para\b/i
 
 /**
+ * Guarda v0.0.229 (Zurich) — fecho repetido da seção "Riscos Excluídos":
+ * "Permanecem as exclusões da Cláusula 6ª - Exclusões Gerais das Condições
+ * Gerais que não tenham sido expressamente alteradas pela presente cobertura
+ * ou pelas demais coberturas adicionais contratadas…" (e a variante
+ * "Permanecem as demais exclusões da Cláusula 6ª…"). O Zurich repete esse
+ * fecho em CADA seção de exclusões (págs. 65, 73, 94, 104, 123, 131, 134 e
+ * 136 do formato real) — em QUALQUER página nunca é cobertura. A 2ª
+ * alternativa cobre a linha embrulhada que traz só a cauda do período.
+ */
+const RE_PERMANECEM_EXCLUSOES_ZURICH =
+  /^permanecem\s+as\s+(?:demais\s+)?exclus[oõ]es\s+da\s+cl[aá]usula\b|n[ãa]o\s+tenham\s+sido\s+expressamente\s+alteradas\s+pela\s+presente\s+cobertura/i
+
+/**
+ * Guarda v0.0.229 (Zurich) — cauda de VALOR POR EXTENSO de tabela de limites:
+ * o pdf.js quebra "…(dezessete mil e quinhentos reais)" e a linha "reais)"
+ * (pág. 128) nunca é título — termina em "mil/milhões/reais)" fechado.
+ */
+const RE_CAUDA_VALOR_EXTESTO_ZURICH = /\b(?:milh[õo]es?|mil|reais?)\s*\)\s*$/i
+
+/**
  * Núcleo da guarda de fragmento, INSENSÍVEL à caixa (v0.0.227): alínea, cauda
  * de período aberto, conector de meio de frase e verbo de cláusula. Usada
  * direto pela assinatura Zurich — o formato Zurich É caixa mista, então a
@@ -327,7 +347,6 @@ export function tituloEhCobertura(titulo: string): boolean {
   if (RE_CLAUSULA_NAO_COBERTURA.test(norm)) {
     if (RE_CLAUSULA_PARTICULAR_EXTENSAO.test(norm)) return true
     return RE_CLAUSULA_COBERTURA_EXPLICITA.test(norm)
-  }
 
   if (/^cobertura\s+(basica|adicional|especial)\b/i.test(norm)) return true
   if (/^cobertura\s+(de\s+|adicional\s+-\s+)/i.test(t)) return true
@@ -423,6 +442,15 @@ export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): 
   // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
   // eram reconhecidos).
   if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" repetido em cada seção "Riscos Excluídos" — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
   return true
 }
 
