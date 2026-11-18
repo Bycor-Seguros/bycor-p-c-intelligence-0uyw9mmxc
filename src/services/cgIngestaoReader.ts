@@ -310,6 +310,7 @@ export function removerPrefixoRodapeCg(linha: string): string {
   const t = (linha || '').trim()
   if (!t) return ''
   const tNormEspacos = normalizarEspacosRodape(t)
+  const tNormLower = tNormEspacos.toLowerCase()
 
   // 1. Processo SUSEP como prefixo
   const mSusep = tNormEspacos.match(
@@ -318,8 +319,12 @@ export function removerPrefixoRodapeCg(linha: string): string {
   if (mSusep && mSusep[0].length >= 15) {
     const resto = tNormEspacos.slice(mSusep[0].length).trim()
     if (resto.length >= 4) {
-      const idx = t.toLowerCase().indexOf(resto.toLowerCase().slice(0, 10))
-      return idx >= 0 ? t.slice(idx).trim() : resto
+      // v0.0.232: o "resto" já veio do normalizado (que quebrou "/20 2 4" →
+      // "/2024") — devolver direto o normalizado preserva o rodapé removido.
+      // Antes: indexOf do resto no ORIGINAL (com ano fragmentado) nunca
+      // casava → o resto INTEIRO voltava e o rodapé reabria como título,
+      // competindo com o joiner multi-linha de cauda Zurich (158→160 golden).
+      return resto
     }
     return ''
   }
@@ -331,8 +336,10 @@ export function removerPrefixoRodapeCg(linha: string): string {
   if (mVersao && mVersao[0].length >= 10) {
     const resto = tNormEspacos.slice(mVersao[0].length).trim()
     if (resto.length >= 4) {
-      const idx = t.toLowerCase().indexOf(resto.toLowerCase().slice(0, 10))
-      return idx >= 0 ? t.slice(idx).trim() : resto
+      // v0.0.232: o "resto" já veio do normalizado — devolver o normalizado
+      // preserva o rodapé removido; indexOf no original (com ano fragmentado
+      // "/20 2 4") nunca casava e o resto INTEIRO voltava.
+      return resto
     }
     return ''
   }
