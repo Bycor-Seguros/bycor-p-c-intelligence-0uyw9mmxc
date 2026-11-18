@@ -259,8 +259,8 @@ const RE_CLAUSULA_PARA_ZURICH = /^cl[aá]usulas?\s+para\b/i
  * 136 do formato real) — em QUALQUER página nunca é cobertura. A 2ª
  * alternativa cobre a linha embrulhada que traz só a cauda do período.
  */
-const RE_PERMANECEM_EXCLUSOES_ZURICH =
-  /^permanecem\s+as\s+(?:demais\s+)?exclus[oõ]es\s+da\s+cl[aá]usula\b|n[ãa]o\s+tenham\s+sido\s+expressamente\s+alteradas\s+pela\s+presente\s+cobertura/i
+export const RE_PERMANECEM_EXCLUSOES_ZURICH =
+  /^(?:permanecem\s+as\s+(?:demais\s+)?exclus[oõ]es\s+da\s+cl[aá]usula|al[eé]m\s+das\s+exclus[oõ]es\s+constantes\s+da\s+cl[aá]usula)\b|n[ãa]o\s+(?:tenham\s+sido\s+expressamente\s+alteradas|est[ãa]o\s+abrangidos)\s+pela\s+presente\s+cobertura/i
 
 /**
  * Guarda v0.0.229 (Zurich) — cauda de VALOR POR EXTENSO de tabela de limites:
@@ -268,6 +268,94 @@ const RE_PERMANECEM_EXCLUSOES_ZURICH =
  * (pág. 128) nunca é título — termina em "mil/milhões/reais)" fechado.
  */
 export const RE_CAUDA_VALOR_EXTESTO_ZURICH = /\b(?:milh[õo]es?|mil|reais?)\s*\)\s*$/i
+
+/**
+ * Guarda v0.0.231 (tarefa 2e, família 3) — Preposição ou conectivo isolado no fim da linha:
+ * indica continuidade de frase (ex.: "... rompimento do obstáculo à").
+ */
+export const RE_CAUDA_PREPOSICAO_CONECTIVO =
+  /\b(?:[aà]|ao|aos|d[eao]s?|e|ou|com|em|para|por|sob|sobre|que)\s*$/i
+
+/**
+ * Guarda v0.0.231 (tarefa 2e, família 3) — Fragmento de meio de sentença típico de cláusula
+ * contratual: termos jurídicos/operacionais que aparecem no meio de cláusulas e nunca em títulos
+ * de cobertura (ex.: "Indenização fixado na Apólice para a presente cobertura...", "Código Penal...").
+ */
+export const RE_FRAGMENTO_MEIO_SENTENCA =
+  /\b(?:fixad[oa]s?\s+na\s+ap[oó]lice|para\s+a\s+presente\s+cobertura|perdas\s+e\s+danos|c[oó]digo\s+penal|c[oó]digo\s+civil|sem\s+que\s+tenha|tenha\s+havido|rompimento\s+d[eo]\s+obst[aá]culo|avarias,?\s+perdas)\b/i
+
+/**
+ * Guarda v0.0.231 (tarefa 2e, famílias 1 e 2) — Normalizador de espaços para detecção de rodapés:
+ * pdf.js quebra "Setembro/2024" como "/20 2 4". Colapsa dígitos separados por espaço e normaliza barras.
+ */
+export function normalizarEspacosRodape(texto: string): string {
+  return (texto || '')
+    .replace(/(?<=\d)\s+(?=\d)/g, '')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Padrão estrutural de rodapé repetido nas páginas da Zurich (tarefa 2e, famílias 1 e 2).
+ */
+export const RE_RODAPE_ZURICH =
+  /^(?:processo\s+susep[^-–\n]{0,60}[-–]\s*)?vers[aã]o\s*:?\s*[a-zà-ú]+\s*\/\s*\d{4}(?:\s+plano\s+de\s+seguro\s+[ivx\d]+)?(?:\s*[-–]?\s*danos\s+materiais)?(?:\s*[-–]?\s*cobertura\s+b[aá]sica\s*[-–]\s*inc[êe]ndio,\s*queda\s+de\s+raio,\s*explos[aã]o\s+e\s+implos[aã]o)?|^processo\s+susep\b[^-–\n]{0,60}(?:[-–]\s*vers[aã]o\s*:?\s*[a-zà-ú]+\s*\/\s*\d{4})?/i
+
+/**
+ * Remove o prefixo de rodapé colado ao início de um título legítimo (tarefa 2e, família 2).
+ * Se a linha for unicamente o rodapé, devolve string vazia (tarefa 2e, família 1).
+ */
+export function removerPrefixoRodapeCg(linha: string): string {
+  const t = (linha || '').trim()
+  if (!t) return ''
+  const tNormEspacos = normalizarEspacosRodape(t)
+
+  // 1. Processo SUSEP como prefixo
+  const mSusep = tNormEspacos.match(
+    /^processo\s+susep[^-–\n]{0,60}(?:[-–]\s*vers[aã]o\s*:?\s*[a-zà-ú]+\s*\/\s*\d{4})?(?:\s+plano\s+de\s+seguro\s+[ivx\d]+)?(?:\s*[-–]?\s*danos\s+materiais)?(?:\s*[-–]?\s*cobertura\s+b[aá]sica\s*[-–]\s*inc[êe]ndio,\s*queda\s+de\s+raio,\s*explos[aã]o\s+e\s+implos[aã]o)?\s*/i,
+  )
+  if (mSusep && mSusep[0].length >= 15) {
+    const resto = tNormEspacos.slice(mSusep[0].length).trim()
+    if (resto.length >= 4) {
+      const idx = t.toLowerCase().indexOf(resto.toLowerCase().slice(0, 10))
+      return idx >= 0 ? t.slice(idx).trim() : resto
+    }
+    return ''
+  }
+
+  // 2. Versão : Mês/Ano ... Cobertura Básica ... como prefixo
+  const mVersao = tNormEspacos.match(
+    /^vers[aã]o\s*:?\s*[a-zà-ú]+\s*\/\s*\d{4}(?:\s+plano\s+de\s+seguro\s+[ivx\d]+)?(?:\s*[-–]?\s*danos\s+materiais)?(?:\s*[-–]?\s*cobertura\s+b[aá]sica\s*[-–]\s*inc[êe]ndio,\s*queda\s+de\s+raio,\s*explos[aã]o\s+e\s+implos[aã]o)?\s*/i,
+  )
+  if (mVersao && mVersao[0].length >= 10) {
+    const resto = tNormEspacos.slice(mVersao[0].length).trim()
+    if (resto.length >= 4) {
+      const idx = t.toLowerCase().indexOf(resto.toLowerCase().slice(0, 10))
+      return idx >= 0 ? t.slice(idx).trim() : resto
+    }
+    return ''
+  }
+
+  return t
+}
+
+/**
+ * Linha de rodapé corrido isolado (tarefa 2e, família 1).
+ */
+export function ehLinhaRodapeCg(linha: string): boolean {
+  const t = (linha || '').trim()
+  if (!t) return false
+  const tNorm = normalizarEspacosRodape(t)
+  if (
+    /^processo\s+susep\b/i.test(tNorm) ||
+    /^vers[aã]o\s*:?\s*[a-zà-ú]+\s*\/\s*\d{4}/i.test(tNorm)
+  ) {
+    const limpo = removerPrefixoRodapeCg(t)
+    return !limpo || limpo.length < 4
+  }
+  return false
+}
 
 /**
  * Núcleo da guarda de fragmento, INSENSÍVEL à caixa (v0.0.227): alínea, cauda
@@ -284,9 +372,11 @@ function ehFragmentoFraseInsensivelCaixaCg(titulo: string): boolean {
   if (RE_FRAGMENTO_ALINEA.test(t)) return true
   if (RE_CAUDA_FIM_DE_FRASE.test(t)) return true
   if (RE_CAUDA_PERIODO_ABERTO.test(t)) return true
+  if (RE_CAUDA_PREPOSICAO_CONECTIVO.test(t)) return true
   if (RE_MEIO_FRASE_CAIXA_ALTA.test(t)) return true
   if (/^,\s/.test(t)) return true
   if (RE_FRAGMENTO_CLAUSULA.test(normalizarTituloCg(t))) return true
+  if (RE_FRAGMENTO_MEIO_SENTENCA.test(normalizarTituloCg(t))) return true
   return false
 }
 
@@ -324,8 +414,10 @@ export function temPareneseAbertoCg(titulo: string): boolean {
  * Título é uma seção de cobertura? (função pura — testada na suíte golden)
  */
 export function tituloEhCobertura(titulo: string): boolean {
-  const t = (titulo || '').trim()
-  if (!t) return false
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
   if (t.length < 6) return false
   const norm = normalizarTituloCg(t)
   if (RE_NAO_COBERTURA.test(norm)) return false
@@ -409,8 +501,10 @@ const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
  * e fragmento de frase também não. (função pura — testada na suíte golden)
  */
 function ehContinuacaoTituloZurich(linha: string): boolean {
-  const t = (linha || '').trim()
-  if (!t) return false
+  const limpo = removerPrefixoRodapeCg(linha || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
   if (/[.;:]$/.test(t)) return false
   if (ehLinhaSumario(t)) return false
   if (ehInicioSubtitulo(t)) return false
@@ -434,7 +528,10 @@ function ehContinuacaoTituloZurich(linha: string): boolean {
 const RE_CLAUSULA_ZURICH = /^cl[aá]usulas?\b/i
 
 export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
-  const t = (titulo || '').trim()
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
   const prox = (linhaSeguinte || '').trim()
   if (!t || !prox) return false
   // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
@@ -466,8 +563,8 @@ export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): 
   // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
   // eram reconhecidos).
   if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
-  // Guarda 5 — v0.0.229 (Zurich): fecho "Permanecem as (demais) exclusões da
-  // Cláusula 6ª …" repetido em cada seção "Riscos Excluídos" — nunca cobertura.
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
   if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
   // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
   // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
@@ -895,15 +992,22 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
     }
     for (let i = 0; i < linhas.length; i++) {
       if (flags[i]) continue
-      const bruto = limparLinhaSumario(linhas[i].texto)
-      if (!bruto) continue
+      const limpo = removerPrefixoRodapeCg(limparLinhaSumario(linhas[i].texto))
+      if (!limpo || ehLinhaRodapeCg(limpo)) continue
+      const bruto = limpo
       // v0.0.226 (Zurich): assinatura estrutural — título em caixa mista sem
       // prefixo seguido da linha âncora "1. Riscos Cobertos". Avaliada ANTES
       // dos prefixos de cobertura: o nome Zurich ("Danos ao Cais") não casa
       // nenhum prefixo. A linha do título NÃO entra no join de caixa alta
       // (o formato Zurich não quebra o título em caixa alta).
-      const proximaLinhaTitulo =
-        i + 1 < linhas.length ? limparLinhaSumario(linhas[i + 1].texto) : ''
+      let proximaLinhaTitulo = ''
+      for (let ni = i + 1; ni < linhas.length; ni++) {
+        if (flags[ni]) continue
+        const cand = removerPrefixoRodapeCg(limparLinhaSumario(linhas[ni].texto))
+        if (!cand || ehLinhaRodapeCg(cand)) continue
+        proximaLinhaTitulo = cand
+        break
+      }
       // v0.0.227: a MESMA assinatura avaliada na atravessada da quebra de
       // página — título = última linha da página anterior, âncora = esta
       // linha. A ocorrência aponta para a página ONDE O TÍTULO NASCE. Só é
@@ -1056,8 +1160,9 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       for (let idx = 0; idx < linhas.length; idx++) {
         if (flags[idx]) continue // linha de Sumário não entra no corpo
         const linha = linhas[idx]
-        const limpo = limparLinhaSumario(linha.texto)
-        if (!limpo) continue
+        const limpoBruto = removerPrefixoRodapeCg(limparLinhaSumario(linha.texto))
+        if (!limpoBruto || ehLinhaRodapeCg(limpoBruto)) continue
+        const limpo = limpoBruto
         if (page.pageNumber === secao.pagina && idx <= secao.ateLinhaTitulo) continue
         // v0.0.226 (Zurich): o título da próxima seção em caixa mista não casa
         // os prefixos — corta também pela assinatura Zurich, senão o corpo da
