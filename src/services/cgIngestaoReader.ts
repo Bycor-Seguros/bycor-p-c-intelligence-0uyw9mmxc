@@ -519,6 +519,14 @@ function ehContinuacaoTituloZurich(linha: string): boolean {
   if (RE_CLAUSULA_ZURICH.test(t) || RE_CLAUSULA_PARA_ZURICH.test(t)) return false
   if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
   if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  // v0.0.233 (tarefa 2c × 2e): cauda de preposição/conectivo no FIM da linha
+  // ("…Utilidades e/ou", "…Interrupção do") dentro de um bloco de título Zurich
+  // é SINAL de continuação — é exatamente a linha que precisa JUNTAR à cauda
+  // ("Serviços") ancorada em "1. Riscos Cobertos" logo abaixo. A guarda da
+  // 2e (família 3) continua valendo em todo o resto: ela impede FRAGMENTOS de
+  // corpo de virarem cobertura, mas não pode separar as linhas de um título
+  // que a assinatura ancora (regressão v0.0.232: golden 158/160).
+  if (RE_CAUDA_PREPOSICAO_CONECTIVO.test(t)) return true
   if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
   return true
 }
