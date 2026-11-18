@@ -506,8 +506,10 @@ const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
  * fechou a frase anterior (corpo) e NÃO é continuação; linha de Sumário,
  * subtítulo numerado, âncora, família "Cláusula...", fecho "Permanecem..."
  * e fragmento de frase também não. (função pura — testada na suíte golden)
+ * Exportada (v0.0.236) para diagnóstico do caso de 3 linhas no probe
+ * scripts/probe-cg-3-linhas.ts — exportar não altera nenhum fluxo.
  */
-function ehContinuacaoTituloZurich(linha: string): boolean {
+export function ehContinuacaoTituloZurich(linha: string): boolean {
   const limpo = removerPrefixoRodapeCg(linha || '').trim()
   if (!limpo) return false
   if (ehLinhaRodapeCg(limpo)) return false
@@ -1018,16 +1020,16 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       // v0.0.236: coleta ATÉ 3 linhas seguintes (a 1ª continua sendo a
       // "linha seguinte" de sempre; a 2ª e a 3ª só alimentam o guard de
       // cabeça de título Zurich quebrado em 3 linhas, logo abaixo).
-      const seguintesTitulo: string[] = []
+      const seguintesTitulo: Array<{ texto: string; index: number }> = []
       for (let ni = i + 1; ni < linhas.length && seguintesTitulo.length < 3; ni++) {
         if (flags[ni]) continue
         const cand = removerPrefixoRodapeCg(limparLinhaSumario(linhas[ni].texto))
         if (!cand || ehLinhaRodapeCg(cand)) continue
-        seguintesTitulo.push(cand)
+        seguintesTitulo.push({ texto: cand, index: ni })
       }
-      const proximaLinhaTitulo = seguintesTitulo[0] || ''
-      const segundaLinhaSeguinteTitulo = seguintesTitulo[1] || ''
-      const terceiraLinhaTitulo = seguintesTitulo[2] || ''
+      const proximaLinhaTitulo = seguintesTitulo[0]?.texto || ''
+      const segundaLinhaSeguinteTitulo = seguintesTitulo[1]?.texto || ''
+      const terceiraLinhaTitulo = seguintesTitulo[2]?.texto || ''
       // v0.0.227: a MESMA assinatura avaliada na atravessada da quebra de
       // página — título = última linha da página anterior, âncora = esta
       // linha. A ocorrência aponta para a página ONDE O TÍTULO NASCE. Só é
@@ -1086,20 +1088,54 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       }
       // v0.0.236 (seção 12, caso de 3 linhas): a CABEÇA de um título Zurich
       // quebrado em 3 linhas pode casar um prefixo de cobertura ("Vendaval,
-      // Furacão, ...") e virar seção TRUNCADA espúria que sobrevive ao dedupe
-      // (a chave da linha truncada difere da chave do título completo → o
-      // golden via 2 coberturas). Se as duas linhas seguintes fecham a
-      // assinatura Zurich (a 1ª é continuação e a 2ª casa com a âncora), esta
-      // linha é a cabeça do título quebrado: a ocorrência COMPLETA é criada
-      // pelo joiner multi-linha quando o loop alcança a última linha do
-      // título — a truncada não é criada aqui. Casos de 1 e 2 linhas intactos:
-      // nesses formatos a âncora nunca fica 2 linhas abaixo da cabeça, e uma
-      // cobertura legítima de 1 linha é seguida da âncora (que
-      // tituloEhCoberturaZurich rejeita via RE_ANCORAGEM), nunca do par
-      // continuação + âncora.
-      if (
+      // Furacão, ...") e virar seção TRUNCADA espúria. Mas o joiner da CAUDA
+      // só aceita 2 partes (partes.length < 3): no caso real (pág. 135) as
+      // linhas 2 ("Outros Engenhos...") e 3 ("Terrestres e Fumaça") não seriam
+      // todas juntadas e a seção nascia vazia/truncada — resultado [] da
+      // leitura completa (probe v0.0.235). Correção 1 do pedido: quando a
+      // CABEÇA é um título de cobertura legítimo e as DUAS linhas seguintes
+      // fecham a assinatura Zurich (a 1ª é continuação de título em caixa
+      // mista Zurich, sem pontuação de cláusula; a 2ª casa com a âncora
+      // "1. Riscos Cobertos"), a SEÇÃO COMPLETA nasce AQUI, com o título das
+      // 3 linhas juntadas — a linha não é interceptada por /^vendaval/
+      // (correção 2: o consumo como seção acontece só neste caminho, com a
+      // assinatura fechada) e nenhum título truncado é criado. A guarda é
+      // INERTE nos demais formatos: caixa alta (AXA/Chubb/Tokio) não passa
+      // pela assinatura (guarda 0) e os casos de 1 e 2 linhas Zurich têm a
+      // âncora em outra posição do par — o padrão só ativa no formato
+      // exato de 3 linhas.
+      const cabecaTitulo3LinhasZurich =
         tituloEhCobertura(bruto) &&
         ehContinuacaoTituloZurich(proximaLinhaTitulo) &&
+        tituloEhCoberturaZurich(segundaLinhaSeguinteTitulo, terceiraLinhaTitulo)
+      if (cabecaTitulo3LinhasZurich) {
+        // título COMPLETO = cabeça + as 2 linhas de continuação juntadas.
+        const tituloCompleto = [bruto, proximaLinhaTitulo, segundaLinhaSeguinteTitulo]
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        ocorrencias.push({
+          nome: tituloCompleto,
+          pagina: page.pageNumber,
+          paginaAncora: 0,
+          slotY: linhas[i].slotY,
+          ordem: ordem++,
+          // ÍNDICE REAL da última linha consumida como título (a 2ª linha
+          // seguinte; linhas de Sumário/rodapé puladas não contam) — a 2ª
+          // passada pula as 3 linhas do título e começa o corpo na âncora.
+          ateLinhaTitulo: seguintesTitulo[1].index,
+        })
+        i = seguintesTitulo[1].index
+        continue
+      }
+      // v0.0.236 (seção 12, cinto de segurança): cabeça de título Zurich
+      // quebrado em 3 linhas que NÃO fecha a assinatura com a 1ª continuação
+      // (variação de formato) — a linha truncada nunca vira seção aqui; o
+      // joiner da cauda ainda pode reconstruir o título quando o loop
+      // alcançar a última linha. Sem este continue, a cabeça casava
+      // /^vendaval/ e nascia uma seção TRUNCADA espúria.
+      if (
+        tituloEhCobertura(bruto) &&
         tituloEhCoberturaZurich(segundaLinhaSeguinteTitulo, terceiraLinhaTitulo)
       ) {
         continue
