@@ -22,9 +22,12 @@
  *    MISTA sem prefixo ("Danos ao Cais", "Erros e Omissões"), ancorado na
  *    linha seguinte "1. Riscos Cobertos" — as exclusões variam entre "2." e
  *    "3. Riscos Excluídos", por isso a numeração dos blocos seguintes NÃO é
- *    âncora. Cláusulas ("1. Fica entendido…") e linhas de Sumário pontilhadas
- *    são guardadas; a guarda de fragmento usa só o núcleo INSENSÍVEL à caixa
- *    (a regra de minúscula inicial rejeitaria todo título caixa mista).
+ *    âncora. Quebra de página: o título pode nascer no FIM de uma página com
+ *    a âncora "1. Riscos Cobertos" na PRIMEIRA linha da página seguinte — a
+ *    assinatura também é avaliada nessa atravessada. Cláusulas ("1. Fica
+ *    entendido…") e linhas de Sumário pontilhadas são guardadas; a guarda de
+ *    fragmento usa só o núcleo INSENSÍVEL à caixa (a regra de minúscula
+ *    inicial rejeitaria todo título caixa mista).
  *  - NÃO coberturas: cabeçalhos estruturais (Sumário, Apresentação,
  *    Disposições Gerais, glossário...) e CLÁUSULA PARTICULAR/ESPECÍFICA/DE
  *    EXCLUSÃO — cláusulas particulares em geral são extensão/exclusão/ajuste,
@@ -362,6 +365,14 @@ export function tituloEhCobertura(titulo: string): boolean {
 
 /** Âncora: a linha IMEDIATAMENTE abaixo do título ("1. Riscos Cobertos"). */
 const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
+
+/**
+ * Âncora ATRAVESSANDO a quebra de página (v0.0.227): a linha imediatamente
+ * abaixo do título pode ser a PRIMEIRA linha da página seguinte — o título
+ * "Contas a Receber" nasce no fim da pág. 53 (após o bloco "5. Franquia") e
+ * a âncora "1. Riscos Cobertos" abre a pág. 54. A assinatura é a MESMA em
+ * ambos os casos; a diferença é só DE ONDE vem o par de linhas.
+ */
 
 /** Família "Cláusula(s) ..." nunca é cobertura Zurich (particulares, exclusões, agrupadores: "Cláusulas Particulares", "Cláusulas de Coberturas Adicionais"). O plural exige \b depois do S. */
 const RE_CLAUSULA_ZURICH = /^cl[aá]usulas?\b/i
@@ -725,6 +736,12 @@ interface SecaoCobertura {
    * da própria seção (exclusões nunca eram vinculadas — caso Chubb).
    */
   ateLinhaTitulo: number
+  /**
+   * Página onde a ÂNCORA "1. Riscos Cobertos" cai quando ela NÃO está na
+   * página do título (v0.0.227, Zurich atravessando quebra de página). O corpo
+   * da seção começa NESSA página; 0 = âncora na própria página (normal).
+   */
+  paginaAncora: number
   corpo: Array<{ texto: string; pagina: number; slotY: number }>
 }
 
@@ -759,15 +776,36 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
   const ocorrencias: Array<{
     nome: string
     pagina: number
+    paginaAncora: number
     slotY: number
     ordem: number
     ateLinhaTitulo: number
   }> = []
   let ordem = 0
 
-  for (const page of pages) {
+  for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+    const page = pages[pIdx]
     const linhas = linhasPorPagina.get(page.pageNumber) || []
     const flags = sumarioFlagsPorPagina.get(page.pageNumber) || []
+    // v0.0.227 (Zurich, quebra de página): página IMEDIATAMENTE anterior na
+    // ordem lida e sua ÚLTIMA linha fora de Sumário — candidato a título que
+    // nasceu no fim dela com a âncora já na página atual.
+    const pagAnterior = pIdx > 0 ? pages[pIdx - 1] : null
+    const numeroPaginaAnterior = pagAnterior?.pageNumber || 0
+    let ultimaLinhaPaginaAnterior = ''
+    let slotYUltimaLinhaPaginaAnterior = 0
+    if (pagAnterior) {
+      const linhasAnt = linhasPorPagina.get(pagAnterior.pageNumber) || []
+      const flagsAnt = sumarioFlagsPorPagina.get(pagAnterior.pageNumber) || []
+      for (let k = linhasAnt.length - 1; k >= 0; k--) {
+        if (flagsAnt[k]) continue
+        const c = limparLinhaSumario(linhasAnt[k].texto)
+        if (!c) continue
+        ultimaLinhaPaginaAnterior = c
+        slotYUltimaLinhaPaginaAnterior = linhasAnt[k].slotY
+        break
+      }
+    }
     for (let i = 0; i < linhas.length; i++) {
       if (flags[i]) continue
       const bruto = limparLinhaSumario(linhas[i].texto)
@@ -779,14 +817,40 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       // (o formato Zurich não quebra o título em caixa alta).
       const proximaLinhaTitulo =
         i + 1 < linhas.length ? limparLinhaSumario(linhas[i + 1].texto) : ''
-      if (tituloEhCoberturaZurich(bruto, proximaLinhaTitulo)) {
-        ocorrencias.push({
-          nome: bruto,
-          pagina: page.pageNumber,
-          slotY: linhas[i].slotY,
-          ordem: ordem++,
-          ateLinhaTitulo: i,
-        })
+      // v0.0.227: a MESMA assinatura avaliada na atravessada da quebra de
+      // página — título = última linha da página anterior, âncora = esta
+      // linha. A ocorrência aponta para a página ONDE O TÍTULO NASCE. Só é
+      // avaliada quando a assinatura na mesma página NÃO casou (o caso
+      // same-page tem prioridade; nenhuma linha é âncora e título ao mesmo
+      // tempo, então os dois caminhos nunca competem).
+      const ehZurichMesmaPagina = tituloEhCoberturaZurich(bruto, proximaLinhaTitulo)
+      const ehZurichAtravessandoPagina =
+        !ehZurichMesmaPagina &&
+        !!ultimaLinhaPaginaAnterior &&
+        tituloEhCoberturaZurich(ultimaLinhaPaginaAnterior, bruto)
+      if (ehZurichMesmaPagina || ehZurichAtravessandoPagina) {
+        if (ehZurichAtravessandoPagina) {
+          ocorrencias.push({
+            nome: ultimaLinhaPaginaAnterior,
+            pagina: numeroPaginaAnterior,
+            paginaAncora: page.pageNumber,
+            slotY: slotYUltimaLinhaPaginaAnterior,
+            ordem: ordem++,
+            // título está na PÁGINA ANTERIOR: nenhuma linha DESTE página é
+            // título — a 2ª passada não pula nada aqui (o corpo começa na
+            // âncora, já nesta página).
+            ateLinhaTitulo: -1,
+          })
+        } else {
+          ocorrencias.push({
+            nome: bruto,
+            pagina: page.pageNumber,
+            paginaAncora: 0,
+            slotY: linhas[i].slotY,
+            ordem: ordem++,
+            ateLinhaTitulo: i,
+          })
+        }
         continue
       }
       if (!tituloEhCobertura(bruto)) continue
@@ -814,6 +878,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       ocorrencias.push({
         nome: linhasTitulo.join(' ').replace(/\s+/g, ' ').trim(),
         pagina: page.pageNumber,
+        paginaAncora: 0,
         slotY: linhas[i].slotY,
         ordem: ordem++,
         // título quebrado: a última linha consumida pelo join é parte do
@@ -829,7 +894,14 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
   // índice nunca vence a seção real do corpo), preservando a ordem do documento.
   const ultimaPorChave = new Map<
     string,
-    { nome: string; pagina: number; slotY: number; ordem: number; ateLinhaTitulo: number }
+    {
+      nome: string
+      pagina: number
+      paginaAncora: number
+      slotY: number
+      ordem: number
+      ateLinhaTitulo: number
+    }
   >()
   for (const o of ocorrencias) ultimaPorChave.set(chaveDedupTituloCg(o.nome), o)
   const secoes: SecaoCobertura[] = [...ultimaPorChave.values()]
@@ -837,6 +909,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
     .map((o) => ({
       nome: o.nome,
       pagina: o.pagina,
+      paginaAncora: o.paginaAncora,
       slotY: o.slotY,
       ateLinhaTitulo: o.ateLinhaTitulo,
       corpo: [],
@@ -846,12 +919,33 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
   const itens: CgIngestaoItemExtraido[] = []
   for (let s = 0; s < secoes.length; s++) {
     const secao = secoes[s]
+    // v0.0.227 (Zurich, quebra de página): a ÂNCORA "1. Riscos Cobertos" pode
+    // cair na PÁGINA SEGUINTE à do título — o corpo começa NESSA página. O
+    // limite de fim (página da próxima seção) continua sendo o mais adiantado.
+    const inicioCorpo = secao.paginaAncora || secao.pagina
     const fimPag =
       s + 1 < secoes.length ? secoes[s + 1].pagina : (pages[pages.length - 1]?.pageNumber || 1) + 1
-    for (const page of pages) {
-      if (page.pageNumber < secao.pagina || page.pageNumber > fimPag) continue
+    for (let pCorpo = 0; pCorpo < pages.length; pCorpo++) {
+      const page = pages[pCorpo]
+      if (page.pageNumber < inicioCorpo || page.pageNumber > fimPag) continue
       const linhas = linhasPorPagina.get(page.pageNumber) || []
       const flags = sumarioFlagsPorPagina.get(page.pageNumber) || []
+      // v0.0.227: última linha fora de Sumário da página IMEDIATAMENTE anterior
+      // a esta, na ordem lida — candidato a título Zurich que nasceu no fim
+      // dela com a âncora na primeira linha da página atual.
+      let ultimaLinhaPagAntCorpo = ''
+      if (pCorpo > 0) {
+        const pagAnt = pages[pCorpo - 1]
+        const linhasAnt = linhasPorPagina.get(pagAnt.pageNumber) || []
+        const flagsAnt = sumarioFlagsPorPagina.get(pagAnt.pageNumber) || []
+        for (let k = linhasAnt.length - 1; k >= 0; k--) {
+          if (flagsAnt[k]) continue
+          const c = limparLinhaSumario(linhasAnt[k].texto)
+          if (!c) continue
+          ultimaLinhaPagAntCorpo = c
+          break
+        }
+      }
       for (let idx = 0; idx < linhas.length; idx++) {
         if (flags[idx]) continue // linha de Sumário não entra no corpo
         const linha = linhas[idx]
@@ -863,9 +957,57 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         // seção anterior engolia o título seguinte (que virava "exclusão").
         const proximaLinhaCorpo =
           idx + 1 < linhas.length ? limparLinhaSumario(linhas[idx + 1].texto) : ''
-        if (tituloEhCobertura(limpo) || tituloEhCoberturaZurich(limpo, proximaLinhaCorpo)) {
+        // v0.0.227 (Zurich, quebra de página): PRIMEIRA linha fora de Sumário
+        // da página SEGUINTE (na ordem lida) — a âncora de um título que nasce
+        // no fim desta página pode estar lá.
+        let primeiraLinhaPaginaSeguinte = ''
+        if (pCorpo + 1 < pages.length) {
+          const pagSeg = pages[pCorpo + 1]
+          const linhasSeg = linhasPorPagina.get(pagSeg.pageNumber) || []
+          const flagsSeg = sumarioFlagsPorPagina.get(pagSeg.pageNumber) || []
+          for (let k = 0; k < linhasSeg.length; k++) {
+            if (flagsSeg[k]) continue
+            const c = limparLinhaSumario(linhasSeg[k].texto)
+            if (!c) continue
+            primeiraLinhaPaginaSeguinte = c
+            break
+          }
+        }
+        // v0.0.227 (Zurich, quebra de página), corte da seção ANTERIOR:
+        //  a) o TÍTULO atravessado (última linha desta página, com a âncora
+        //     na primeira linha da página seguinte) NÃO entra no corpo;
+        //  b) a ÂNCORA "1. Riscos Cobertos" na primeira linha de uma página
+        //     também corta (cinto de segurança — senão a seção anterior
+        //     engoliria título, âncora e corpo da seção atravessada).
+        // A própria seção atravessada não corta: o corpo DELA começa na âncora.
+        const ehTituloSecaoAtravessada =
+          !!primeiraLinhaPaginaSeguinte &&
+          tituloEhCoberturaZurich(limpo, primeiraLinhaPaginaSeguinte)
+        const ehAncoraSecaoAtravessada =
+          idx === 0 &&
+          !!ultimaLinhaPagAntCorpo &&
+          secao.paginaAncora !== page.pageNumber &&
+          tituloEhCoberturaZurich(ultimaLinhaPagAntCorpo, limpo)
+        if (
+          tituloEhCobertura(limpo) ||
+          tituloEhCoberturaZurich(limpo, proximaLinhaCorpo) ||
+          ehTituloSecaoAtravessada ||
+          ehAncoraSecaoAtravessada
+        ) {
           // próxima seção começa no meio desta página: corta o corpo aqui
           break
+        }
+        // v0.0.227 (Zurich, quebra de página): a âncora "1. Riscos Cobertos"
+        // da seção ATUAL no começo da página do corpo NÃO entra no corpo (a
+        // leitura começa depois dela) — e nunca deve fechar o bloco de
+        // exclusões como subtítulo (não é caixa alta, não fecha).
+        if (
+          secao.paginaAncora &&
+          page.pageNumber === inicioCorpo &&
+          secao.corpo.length === 0 &&
+          RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(limpo)
+        ) {
+          continue
         }
         secao.corpo.push({ texto: limpo, pagina: page.pageNumber, slotY: linha.slotY })
       }

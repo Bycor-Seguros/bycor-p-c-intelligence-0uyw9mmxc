@@ -1052,7 +1052,8 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
   })
 
   // ------------------------------------------------------------------
-  // 12) ASSINATURA ESTRUTURAL ZURICH — v0.0.226 (tarefa 2a). Títulos de
+  // 12) ASSINATURA ESTRUTURAL ZURICH — v0.0.226 (tarefa 2a), v0.0.227
+  //     (tarefa 2b, parte 1: quebra de página). Títulos de
   //     cobertura em CAIXA MISTA sem prefixo ("Danos ao Cais", "Erros e
   //     Omissões"), ancorados na linha seguinte "1. Riscos Cobertos"
   //     (as exclusões variam entre "2." e "3. Riscos Excluídos" — a
@@ -1197,6 +1198,65 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       `deveria reconhecer as 2 coberturas (Zurich + AXA), veio ${JSON.stringify(coberturas2.map((c) => c.nomeExtraido))}`,
     )
   })
+
+  t(
+    'Ingestão CG: título Zurich atravessando a quebra de página ("Contas a Receber") é cobertura',
+    () => {
+      // v0.0.227 (tarefa 2b, parte 1): o título nasce no FIM de uma página
+      // (após o bloco "5. Franquia") e a âncora "1. Riscos Cobertos" é a
+      // PRIMEIRA linha da página seguinte — par título-âncora na atravessada
+      // vira cobertura, com o corpo começando APÓS a âncora.
+      assert(
+        tituloEhCoberturaZurich('Contas a Receber', '1. Riscos Cobertos'),
+        '"Contas a Receber" + "1. Riscos Cobertos" deveria casar a assinatura Zurich',
+      )
+      const pages = [
+        page(1, [
+          ['texto de riscos cobertos da seção anterior', 700],
+          ['5. Franquia', 660],
+          ['aplicável a cada cobertura, observado o limite mínimo', 620],
+          ['Contas a Receber', 560],
+        ]),
+        page(2, [
+          ['1. Riscos Cobertos', 700],
+          ['mediante contratação desta cláusula, estarão cobertos os créditos', 660],
+          ['3. Riscos Excluídos', 620],
+          ['a) insolvência ou mora de devedores já noticiada na contratação', 580],
+        ]),
+        page(3, [['texto de riscos cobertos da próxima seção', 700]]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.some((c) => c.nomeExtraido === 'Contas a Receber'),
+        `leitura completa deveria extrair a cobertura "Contas a Receber" atravessando a quebra de página, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      // O corpo da seção começa APÓS a âncora (a linha "1. Riscos Cobertos"
+      // nunca entra como texto de cobertura) e a ocorrência aponta para a
+      // página ONDE O TÍTULO NASCE (pág. 53 no caso real, pág. 1 aqui).
+      const contas = coberturas.find((c) => c.nomeExtraido === 'Contas a Receber')
+      assert(!!contas, 'cobertura "Contas a Receber" deveria existir na leitura')
+      assert(
+        contas!.pagina === 1 && contas!.slotY === 560,
+        `a ocorrência deveria apontar para a página do título (1, y=560), veio ${contas?.pagina}/${contas?.slotY}`,
+      )
+      const todasExclusoesContas = (contas?.exclusoes || []).map((e) => e.texto || '').join(' | ')
+      assert(
+        !todasExclusoesContas.includes('1. Riscos Cobertos'),
+        'a linha âncora "1. Riscos Cobertos" não deveria entrar no corpo da seção',
+      )
+      assert(
+        todasExclusoesContas.includes('insolvência ou mora de devedores'),
+        `as exclusões do bloco 3 da página seguinte deveriam ser extraídas, veio ${JSON.stringify(contas?.exclusoes || [])}`,
+      )
+      // Nenhuma outra cobertura deve nascer: "5. Franquia" não é título de
+      // cobertura e a página 3 inteira é corpo da seção "Contas a Receber".
+      assert(
+        coberturas.length === 1,
+        `deveria haver exatamente 1 cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+    },
+  )
 
   return resultados
 }
