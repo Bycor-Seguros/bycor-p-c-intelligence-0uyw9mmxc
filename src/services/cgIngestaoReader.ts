@@ -267,7 +267,7 @@ const RE_PERMANECEM_EXCLUSOES_ZURICH =
  * o pdf.js quebra "…(dezessete mil e quinhentos reais)" e a linha "reais)"
  * (pág. 128) nunca é título — termina em "mil/milhões/reais)" fechado.
  */
-const RE_CAUDA_VALOR_EXTESTO_ZURICH = /\b(?:milh[õo]es?|mil|reais?)\s*\)\s*$/i
+export const RE_CAUDA_VALOR_EXTESTO_ZURICH = /\b(?:milh[õo]es?|mil|reais?)\s*\)\s*$/i
 
 /**
  * Núcleo da guarda de fragmento, INSENSÍVEL à caixa (v0.0.227): alínea, cauda
@@ -347,6 +347,7 @@ export function tituloEhCobertura(titulo: string): boolean {
   if (RE_CLAUSULA_NAO_COBERTURA.test(norm)) {
     if (RE_CLAUSULA_PARTICULAR_EXTENSAO.test(norm)) return true
     return RE_CLAUSULA_COBERTURA_EXPLICITA.test(norm)
+  }
 
   if (/^cobertura\s+(basica|adicional|especial)\b/i.test(norm)) return true
   if (/^cobertura\s+(de\s+|adicional\s+-\s+)/i.test(t)) return true
@@ -397,6 +398,29 @@ export function tituloEhCobertura(titulo: string): boolean {
 
 /** Âncora: a linha IMEDIATAMENTE abaixo do título ("1. Riscos Cobertos"). */
 const RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH = /^1\.?\s*riscos?\s+cobertos\b/i
+
+/**
+ * v0.0.229 (tarefa 2c): a linha é uma CONTINUAÇÃO de título Zurich quebrado
+ * em 2-3 linhas? Os títulos Zurich quebram SEM pontuação de fechamento
+ * ("…Utilidades e/ou" + "Serviços", "…Interior de" + "Cofre", "…Impacto de
+ * Veículos" + "Terrestres e Fumaça"): linha que termina em "."/";"/":"
+ * fechou a frase anterior (corpo) e NÃO é continuação; linha de Sumário,
+ * subtítulo numerado, âncora, família "Cláusula...", fecho "Permanecem..."
+ * e fragmento de frase também não. (função pura — testada na suíte golden)
+ */
+function ehContinuacaoTituloZurich(linha: string): boolean {
+  const t = (linha || '').trim()
+  if (!t) return false
+  if (/[.;:]$/.test(t)) return false
+  if (ehLinhaSumario(t)) return false
+  if (ehInicioSubtitulo(t)) return false
+  if (RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_ZURICH.test(t) || RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  return true
+}
 
 /**
  * Âncora ATRAVESSANDO a quebra de página (v0.0.227): a linha imediatamente
@@ -905,13 +929,33 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
             ateLinhaTitulo: -1,
           })
         } else {
+          // v0.0.229 (tarefa 2c, família 1): título Zurich QUEBRADO em 2-3
+          // linhas — a assinatura casa na ÚLTIMA linha do título (a que tem a
+          // âncora abaixo), então as linhas ACIMA dela são caudas do MESMO
+          // título ("…Utilidades e/ou" + "Serviços", pág. 58; "…Interior de"
+          // + "Cofre", pág. 124; 3 linhas em pág. 135). Junta TODAS as linhas
+          // do título antes de criar a seção — a cauda sozinha nunca vira
+          // cobertura espúria.
+          const partes = [bruto]
+          let inicio = i
+          while (inicio - 1 >= 0 && partes.length < 3) {
+            if (flags[inicio - 1]) break
+            const cand = limparLinhaSumario(linhas[inicio - 1].texto)
+            if (!cand || !ehContinuacaoTituloZurich(cand)) break
+            // a própria linha acima não pode ser OUTRO título Zurich com
+            // âncora própria (seção legítima anterior) — não se junta.
+            const candProx = inicio - 2 >= 0 ? limparLinhaSumario(linhas[inicio - 2].texto) : ''
+            if (tituloEhCoberturaZurich(cand, candProx)) break
+            partes.unshift(cand)
+            inicio--
+          }
           ocorrencias.push({
-            nome: bruto,
+            nome: partes.join(' ').replace(/\s+/g, ' ').trim(),
             pagina: page.pageNumber,
             paginaAncora: 0,
-            slotY: linhas[i].slotY,
+            slotY: linhas[inicio].slotY,
             ordem: ordem++,
-            ateLinhaTitulo: i,
+            ateLinhaTitulo: inicio,
           })
         }
         continue
@@ -1051,11 +1095,28 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
           !!ultimaLinhaPagAntCorpo &&
           secao.paginaAncora !== page.pageNumber &&
           tituloEhCoberturaZurich(ultimaLinhaPagAntCorpo, limpo)
+        // v0.0.229 (tarefa 2c, família 1): a seção ANTERIOR também corta na
+        // PRIMEIRA linha de um título Zurich quebrado — a assinatura só casa
+        // na ÚLTIMA linha do título (com a âncora), então sem este corte as
+        // linhas de cima do título entravam no corpo da seção anterior.
+        // Guarda anti-falso-positivo: a linha candidata não tem dígito (linha
+        // de valor/tabela) e parece continuação de título (sem pontuação de
+        // fechamento) — linha de corpo legítima não é cortada.
+        const segundaLinhaSeguinteCorpo =
+          idx + 2 < linhas.length
+            ? limparLinhaSumario(linhas[idx + 2].texto)
+            : primeiraLinhaPaginaSeguinte
+        const ehTituloZurichQuebradoAqui =
+          !!proximaLinhaCorpo &&
+          !/\d/.test(limpo) &&
+          ehContinuacaoTituloZurich(limpo) &&
+          tituloEhCoberturaZurich(proximaLinhaCorpo, segundaLinhaSeguinteCorpo)
         if (
           tituloEhCobertura(limpo) ||
           tituloEhCoberturaZurich(limpo, proximaLinhaCorpo) ||
           ehTituloSecaoAtravessada ||
-          ehAncoraSecaoAtravessada
+          ehAncoraSecaoAtravessada ||
+          ehTituloZurichQuebradoAqui
         ) {
           // próxima seção começa no meio desta página: corta o corpo aqui
           break

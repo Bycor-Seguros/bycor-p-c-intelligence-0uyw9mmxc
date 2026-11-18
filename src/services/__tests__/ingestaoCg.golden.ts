@@ -38,6 +38,7 @@ import {
   type CoberturaCanonicaRecord,
 } from '@/services/equivalenciaCoberturasService'
 import { normalizeMatchText } from '@/services/guardiaImporter'
+import { RE_CAUDA_VALOR_EXTESTO_ZURICH } from '@/services/cgIngestaoReader'
 
 // ---------------------------------------------------------------------------
 // Helpers de fixture (estrutura genérica, zero texto real)
@@ -1387,6 +1388,155 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
       assert(
         leitura.produtoVersaoDetectado === 'Versão Setembro/2024',
         `versão inesperada: ${leitura.produtoVersaoDetectado}`,
+      )
+    },
+  )
+
+  // ------------------------------------------------------------------
+  // 12.c) ZURICH — v0.0.230 (tarefa 2c): as 3 famílias de guarda da
+  //      re-ingestão REAL (desvios das págs. 58, 124, 128, 131, 134 e 135
+  //      do formato real — nenhum texto real entra aqui, só a ESTRUTURA):
+  //      família 1 — título quebrado em 2-3 linhas (a cauda sozinha nunca
+  //      vira cobertura; o título COMPLETO vira); família 2 — cauda de
+  //      valor por extenso de tabela ("... reais)"); família 3 —
+  //      continuação de parágrafo de fecho ("Permanecem as demais
+  //      exclusões da Cláusula 6ª...").
+  // ------------------------------------------------------------------
+
+  t(
+    'Ingestão CG: título Zurich quebrado em 2 linhas — cauda não vira cobertura e título completo vira',
+    () => {
+      // Estrutura do caso real (pág. 58): título em caixa mista quebrado —
+      // "Danos Materiais por Interrupção do Fornecimento de Utilidades e/ou" +
+      // "Serviços" + âncora "1. Riscos Cobertos". Sem o join, a cauda "Serviços"
+      // casava a assinatura (âncora abaixo) e virava cobertura espúria.
+      assert(
+        tituloEhCoberturaZurich('Serviços', '1. Riscos Cobertos'),
+        'a CAUDA sozinha casaria a assinatura — o join no leitor é quem impede a seção espúria',
+      )
+      const pages = [
+        page(1, [
+          ['Danos Materiais por Interrupção do Fornecimento de Utilidades e/ou', 620],
+          ['Serviços', 580],
+          ['1. Riscos Cobertos', 540],
+          ['texto de riscos cobertos da seção', 500],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1,
+        `deveria haver exatamente 1 cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      assert(
+        coberturas[0].nomeExtraido ===
+          'Danos Materiais por Interrupção do Fornecimento de Utilidades e/ou Serviços',
+        `o título COMPLETO deveria virar a cobertura, veio "${coberturas[0]?.nomeExtraido}"`,
+      )
+    },
+  )
+
+  t(
+    'Ingestão CG: título Zurich quebrado em 3 linhas — cauda "Terrestres e Fumaça" não vira cobertura',
+    () => {
+      // Estrutura do caso real (pág. 135, título em 3 linhas): "Vendaval,
+      // Furacão, Ciclone, Tornado, Granizo, Queda de Aeronaves ou Quaisquer
+      // Outros Engenhos Aéreos ou Espaciais, Impacto de Veículos" +
+      // "Terrestres e Fumaça" + âncora.
+      const pages = [
+        page(1, [
+          ['Vendaval, Furacão, Ciclone, Tornado, Granizo, Queda de Aeronaves ou Quaisquer', 660],
+          ['Outros Engenhos Aéreos ou Espaciais, Impacto de Veículos', 620],
+          ['Terrestres e Fumaça', 580],
+          ['1. Riscos Cobertos', 540],
+        ]),
+        page(2, [
+          ['texto de riscos cobertos da seção', 680],
+          ['3. Riscos Excluídos', 640],
+          ['a) danos a aeronaves e engenhos aéreos ou espaciais', 600],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1,
+        `deveria haver exatamente 1 cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      assert(
+        coberturas[0].nomeExtraido ===
+          'Vendaval, Furacão, Ciclone, Tornado, Granizo, Queda de Aeronaves ou Quaisquer Outros Engenhos Aéreos ou Espaciais, Impacto de Veículos Terrestres e Fumaça',
+        `o título COMPLETO em 3 linhas deveria virar a cobertura, veio "${coberturas[0]?.nomeExtraido}"`,
+      )
+    },
+  )
+
+  t('Ingestão CG: cauda de valor por extenso ("reais)") não vira cobertura Zurich', () => {
+    // Estrutura do caso real (pág. 128, pos. 78): a tabela de limites quebra
+    // "…(dezessete mil e quinhentos reais)" e a linha "reais)" — casada pela
+    // assinatura (âncora abaixo) — virava cobertura espúria.
+    assert(
+      !tituloEhCoberturaZurich('reais)', '1. Riscos Cobertos'),
+      'cauda "reais)" não deveria casar a assinatura Zurich (guarda 6)',
+    )
+    assert(
+      RE_CAUDA_VALOR_EXTESTO_ZURICH.test('reais)'),
+      'a guarda RE_CAUDA_VALOR_EXTESTO_ZURICH deveria casar "reais)"',
+    )
+    const pages = [
+      page(1, [
+        ['(dezessete mil e quinhentos', 620],
+        ['reais)', 580],
+        ['1. Riscos Cobertos', 540],
+        ['texto de riscos cobertos da seção', 500],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.length === 0,
+      `cauda "reais)" não deveria virar cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+    )
+  })
+
+  t(
+    'Ingestão CG: continuação de parágrafo "Permanecem as demais exclusões…" não vira cobertura Zurich',
+    () => {
+      // Estrutura do caso real (págs. 131 e 134): a linha embrulhada do fecho
+      // da seção de exclusões — e a linha de abertura completa — nunca são
+      // cobertura em QUALQUER página (guarda 5).
+      const linhaAbertura =
+        'Permanecem as demais exclusões da Cláusula 6ª - Exclusões Gerais das Condições Gerais'
+      const linhaCauda =
+        'que não tenham sido expressamente alteradas pela presente cobertura ou pelas demais'
+      assert(
+        !tituloEhCoberturaZurich(linhaAbertura, '1. Riscos Cobertos'),
+        'fecho "Permanecem as demais exclusões..." não deveria casar a assinatura (guarda 5)',
+      )
+      assert(
+        !tituloEhCoberturaZurich(linhaCauda, '1. Riscos Cobertos'),
+        'cauda embrulhada "que não tenham sido expressamente alteradas..." não deveria casar a assinatura (guarda 5)',
+      )
+      const pages = [
+        page(1, [
+          ['Erros e Omissões', 700],
+          ['1. Riscos Cobertos', 660],
+          ['texto de riscos cobertos da seção', 620],
+          ['3. Riscos Excluídos', 580],
+          [linhaAbertura, 540],
+          [linhaCauda, 500],
+          ['1. Riscos Cobertos', 460],
+          ['texto do bloco seguinte', 420],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+      assert(
+        coberturas.length === 1 && coberturas[0].nomeExtraido === 'Erros e Omissões',
+        `as 2 linhas do fecho não deveriam virar cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+      )
+      assert(
+        !coberturas.some((c) => c.nomeExtraido.startsWith('Permanecem')),
+        'nenhuma linha "Permanecem..." deveria virar cobertura',
       )
     },
   )
