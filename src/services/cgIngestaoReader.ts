@@ -237,6 +237,19 @@ const RE_MEIO_FRASE_CAIXA_ALTA =
   /,\s+este\s|,\s+o\s+qual|,\s+a\s+qual|\be\s+jamais\b|\baplicando-se\b|\be,\s|,\s+segue\b/i
 
 /**
+ * Guarda v0.0.228 (Zurich) — cláusula específica "Cláusula para ..." (ex.:
+ * "Cláusula para Imóveis Tombados pelo Patrimônio Histórico", pág. 137 do
+ * formato real): NÃO é cobertura — é ajuste particular de cálculo, seguido do
+ * bloco "1. Riscos Cobertos" da PRÓPRIA cláusula. O título de cobertura Zurich
+ * real nunca começa com "Cláusula para". Cobre também a família "Cláusula
+ * de ..." / "Cláusulas ..." (particulares/exclusões/agrupadores), já guardada
+ * desde a v0.0.226 — o \b depois do "s" preserva o plural ("Cláusulas
+ * Particulares", "Cláusulas de Coberturas Adicionais") e o singular ("Cláusula
+ * de 1º Risco Absoluto", "Cláusula de Exclusão de Asbestos – WEH").
+ */
+const RE_CLAUSULA_PARA_ZURICH = /^cl[aá]usulas?\s+para\b/i
+
+/**
  * Núcleo da guarda de fragmento, INSENSÍVEL à caixa (v0.0.227): alínea, cauda
  * de período aberto, conector de meio de frase e verbo de cláusula. Usada
  * direto pela assinatura Zurich — o formato Zurich É caixa mista, então a
@@ -396,8 +409,12 @@ export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): 
   // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
   // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
   // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
-  // começa com "Cláusula" — bloqueia a família inteira.
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
   if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
   // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
   // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
   // conector de meio de frase e verbo de cláusula. A regra de minúscula
@@ -672,6 +689,24 @@ export function detectarProdutoVersaoCg(textoGlobal: string): string {
   const mMes = texto.match(/processo\s+susep[^-–\n]{0,60}[-–]\s*(\d{2}\s*\/\s*\d{4})/i)
 
   const ocorrencias = [...texto.matchAll(/vers[aã]o\s*:?\s*(\d{1,3})\s*\/\s*(\d{4})/gi)]
+  // v0.0.228 (Zurich): a versão pode vir com NOME DE MÊS — "Versão
+  // Setembro/2024" na capa (sem dois-pontos) e "Versão: Setembro/2024" no
+  // cabeçalho das páginas internas. Formato NUMÉRICO ("Versão 12/2025")
+  // tem prioridade (pacto anti-regressão: a regra da mais frequente só se
+  // aplica às ocorrências numéricas); o nome de mês é FALLBACK — usado só
+  // quando nenhuma ocorrência numérica existe no documento inteiro. A
+  // primeira ocorrência vence (capa vem antes do corpo no texto global).
+  if (ocorrencias.length === 0) {
+    const ocorrenciasMes = [
+      ...texto.matchAll(
+        /vers[aã]o\s*:?\s*(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s*\/\s*(\d{4})/gi,
+      ),
+    ]
+    if (ocorrenciasMes.length > 0) {
+      const primeiro = ocorrenciasMes[0]
+      return `Versão ${primeiro[1]}/${primeiro[2]}`
+    }
+  }
   if (ocorrencias.length > 0) {
     // Frequência por chave normalizada "n/aaaa" (espaços da barra ignorados).
     const freq = new Map<string, { versao: string; n: number; ultima: { v: string; i: number } }>()

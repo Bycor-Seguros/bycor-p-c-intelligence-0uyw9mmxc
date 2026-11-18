@@ -1258,5 +1258,138 @@ export function runIngestaoCgSuite(): Array<{ nome: string; ok: boolean; detalhe
     },
   )
 
+  // ------------------------------------------------------------------
+  // 12.b) ZURICH — v0.0.228 (tarefa 2b, parte 2): guarda "Cláusula para
+  //      ..." (Imóveis Tombados, pág. 137), cabeçalhos agrupadores no
+  //      PLURAL ("Cláusulas Particulares" pág. 137, "Cláusulas de
+  //      Coberturas Adicionais" pág. 45) e capa sem dois-pontos (Processo
+  //      SUSEP Nº ... + Versão Setembro/2024). Fixtures ESTRUTURAIS
+  //      genéricos (nenhum texto real do PDF entra aqui).
+  // ------------------------------------------------------------------
+
+  t('Ingestão CG: "Cláusula para Imóveis ..." não vira cobertura Zurich', () => {
+    // Pág. 137 do formato real: título em caixa mista seguido da linha
+    // "1. Riscos Cobertos" DA PRÓPRIA cláusula — sem a guarda, casava a
+    // assinatura e virava cobertura espúria na fila.
+    assert(
+      !tituloEhCoberturaZurich(
+        'Cláusula para Imóveis Tombados pelo Patrimônio Histórico',
+        '1. Riscos Cobertos',
+      ),
+      '"Cláusula para ..." não deveria casar a assinatura Zurich',
+    )
+    // E via leitura completa: título + âncora na mesma página não gera item.
+    const pages = [
+      page(1, [
+        ['Cláusula para Imóveis Tombados pelo Patrimônio Histórico', 700],
+        ['1. Riscos Cobertos', 660],
+        ['texto da cláusula, não de cobertura', 620],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.length === 0,
+      `"Cláusula para ..." não deveria virar cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+    )
+  })
+
+  t('Ingestão CG: cabeçalhos agrupadores no plural não são cobertura (não-regressão)', () => {
+    // "Cláusulas Particulares" (pág. 137) e "Cláusulas de Coberturas
+    // Adicionais" (pág. 45) são cabeçalhos de bloco, não cobertura — o
+    // plural é barrado pela família "Cláusula(s) ..." desde a v0.0.226.
+    assert(
+      !tituloEhCoberturaZurich('Cláusulas Particulares', '1. Riscos Cobertos'),
+      '"Cláusulas Particulares" não deveria ser cobertura',
+    )
+    assert(
+      !tituloEhCoberturaZurich('Cláusulas de Coberturas Adicionais', '1. Riscos Cobertos'),
+      '"Cláusulas de Coberturas Adicionais" não deveria ser cobertura',
+    )
+    // Via leitura completa: cabeçalho + âncora na mesma página não gera item.
+    const pages = [
+      page(1, [
+        ['Cláusulas de Coberturas Adicionais', 700],
+        ['1. Riscos Cobertos', 660],
+        ['texto de riscos cobertos da seção', 620],
+      ]),
+    ]
+    const leitura = lerCondicoesGerais(pages)
+    const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
+    assert(
+      coberturas.length === 0,
+      `cabeçalho agrupador plural não deveria virar cobertura, veio ${JSON.stringify(coberturas.map((c) => c.nomeExtraido))}`,
+    )
+    // E o MARCADOR de bloco ("Cláusulas Particulares" solto na linha) também
+    // não vira cobertura pelo caminho dos prefixos clássicos.
+    assert(
+      !tituloEhCobertura('Cláusulas Particulares'),
+      '"Cláusulas Particulares" não deveria casar os prefixos clássicos',
+    )
+    assert(
+      !tituloEhCobertura('Cláusulas de Coberturas Adicionais'),
+      '"Cláusulas de Coberturas Adicionais" não deveria casar os prefixos clássicos',
+    )
+  })
+
+  t(
+    'Ingestão CG: capa Zurich sem dois-pontos detecta Processo SUSEP e Versão Setembro/2024',
+    () => {
+      // Capa (pág. 1): "Processo SUSEP Nº ..." SEM dois-pontos e versão com
+      // NOME DE MÊS ("Versão Setembro/2024"). Nas páginas internas há
+      // dois-pontos ("Processo SUSEP nº: ...", "Versão: Setembro/2024") —
+      // formato que o detector já cobria.
+      const textoCapa =
+        'ZURICH Riscos Nomeados\nProcesso SUSEP Nº 15414.004288/2007-81\nVersão Setembro/2024'
+      assert(
+        detectarProcessoSusepCg(textoCapa) === '15414.004288/2007-81',
+        `processo SUSEP da capa sem dois-pontos deveria casar, veio: ${detectarProcessoSusepCg(textoCapa)}`,
+      )
+      assert(
+        detectarProdutoVersaoCg(textoCapa) === 'Versão Setembro/2024',
+        `versão com nome de mês deveria ser detectada, veio: ${detectarProdutoVersaoCg(textoCapa)}`,
+      )
+      // Página interna (com dois-pontos) continua casando (pacto).
+      const textoInterno =
+        'ZURICH Riscos Nomeados\nProcesso SUSEP nº 15414.004288/2007-81\nVersão: Setembro/2024'
+      assert(
+        detectarProcessoSusepCg(textoInterno) === '15414.004288/2007-81',
+        'formato com dois-pontos deveria continuar casando',
+      )
+      assert(
+        detectarProdutoVersaoCg(textoInterno) === 'Versão Setembro/2024',
+        'versão com dois-pontos deveria continuar casando',
+      )
+      // Versão NUMÉRICA tem prioridade sobre o nome de mês (pacto: a regra
+      // da mais frequente só se aplica às ocorrências numéricas).
+      assert(
+        detectarProdutoVersaoCg('Versão Setembro/2024\nVersão 2 / 2018\nVersão 2 / 2018') ===
+          'Versão 2/2018',
+        'versão numérica deveria prevalecer sobre o nome de mês',
+      )
+      // E via leitura completa (documento inteiro, capa + interna).
+      const pages = [
+        page(1, [
+          ['ZURICH Riscos Nomeados', 700],
+          ['Processo SUSEP Nº 15414.004288/2007-81', 650],
+          ['Versão Setembro/2024', 600],
+        ]),
+        page(2, [
+          ['Processo SUSEP nº 15414.004288/2007-81', 700],
+          ['Versão: Setembro/2024', 660],
+        ]),
+      ]
+      const leitura = lerCondicoesGerais(pages)
+      assert(
+        leitura.processoSusepDetectado === '15414.004288/2007-81',
+        `processo inesperado: ${leitura.processoSusepDetectado}`,
+      )
+      assert(
+        leitura.produtoVersaoDetectado === 'Versão Setembro/2024',
+        `versão inesperada: ${leitura.produtoVersaoDetectado}`,
+      )
+    },
+  )
+
   return resultados
 }
