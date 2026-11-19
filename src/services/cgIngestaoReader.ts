@@ -545,6 +545,449 @@ export function ehContinuacaoTituloZurich(linha: string): boolean {
 const RE_CLAUSULA_ZURICH = /^cl[aá]usulas?\b/i
 
 export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+=======
+=======
+export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+=======
+    // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+    // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+    // conector de meio de frase e verbo de cláusula. A regra de minúscula
+    // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+    // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+    // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+    // eram reconhecidos).
+    if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+    // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+    // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+    if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+    // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+    // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+    // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+    // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+    if (/^[a-z)]/.test(t)) return false
+    if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+    return true
+  }
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+=======
+=======
+=======
+export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+=======
+    // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+    // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+    // conector de meio de frase e verbo de cláusula. A regra de minúscula
+    // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+    // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+    // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+    // eram reconhecidos).
+    if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+    // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+    // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+    if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+    // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+    // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+    // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+    // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+    if (/^[a-z)]/.test(t)) return false
+    if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+    return true
+  }
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// Extração de exclusões de um bloco de corpo (função pura — testada na golden)
+// ---------------------------------------------------------------------------
+=======
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// Extração de exclusões de um bloco de corpo (função pura — testada na golden)
+// ---------------------------------------------------------------------------
+=======
+=======
+=======
+export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+=======
+    // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+    // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+    // conector de meio de frase e verbo de cláusula. A regra de minúscula
+    // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+    // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+    // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+    // eram reconhecidos).
+    if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+    // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+    // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+    if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+    // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+    // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+    // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+    // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+    if (/^[a-z)]/.test(t)) return false
+    if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+    return true
+  }
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
+=======
+=======
+=======
+export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
+  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
+  if (!limpo) return false
+  if (ehLinhaRodapeCg(limpo)) return false
+  const t = limpo
+  const prox = (linhaSeguinte || '').trim()
+  if (!t || !prox) return false
+  // Guarda 0 — a âncora "1. Riscos Cobertos" é em caixa MISTA no formato
+  // Zurich; a versão em CAIXA ALTA ("1. RISCOS COBERTOS") é de outros
+  // formatos (Chubb) e NÃO ativa esta assinatura — protege o AXA/Chubb/Tokio
+  // de linhas de corpo em caixa mista seguidas de subtítulo caixa alto.
+  if (prox === prox.toUpperCase()) return false
+  if (!RE_ANCORAGEM_RISCOS_COBERTOS_ZURICH.test(prox)) return false
+  // Guarda 1 — linha de Sumário (pontilhada em qualquer formato): nunca título.
+  if (ehLinhaSumario(t)) return false
+  // Guarda 2 — CAIXA ALTA não passa pela assinatura Zurich: os formatos
+  // AXA/Chubb/Tokio continuam sendo reconhecidos pelos prefixos existentes
+  // (pacto anti-regressão); a assinatura é só para caixa mista.
+  if (t === t.toUpperCase()) return false
+  // Guarda 3 — cláusulas ("Cláusula de 1º Risco Absoluto", "Cláusula de
+  // Exclusão de Asbestos", cabeçalho "Cláusulas Particulares") abrem com
+  // "1. Fica entendido…" e nunca são cobertura. Nenhuma cobertura Zurich
+  // começa com "Cláusula" — bloqueia a família inteira. v0.0.228: guarda
+  // explícita para "Cláusula para ..." (Imóveis Tombados, pág. 137) — sem
+  // ela, o casamento da família cobriria, mas o caso fica travado por
+  // asserção própria na suíte golden (seção 12).
+  if (RE_CLAUSULA_ZURICH.test(t)) return false
+  if (RE_CLAUSULA_PARA_ZURICH.test(t)) return false
+  // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+  // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+  // conector de meio de frase e verbo de cláusula. A regra de minúscula
+  // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+  // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+  // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+  // eram reconhecidos).
+  if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+  // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+  // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+  if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+  // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+  // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+  // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+  // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+  if (/^[a-z)]/.test(t)) return false
+  if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+  return true
+}
 =======
     // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
     // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
