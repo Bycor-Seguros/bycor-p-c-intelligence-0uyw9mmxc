@@ -661,9 +661,13 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   const parcelas: ExtractedApoliceParcela[] = []
 
   // Linha "Prêmio R$ 66.428,46 Moeda: Real"
+  // Layout novo (AXA RN São International Square): o rótulo "PRÊMIO Líquido" fica numa linha
+  // e o valor "R$ 46.351,41 Moeda: Real" na seguinte — tolera quebra de linha/espaços entre
+  // rótulo e valor (mas nunca casa com "PRÊMIO TOTAL").
   const prLiqM =
-    p2.text.match(/Pr[êe]mio\s+R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\s*\d{2})/i) ||
-    p2.text.match(/Pr[êe]mio\s+R\$\s*([\d.,\s]+?)(?=\s+Moeda|\s+Condi[çc]|\s*$)/i)
+    p2.text.match(/Pr[êe]mio\s+(?:L[íi]quido\s+)?R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\s*\d{2})/i) ||
+    p2.text.match(/Pr[êe]mio\s+R\$\s*([\d.,\s]+?)(?=\s+Moeda|\s+Condi[çc]|\s*$)/i) ||
+    p2.text.match(/Pr[êe]mio\s+L[íi]quido[\s\S]{0,60}?R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\s*\d{2})/i)
   if (prLiqM) {
     premioLiquido = parsePtBrNumber(prLiqM[1].replace(/\s+/g, ''))
   }
@@ -685,11 +689,15 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   }
 
   // IOF (ex: "Valor IOF(7,38%) R$ 4.902,44")
+  // Layout novo: "Valor IOF (7,38%)\nR$ 3.420,73" — espaço/quebra de linha entre o rótulo,
+  // os parênteses da alíquota e o valor.
   // Captura os 2 dígitos dos centavos completos, mesmo se houver espaço entre dígitos introduzido pelo PDF.js
   const iofM =
-    p2.text.match(/Valor\s+IOF(?:\([\d.,%]+\))?\s*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\s*\d{2})/i) ||
     p2.text.match(
-      /Valor\s+IOF(?:\([\d.,%]+\))?\s*R\$\s*([\d.,\s]+?)(?=\s+Vencimento|\s+N[º°]|\s*$)/i,
+      /Valor\s+IOF\s*(?:\(\s*[\d.,%]+\s*\))?\s*R\$\s*([\d]{1,3}(?:\.[\d]{3})*,\s*\d{2})/i,
+    ) ||
+    p2.text.match(
+      /Valor\s+IOF\s*(?:\(\s*[\d.,%]+\s*\))?\s*R\$\s*([\d.,\s]+?)(?=\s+Vencimento|\s+N[º°]|\s*$)/i,
     ) ||
     p2.text.match(/4\.902,\s*4\s*4/)
   if (iofM) {
@@ -902,10 +910,10 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   if (startCoberturasPage < 0) {
     startCoberturasPage = 2
   }
-  const coberturas = extractAxaCoberturas(
-    pages.slice(startCoberturasPage, Math.min(pages.length, 7)),
-    fullText,
-  )
+  // O quadro de coberturas pode se estender até a página da "Legenda:" (ex.: pág. 8 na
+  // apólice São International Square, com as 4 últimas coberturas + legenda P.O.S.).
+  // O parser para sozinho no cabeçalho "Legenda:" — nunca cortar uma página fixa.
+  const coberturas = extractAxaCoberturas(pages.slice(startCoberturasPage), fullText)
   // LMI Incêndio Básica: cobertura com categoria canônica "Incêndio Básica (Danos Materiais)"
   let lmiIncendioBasica: number | null = null
   const basica = coberturas.find(
@@ -1204,7 +1212,14 @@ function extractAxaCoberturasGeometric(
     // Na primeira página do quadro (ou se contiver o título), a varredura do quadro de coberturas
     // deve começar APENAS após o título "2. Coberturas do seguro (R$)" para não capturar
     // linhas da tabela 1.2 Detalhamento do valor em risco (Item, MMU, MMP, Prédio, etc.).
-    const headerItem = items.find((it) => /2\.\s*Coberturas\s+do\s+seguro/i.test(it.str))
+    // No layout São International Square o "2." é um fragmento separado do
+    // "Coberturas do seguro (R$)" — aceitar também o título sem o prefixo numérico,
+    // senão o parágrafo 1.3 acima ("...Estabelecimentos Comerciais E/Ou Industriais) e Lucros")
+    // vaza para a coluna de franquia da 1ª cobertura.
+    const headerItem = items.find(
+      (it) =>
+        /2\.\s*Coberturas\s+do\s+seguro/i.test(it.str) || /^Coberturas\s+do\s+seguro/i.test(it.str),
+    )
     if (headerItem) {
       // No sistema de coordenadas do PDF (Y decrescente: topo tem Y maior, rodapé tem Y menor),
       // itens abaixo do cabeçalho têm Y estritamente menor que headerItem.y (com margem de segurança).
