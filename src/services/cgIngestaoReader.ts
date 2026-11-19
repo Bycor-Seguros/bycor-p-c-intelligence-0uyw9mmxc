@@ -952,7 +952,7 @@ function ehInicioSubtitulo(linha: string): boolean {
 }
 
 /**
- * v0.0.238 — Guard do CABEÇA de título Zurich quebrado em 3 linhas, EXTRAÍDA
+ * v0.0.240 — Guard do CABEÇA de título Zurich quebrado em 3 linhas, EXTRAÍDA
  * (função pura, exportada para o probe scripts/probe-cg-3-linhas.ts):
  *
  *   linha 1 (cabeça): "Vendaval, Furacão, Ciclone, Tornado, Granizo, Queda de
@@ -961,20 +961,33 @@ function ehInicioSubtitulo(linha: string): boolean {
  *   linha 3:          "Terrestres e Fumaça"
  *   linha 4 (âncora): "1. Riscos Cobertos"
  *
- * A assinatura Zurich de 1 linha (tituloEhCoberturaZurich) fica deslocada 2
- * linhas para baixo pela cabeça: quem fecha o título é a 3ª linha, com a
- * âncora IMEDIATAMENTE abaixo dela. O par correto é SEMPRE (linha3, âncora) —
- * versões anteriores passavam o par invertido/deslocado e a guarda nunca
- * ativava (golden 159/160 no Mac). O trace devolve CADA condição booleana
- * separadamente para o probe imprimir qual teste passa e qual falha.
+ * v0.0.240 (trace v0.0.239 do probe — golden 159/160 no Mac): NENHUMA linha
+ * isolada é um título — a cabeça termina em "…ou Quaisquer" (cauda de
+ * conectivo ⇒ tituloEhCobertura=false) e "Terrestres e Fumaça" sozinha não
+ * fecha a assinatura (tituloEhCoberturaZurich=false). Qualquer critério do
+ * guard baseado em linha ISOLADA é false por construção. O critério de
+ * ativação passou a ser o TÍTULO JUNTADO (cabeça + linha 2 + linha 3)
+ * validado pela assinatura Zurich COMPLETA (tituloEhCoberturaZurich) contra
+ * a âncora (linha 4, "1. Riscos Cobertos"): as guardas da assinatura
+ * (fragmento, cláusula, cauda de valor, caixa alta) são avaliadas sobre a
+ * string INTEIRA — o que descreve exatamente um título quebrado em 3 linhas.
+ * O caminho legado v0.0.238 (cabeça prefixo + l2 continuação + l3 fecha a
+ * assinatura com a âncora) fica como fallback: quando ele ativa, o
+ * comportamento consumidor é o mesmo (junta 3 linhas, pula até a âncora).
+ * O trace devolve CADA condição separadamente para o probe imprimir qual
+ * teste passa e qual falha.
  */
 export interface TraceCabecaTitulo3LinhasZurich {
   ativo: boolean
-  /** Cabeça casa prefixo de cobertura (ex.: /^vendaval/) — tituloEhCobertura. */
+  /** Título COMPLETO: as 3 linhas juntadas com espaço único. */
+  tituloCompleto: string
+  /** O título JUNTADO fecha a assinatura Zurich com a âncora (critério novo). */
+  tituloCompletoEhCoberturaZurichComAncora: boolean
+  /** Cabeça casa prefixo de cobertura (ex.: /^vendaval/) — diagnóstico. */
   cabecaEhCobertura: boolean
   /** Linha 2 é continuação de título Zurich (sem pontuação de fechamento etc.). */
   linha2EhContinuacao: boolean
-  /** Linha 3 fecha a assinatura com a âncora IMEDIATAMENTE abaixo dela. */
+  /** Caminho LEGADO v0.0.238: linha 3 sozinha fecha a assinatura com a âncora. */
   linha3FechaAssinaturaComAncora: boolean
 }
 
@@ -987,8 +1000,19 @@ export function avaliarCabecaTitulo3LinhasZurich(
   const cabecaEhCobertura = tituloEhCobertura(cabeca)
   const linha2EhContinuacao = ehContinuacaoTituloZurich(linha2)
   const linha3FechaAssinaturaComAncora = tituloEhCoberturaZurich(linha3, ancora)
+  const tituloCompleto = [cabeca, linha2, linha3]
+    .map((p) => (p || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const tituloCompletoEhCoberturaZurichComAncora = tituloEhCoberturaZurich(tituloCompleto, ancora)
   return {
-    ativo: cabecaEhCobertura && linha2EhContinuacao && linha3FechaAssinaturaComAncora,
+    ativo:
+      tituloCompletoEhCoberturaZurichComAncora ||
+      (cabecaEhCobertura && linha2EhContinuacao && linha3FechaAssinaturaComAncora),
+    tituloCompleto,
+    tituloCompletoEhCoberturaZurichComAncora,
     cabecaEhCobertura,
     linha2EhContinuacao,
     linha3FechaAssinaturaComAncora,
@@ -1130,17 +1154,23 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         }
         continue
       }
-      // v0.0.238 (seção 12, caso de 3 linhas): CABEÇA de título Zurich
+      // v0.0.240 (seção 12, caso de 3 linhas): CABEÇA de título Zurich
       // quebrado em 3 linhas que casa um prefixo de cobertura ("Vendaval,
       // Furacão, ..."). Sem este guard, a cabeça virava seção TRUNCADA
       // espúria (interceptada por /^vendaval/) e o joiner da cauda — que só
       // junta 2 partes — não reconstruía o título de 3 linhas. O guard usa a
-      // função EXTRAÍDA avaliarCabecaTitulo3LinhasZurich (o par da assinatura
-      // é SEMPRE (linha 3, âncora/linha 4), ver doc dela). Quando ativa, a
+      // função EXTRAÍDA avaliarCabecaTitulo3LinhasZurich. v0.0.240 (trace
+      // v0.0.239 do probe): o critério de ativação é o TÍTULO JUNTADO (3
+      // linhas) validado pela assinatura Zurich completa contra a âncora —
+      // NENHUMA linha isolada é um título (a cabeça termina em "…ou
+      // Quaisquer", a l3 "Terrestres e Fumaça" sozinha não fecha). Como o
+      // guard é avaliado AQUI, o interceptador /^vendaval/ (linha
+      // tituloEhCobertura lá embaixo) nunca captura antes: quando ativo, a
       // SEÇÃO COMPLETA nasce AQUI, com o título das 3 linhas juntadas —
       // inerte nos demais formatos: caixa alta (AXA/Chubb/Tokio) não passa
       // pela assinatura (guarda 0) e os casos de 1 e 2 linhas Zurich têm a
-      // âncora em outra posição do par.
+      // âncora em outra posição do par; quando o guard NÃO ativa, o
+      // comportamento legado anti-seção-truncada segue valendo.
       const trace3Linhas = avaliarCabecaTitulo3LinhasZurich(
         bruto,
         proximaLinhaTitulo,

@@ -13,6 +13,10 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
 
+function assert(cond: unknown, msg: string): asserts cond {
+  if (!cond) throw new Error(`PROBE FALHOU: ${msg}`)
+}
+
 async function main() {
   const vite = await createServer({
     root: rootDir,
@@ -90,8 +94,11 @@ async function main() {
     )
 
     console.log('\n=== Guard 3 linhas (avaliarCabecaTitulo3LinhasZurich) ===')
-    // Par da assinatura: SEMPRE (linha 3, âncora). As condições mostram qual
-    // teste ativa e qual falha para cada sub-guarda.
+    // v0.0.240: o critério de ativação é o TÍTULO JUNTADO (3 linhas) validado
+    // pela assinatura Zurich COMPLETA contra a âncora — nenhuma linha isolada
+    // é um título (trace v0.0.239: cabecaEhCobertura=false, linha3Fecha=false).
+    // As condições isoladas continuam impressas para diagnóstico (o caminho
+    // legado v0.0.238 fica como fallback).
     const t3 = reader.avaliarCabecaTitulo3LinhasZurich(
       linhas1[0],
       linhas1[1],
@@ -102,6 +109,11 @@ async function main() {
     console.log('linha 2 =', JSON.stringify(linhas1[1]))
     console.log('linha 3 =', JSON.stringify(linhas1[2]))
     console.log('âncora  =', JSON.stringify(linhas1[3]))
+    console.log('título COMPLETO (3 linhas juntadas) =', JSON.stringify(t3.tituloCompleto))
+    console.log(
+      'tituloCompletoEhCoberturaZurichComAncora (título JUNTADO vs âncora) =',
+      t3.tituloCompletoEhCoberturaZurichComAncora,
+    )
     console.log('cabecaEhCobertura (tituloEhCobertura(cabeça))            =', t3.cabecaEhCobertura)
     console.log(
       'linha2EhContinuacao (ehContinuacaoTituloZurich(linha 2))  =',
@@ -112,6 +124,11 @@ async function main() {
       t3.linha3FechaAssinaturaComAncora,
     )
     console.log('guard ATIVO =', t3.ativo)
+    assert(
+      t3.tituloCompletoEhCoberturaZurichComAncora,
+      'o título JUNTADO deveria fechar a assinatura Zurich contra a âncora',
+    )
+    assert(t3.ativo, 'o guard de 3 linhas deveria estar ATIVO no caso real')
     console.log(
       'cinto segurança: tituloEhCoberturaZurich(linha 3, 4ª linha seguinte do par invertido) NÃO deve ativar aqui:',
       'tituloEhCoberturaZurich(l1, l2) =',
