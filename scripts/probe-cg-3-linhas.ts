@@ -89,6 +89,35 @@ async function main() {
       reader.tituloEhCoberturaZurich(cand0, cand1),
     )
 
+    console.log('\n=== Guard 3 linhas (avaliarCabecaTitulo3LinhasZurich) ===')
+    // Par da assinatura: SEMPRE (linha 3, âncora). As condições mostram qual
+    // teste ativa e qual falha para cada sub-guarda.
+    const t3 = reader.avaliarCabecaTitulo3LinhasZurich(
+      linhas1[0],
+      linhas1[1],
+      linhas1[2],
+      linhas1[3],
+    )
+    console.log('cabeça  =', JSON.stringify(linhas1[0]))
+    console.log('linha 2 =', JSON.stringify(linhas1[1]))
+    console.log('linha 3 =', JSON.stringify(linhas1[2]))
+    console.log('âncora  =', JSON.stringify(linhas1[3]))
+    console.log('cabecaEhCobertura (tituloEhCobertura(cabeça))            =', t3.cabecaEhCobertura)
+    console.log(
+      'linha2EhContinuacao (ehContinuacaoTituloZurich(linha 2))  =',
+      t3.linha2EhContinuacao,
+    )
+    console.log(
+      'linha3FechaAssinatura (tituloEhCoberturaZurich(l3, âncora))=',
+      t3.linha3FechaAssinaturaComAncora,
+    )
+    console.log('guard ATIVO =', t3.ativo)
+    console.log(
+      'cinto segurança: tituloEhCoberturaZurich(linha 3, 4ª linha seguinte do par invertido) NÃO deve ativar aqui:',
+      'tituloEhCoberturaZurich(l1, l2) =',
+      reader.tituloEhCoberturaZurich(linhas1[1], linhas1[2]),
+    )
+
     console.log('\n=== Leitura completa ===')
     const leitura = reader.lerCondicoesGerais(pages)
     const coberturas = leitura.itens.filter((i) => i.tipoItem === 'cobertura')
@@ -101,6 +130,18 @@ async function main() {
       ),
     )
     console.log('total itens:', leitura.itens.length)
+
+    // PASSO 3 (verificação final): a leitura deve produzir a cobertura COMPLETA
+    // (3 linhas juntadas) — não [] e não uma seção truncada "Vendaval, ...".
+    const tituloCompletoEsperado =
+      'Vendaval, Furacão, Ciclone, Tornado, Granizo, Queda de Aeronaves ou Quaisquer ' +
+      'Outros Engenhos Aéreos ou Espaciais, Impacto de Veículos Terrestres e Fumaça'
+    const ok =
+      coberturas.length === 1 &&
+      coberturas[0].nomeExtraido === tituloCompletoEsperado &&
+      (coberturas[0] as any).exclusoes?.length === 1
+    console.log('cobertura completa esperada?', ok)
+    if (!ok) process.exitCode = 1
   } finally {
     await vite.close()
   }
