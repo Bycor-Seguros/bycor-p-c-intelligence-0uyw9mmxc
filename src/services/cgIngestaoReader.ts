@@ -545,9 +545,26 @@ export function ehContinuacaoTituloZurich(linha: string): boolean {
 const RE_CLAUSULA_ZURICH = /^cl[aá]usulas?\b/i
 
 export function tituloEhCoberturaZurich(titulo: string, linhaSeguinte: string): boolean {
-  const limpo = removerPrefixoRodapeCg(titulo || '').trim()
-  if (!limpo) return false
-  if (ehLinhaRodapeCg(limpo)) return false
+=======
+    // Guarda 4 — fragmento de frase (continuação de parágrafo) nunca é título.
+    // Núcleo INSENSÍVEL à caixa: alínea, cauda de período aberto (";"/","/"…"),
+    // conector de meio de frase e verbo de cláusula. A regra de minúscula
+    // inicial NÃO entra (v0.0.227): ela comparava a linha com a própria caixa
+    // alta e rejeitava TODO título em caixa mista — justamente o formato Zurich
+    // (falha v0.0.226: golden 149/152, "Danos ao Cais"/"Erros e Omissões" não
+    // eram reconhecidos).
+    if (ehFragmentoFraseInsensivelCaixaCg(t)) return false
+    // Guarda 5 — v0.0.229/v0.0.231 (Zurich): fecho "Permanecem as (demais) exclusões da
+    // Cláusula 6ª …" e "Além das exclusões constantes da Cláusula 6ª..." — nunca cobertura.
+    if (RE_PERMANECEM_EXCLUSOES_ZURICH.test(t)) return false
+    // Guarda 6 — v0.0.229 (Zurich): título Zurich sempre começa por MAIÚSCULA;
+    // linha que começa em minúscula ou em ")" é fragmento (ex.: "reias)"… o
+    // caso real é "reais)", pág. 128 — cauda do valor por extenso da tabela de
+    // limites). Título de cobertura Zurich nunca termina em valor por extenso.
+    if (/^[a-z)]/.test(t)) return false
+    if (RE_CAUDA_VALOR_EXTESTO_ZURICH.test(t)) return false
+    return true
+  }
   const t = limpo
   const prox = (linhaSeguinte || '').trim()
   if (!t || !prox) return false
@@ -1017,7 +1034,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       // dos prefixos de cobertura: o nome Zurich ("Danos ao Cais") não casa
       // nenhum prefixo. A linha do título NÃO entra no join de caixa alta
       // (o formato Zurich não quebra o título em caixa alta).
-      // v0.0.236: coleta ATÉ 3 linhas seguintes (a 1ª continua sendo a
+      // v0.0.237: coleta ATÉ 3 linhas seguintes (a 1ª continua sendo a
       // "linha seguinte" de sempre; a 2ª e a 3ª só alimentam o guard de
       // cabeça de título Zurich quebrado em 3 linhas, logo abaixo).
       const seguintesTitulo: Array<{ texto: string; index: number }> = []
@@ -1086,7 +1103,7 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
         }
         continue
       }
-      // v0.0.236 (seção 12, caso de 3 linhas): a CABEÇA de um título Zurich
+      // v0.0.237 (seção 12, caso de 3 linhas): a CABEÇA de um título Zurich
       // quebrado em 3 linhas pode casar um prefixo de cobertura ("Vendaval,
       // Furacão, ...") e virar seção TRUNCADA espúria. Mas o joiner da CAUDA
       // só aceita 2 partes (partes.length < 3): no caso real (pág. 135) as
@@ -1095,15 +1112,33 @@ export function lerCondicoesGerais(pages: PdfPageText[]): CgIngestaoLeitura {
       // leitura completa (probe v0.0.235). Correção 1 do pedido: quando a
       // CABEÇA é um título de cobertura legítimo e as DUAS linhas seguintes
       // fecham a assinatura Zurich (a 1ª é continuação de título em caixa
-      // mista Zurich, sem pontuação de cláusula; a 2ª casa com a âncora
-      // "1. Riscos Cobertos"), a SEÇÃO COMPLETA nasce AQUI, com o título das
-      // 3 linhas juntadas — a linha não é interceptada por /^vendaval/
+      // mista Zurich, sem pontuação de cláusula; a 2ª fecha o título com a
+      // âncora "1. Riscos Cobertos" UMA LINHA ABAIXO DELE), a SEÇÃO COMPLETA
+      // nasce AQUI, com o título das 3 linhas juntadas — a linha não é
+      // interceptada por /^vendaval/
       // (correção 2: o consumo como seção acontece só neste caminho, com a
       // assinatura fechada) e nenhum título truncado é criado. A guarda é
       // INERTE nos demais formatos: caixa alta (AXA/Chubb/Tokio) não passa
       // pela assinatura (guarda 0) e os casos de 1 e 2 linhas Zurich têm a
       // âncora em outra posição do par — o padrão só ativa no formato
       // exato de 3 linhas.
+      //
+      // v0.0.238 — RAÍZ da falha do probe pós-fix (trace como fonte de
+      // verdade): a condição da assinatura parcial avaliava o par ERRADO.
+      // tituloEhCoberturaZurich(linha, linhaSeguinte) exige a ÂNCORA na
+      // LINHA SEGUINTE — com o par (segunda, terceira) o 2º argumento é
+      // "1. Riscos Cobertos" (a 4ª linha real), mas o 1º é "Terrestres e
+      // Fumaça" (a 3ª) — o par (título, âncora) que o caso real FORMA.
+      // Assinatura correta do caso: a 3ª linha fecha o título com a âncora
+      // na 4ª — tituloEhCoberturaZurich(segunda, terceira) com as linhas
+      // REAIS (2ª seguinte = "Terrestres e Fumaça", 3ª seguinte = "1.
+      // Riscos Cobertos"). v0.0.236 passou o par INVERTIDO/DESLOCADO
+      // ((3ª, 4ª) como (título, âncora) SÓ quando a 1ª linha seguinte não
+      // é a âncora) e a assinatura nunca casava — guard inerte, leitura
+      // [] nas 3 rodadas. O par correto é SEMPRE (segunda, terceira):
+      // "Terrestres e Fumaça" fecha o título e "1. Riscos Cobertos" é a
+      // âncora IMEDIATAMENTE abaixo dela — exatamente a assinatura
+      // Zurich de 1 linha, deslocada 2 linhas para baixo pela cabeça.
       const cabecaTitulo3LinhasZurich =
         tituloEhCobertura(bruto) &&
         ehContinuacaoTituloZurich(proximaLinhaTitulo) &&
