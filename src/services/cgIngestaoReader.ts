@@ -272,9 +272,14 @@ export const RE_CAUDA_VALOR_EXTESTO_ZURICH = /\b(?:milh[õo]es?|mil|reais?)\s*\)
 /**
  * Guarda v0.0.231 (tarefa 2e, família 3) — Preposição ou conectivo isolado no fim da linha:
  * indica continuidade de frase (ex.: "... rompimento do obstáculo à").
+ * v0.0.241: o `\b` original é fronteira de palavra ASCII — o "ç" de "Fumaça"
+ * é caractere não-palavra e criava fronteira fantasma antes do "a" final,
+ * tratando "…Fumaça" como cauda de preposição (Guarda 4 rejeitava o título
+ * Zurich de 3 linhas). Lookbehind Unicode `(?<![\p{L}\p{N}])` preserva
+ * "…Interior de" (espaço antes) e "…Utilidades e/ou" ("/" não é letra).
  */
 export const RE_CAUDA_PREPOSICAO_CONECTIVO =
-  /\b(?:[aà]|ao|aos|d[eao]s?|e|ou|com|em|para|por|sob|sobre|que)\s*$/i
+  /(?<![\p{L}\p{N}])(?:[aà]|ao|aos|d[eao]s?|e|ou|com|em|para|por|sob|sobre|que)\s*$/iu
 
 /**
  * Guarda v0.0.231 (tarefa 2e, família 3) — Fragmento de meio de sentença típico de cláusula
