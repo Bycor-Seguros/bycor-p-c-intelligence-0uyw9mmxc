@@ -1,0 +1,341 @@
+{
+  "seguradora": "AXA Seguros S.A.",
+  "numeroApolice": "02852.2026.0001.0196.0009211",
+  "proposta": "P-0120729",
+  "ramo": "01.96 Riscos Nomeados e",
+  "vigencia": {
+    "inicio": "2026-11-01",
+    "fim": "2027-11-01"
+  },
+  "segurado": {
+    "nome": "",
+    "cnpj": "24.742.208/0002-25",
+    "endereco": ""
+  },
+  "corretor": {
+    "nome": "BYCOR CONSULTORIA E CORRETORA DE SEGUROS LTDA",
+    "cnpj": "17.267.516/0001-08",
+    "susep": "202027021"
+  },
+  "financeiro": {
+    "premioLiquido": null,
+    "custoApolice": 0,
+    "iof": null,
+    "premioTotal": 49772.14,
+    "condicoesPagamento": "1 + 03",
+    "formaPagamento": "Boleto Santander",
+    "parcelas": [
+      {
+        "numero": 1,
+        "vencimento": "2026-12-07",
+        "valor": 12443.03
+      },
+      {
+        "numero": 2,
+        "vencimento": "2027-01-07",
+        "valor": 12443.03
+      },
+      {
+        "numero": 3,
+        "vencimento": "2027-02-07",
+        "valor": 12443.03
+      },
+      {
+        "numero": 4,
+        "vencimento": "2027-03-07",
+        "valor": 12443.05
+      }
+    ]
+  },
+  "limites": {
+    "lmga": 95600000,
+    "vrdTotalDm": 80000000,
+    "vrdTotalLc": 15000000,
+    "vrdTotalDmPlusLc": 95000000,
+    "lmiIncendioBasica": 80000000,
+    "formaContratacao": "1º RISCO RELATIVO"
+  },
+  "coberturas": [
+    {
+      "nome": "Incêndio, Inclusive Decorrente De Tumultos, Queda De Raio, Explosão De Qualquer Natureza, Implosão E Queda De Aeronave E/Ou Outros Engenhos Espaciais",
+      "categoriaNormalizada": "Incêndio Básica (Danos Materiais)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 80000000,
+      "franquiaPos": "Industriais) e Lucros (*) 10.000,00"
+    },
+    {
+      "nome": "Alagamento E Inundação",
+      "categoriaNormalizada": "Alagamento/Inundação",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "20% min R$ 20.000,00"
+    },
+    {
+      "nome": "Anúncios E Letreiros Luminosos",
+      "categoriaNormalizada": "Anúncios/Letreiros Luminosos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 200000,
+      "franquiaPos": "10% min R$ 2.000,00"
+    },
+    {
+      "nome": "Danos Elétricos",
+      "categoriaNormalizada": "Danos Elétricos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "15% min R$ 10.000,00"
+    },
+    {
+      "nome": "Danos Por Água",
+      "categoriaNormalizada": "Danos por Água",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "20% min R$ 10.000,00"
+    },
+    {
+      "nome": "Demolição E Desentulho",
+      "categoriaNormalizada": "Demolição e Desentulho",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "10% min R$ 1.000,00"
+    },
+    {
+      "nome": "Derrame D'Água Ou Outra Substância Líquida De Instalações De Chuveiros Automáticos (Sprinklers)",
+      "categoriaNormalizada": "Danos por Água / Sprinklers",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1000000,
+      "franquiaPos": "15% min R$ 5.000,00"
+    },
+    {
+      "nome": "Desmoronamento",
+      "categoriaNormalizada": "Desmoronamento",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1000000,
+      "franquiaPos": "15% min R$ 20.000,00"
+    },
+    {
+      "nome": "Despesas Com Honorários De Peritos – Danos",
+      "categoriaNormalizada": "Honorários de Peritos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 300000,
+      "franquiaPos": "10% min R$ 1.000,00"
+    },
+    {
+      "nome": "Despesas Com Recomposição De Registros E Documentos",
+      "categoriaNormalizada": "Recomposição de Registros/Documentos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "10% min R$ 1.000,00"
+    },
+    {
+      "nome": "Despesas De Salvamento E Contenção De Sinistros",
+      "categoriaNormalizada": "Despesas de Salvamento e Contenção",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "De acordo com o"
+    },
+    {
+      "nome": "Deterioração De Mercadorias Em Ambientes",
+      "categoriaNormalizada": "Deterioração de Mercadorias (Frigorificados)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "20% min R$ 5.000,00"
+    },
+    {
+      "nome": "Equipamentos Arrendados Ou Cedidos A Terceiros",
+      "categoriaNormalizada": "Equipamentos Arrendados/Cedidos a Terceiros",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 250000,
+      "franquiaPos": "10% min R$ 5.000,00"
+    },
+    {
+      "nome": "Equipamentos Eletrônicos Sem Roubo (A)",
+      "categoriaNormalizada": "Equipamentos Eletrônicos",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 250000,
+      "franquiaPos": "25% min R$ 5.000,00"
+    },
+    {
+      "nome": "Equipamentos Estacionários",
+      "categoriaNormalizada": "Equipamentos Estacionários",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 300000,
+      "franquiaPos": "15% min R$ 5.000,00"
+    },
+    {
+      "nome": "Equipamentos Móveis",
+      "categoriaNormalizada": "Equipamentos Móveis",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "10% min R$ 5.000,00"
+    },
+    {
+      "nome": "Equipamentos Ou Objetos Portáteis",
+      "categoriaNormalizada": "Equipamentos Portáteis",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "20% min R$ 500,00 por"
+    },
+    {
+      "nome": "Fidelidade",
+      "categoriaNormalizada": "Fidelidade de Funcionários",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 100000,
+      "franquiaPos": "10% min R$ 1.000,00"
+    },
+    {
+      "nome": "Obras De Arte",
+      "categoriaNormalizada": "Obras de Arte",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 100000,
+      "franquiaPos": "10% min R$ 1.000,00"
+    },
+    {
+      "nome": "Pequenas Obras De Engenharia, Para Ampliações,",
+      "categoriaNormalizada": "Obras Civis/Pequenas Obras de Engenharia",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 300000,
+      "franquiaPos": "10% min R$ 10.000,00"
+    },
+    {
+      "nome": "Perda Ou Pagamento De Aluguel",
+      "categoriaNormalizada": "Perda/Pagamento de Aluguel",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1000000,
+      "franquiaPos": "Os primeiros 10 dias"
+    },
+    {
+      "nome": "Quebra De Maquinas",
+      "categoriaNormalizada": "Quebra de Máquinas",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 250000,
+      "franquiaPos": "15% min R$ 10.000,00"
+    },
+    {
+      "nome": "Quebra De Vidros, Espelhos, Mármores E Granitos",
+      "categoriaNormalizada": "Quebra de Vidros/Espelhos/Mármores",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 300000,
+      "franquiaPos": "10% min R$ 2.000,00"
+    },
+    {
+      "nome": "Roubo De Valores Dos Hóspedes Nas Dependências",
+      "categoriaNormalizada": "Roubo/Furto de Bens/Valores de Hóspedes",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "10% min R$ 2.500,00"
+    },
+    {
+      "nome": "Roubo De Valores Em Trânsito Em Mãos De Portadores",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "10% min R$ 2.500,00"
+    },
+    {
+      "nome": "Roubo De Valores No Interior Do Estabelecimento",
+      "categoriaNormalizada": "Roubo/Furto de Valores (Interior/Trânsito)",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 10000,
+      "franquiaPos": "10% min R$ 2.500,00"
+    },
+    {
+      "nome": "Roubo E/Ou Furto Qualificado De Bens",
+      "categoriaNormalizada": "Roubo/Furto de Bens do Segurado",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 250000,
+      "franquiaPos": "10% min R$ 5.000,00"
+    },
+    {
+      "nome": "Roubo E/Ou Furto Qualificado De Bens Dos",
+      "categoriaNormalizada": "Roubo/Furto de Bens do Segurado",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 50000,
+      "franquiaPos": "10% min R$ 5.000,00"
+    },
+    {
+      "nome": "Terremoto E Tremores De Terra",
+      "categoriaNormalizada": "Terremoto E Tremores De Terra",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "15% min R$ 5.000,00"
+    },
+    {
+      "nome": "RC - Custos de Defesa",
+      "categoriaNormalizada": "RC Custos de Defesa",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 100000,
+      "franquiaPos": "15% min R$ 10.000,00"
+    },
+    {
+      "nome": "Tumulto, Greves, \"Lock-Out\", Atos Dolosos, Vandalismo E Comoção Civil",
+      "categoriaNormalizada": "Tumultos/Greves/Lock-out/Vandalismo",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 1000000,
+      "franquiaPos": "15% min R$ 5.000,00"
+    },
+    {
+      "nome": "Vazamento De Tanques E Tubulações",
+      "categoriaNormalizada": "Vazamento/Rompimento de Tanques e Tubulações",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "20% min R$ 10.000,00"
+    },
+    {
+      "nome": "Vendaval, Furacão, Ciclone, Tornado, Granizo, Tsunami, Erupção Vulcânica, Impacto De Veículos Terrestres E Fumaça",
+      "categoriaNormalizada": "Vendaval/Granizo/Ciclone/Fumaça",
+      "categoriaBloco": "Danos Materiais",
+      "lmi": 500000,
+      "franquiaPos": "20% min R$ 10.000,00"
+    },
+    {
+      "nome": "Responsabilidade Civil Condomínio Empresarial",
+      "categoriaNormalizada": "RC Condomínio",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 1000000,
+      "franquiaPos": "30% min R$ 3.000,00 por reclamante"
+    },
+    {
+      "nome": "Responsabilidade Civil Estabelecimentos De Hospedagem, Restaurantes, Boates E Similares",
+      "categoriaNormalizada": "RC Hospedagem/Restaurantes/Bares",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 1000000,
+      "franquiaPos": "10% min R$ 3.000,00 por reclamante"
+    },
+    {
+      "nome": "Responsabilidade Civil Danos Morais",
+      "categoriaNormalizada": "RC Danos Morais",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 500000,
+      "franquiaPos": "Prejuízos somados a cobertura acionada"
+    },
+    {
+      "nome": "Responsabilidade Civil Do Empregador",
+      "categoriaNormalizada": "RC Empregador",
+      "categoriaBloco": "Responsabilidade Civil",
+      "lmi": 1000000,
+      "franquiaPos": "10% min R$ 3.000,00 por reclamante"
+    }
+  ],
+  "diagnostico": {
+    "seguradoraDetectada": "AXA Seguros S.A.",
+    "totalPaginas": 10,
+    "fragmentosBrutosCount": 1097,
+    "camposIdentificados": {
+      "numeroApolice": true,
+      "numeroProposta": true,
+      "vigenciaInicio": true,
+      "vigenciaFim": true,
+      "seguradoNome": false,
+      "seguradoCnpj": true,
+      "corretorNome": true,
+      "premioLiquido": false,
+      "premioTotal": true,
+      "lmga": true,
+      "vrdTotalDm": true,
+      "coberturas": true,
+      "formaContratacao": true
+    },
+    "linhasCoberturasLidas": 37,
+    "timestamp": "2026-11-19T14:46:29.331Z"
+  }
+}
