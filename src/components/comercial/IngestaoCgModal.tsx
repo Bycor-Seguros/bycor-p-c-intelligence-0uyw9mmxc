@@ -21,6 +21,7 @@ import {
   detectarPdfSemTextoCg,
   mensagemPdfSemTextoCg,
   chaveGuardaCg,
+  guardasIguaisCg,
   type CgIngestaoItemExtraido,
 } from '@/services/cgIngestaoReader'
 import {
@@ -94,6 +95,37 @@ function corConfianca(c: number): string {
   if (c >= LIMIAR_CONFIANCA_CG) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
   if (c >= 0.5) return 'bg-amber-50 text-amber-800 border-amber-200'
   return 'bg-gray-100 text-gray-600 border-gray-200'
+}
+
+/**
+ * Resolve o id do registro persistido do item (cg_ingestao_itens) SEM interpolar
+ * a chave_normalizada no filtro: chaves com aspas duplas (ex.: 'Tumulto, Greve,
+ * "Lock - Out" e Atos Dolosos') quebravam o filtro do PocketBase (400) e a
+ * confirmação falhava ANTES de gravar — o card ficava pendente para sempre
+ * (v0.0.242, só nesta cobertura, a única da fila com aspas no nome). Prefere o
+ * itemRecordId já conhecido (retomada); senão lista os itens da sessão e casa a
+ * chave EM MEMÓRIA — igualdade exata, com fallback tolerante a sufixo
+ * (guardasIguaisCg, mesma semântica da guarda de re-ingestão).
+ */
+async function resolverItemRecordId(f: FilaItem, sessaoId: string): Promise<string> {
+  if (f.itemRecordId) return f.itemRecordId
+  const registros = await pb
+    .collection('cg_ingestao_itens')
+    .getFullList<{ id: string; chave_normalizada: string }>({
+      filter: `ingestao="${sessaoId}"`,
+      fields: 'id,chave_normalizada',
+      batch: 20,
+    })
+  const chave = chaveGuardaCg(f.extraido.nomeExtraido)
+  const alvo =
+    registros.find((r) => (r.chave_normalizada || '') === chave) ||
+    registros.find((r) => guardasIguaisCg(r.chave_normalizada || '', chave))
+  if (!alvo) {
+    throw new Error(
+      'Registro do item não encontrado na sessão. Recarregue a página e confirme novamente.',
+    )
+  }
+  return alvo.id
 }
 
 export default function IngestaoCgModal({
@@ -374,13 +406,11 @@ export default function IngestaoCgModal({
       setErro('')
       const id = await iniciarSessao()
       const usuarioId = pb.authStore.record?.id as string | undefined
-      // Encontra o registro persistido do item para atualizar seu status.
-      const chave = chaveGuardaCg(f.extraido.nomeExtraido)
-      const itemRecord = await pb
-        .collection('cg_ingestao_itens')
-        .getFirstListItem(`ingestao="${id}" && chave_normalizada="${chave}"`)
+      // Encontra o registro persistido do item para atualizar seu status
+      // (sem filtro por chave — chaves com aspas duplas quebravam o PocketBase).
+      const itemRecordId = await resolverItemRecordId(f, id)
       const resultado = await confirmarItemIngestao({
-        itemRecordId: itemRecord.id,
+        itemRecordId,
         item: {
           tipoItem: 'cobertura',
           nomeExtraido: f.extraido.nomeExtraido,
@@ -432,11 +462,8 @@ export default function IngestaoCgModal({
       setErro('')
       const id = await iniciarSessao()
       const usuarioId = pb.authStore.record?.id as string | undefined
-      const chave = chaveGuardaCg(f.extraido.nomeExtraido)
-      const itemRecord = await pb
-        .collection('cg_ingestao_itens')
-        .getFirstListItem(`ingestao="${id}" && chave_normalizada="${chave}"`)
-      await rejeitarItemIngestao({ itemRecordId: itemRecord.id, destino, usuarioId })
+      const itemRecordId = await resolverItemRecordId(f, id)
+      await rejeitarItemIngestao({ itemRecordId, destino, usuarioId })
       setFila((prev) =>
         prev.map((x) =>
           x.uid === f.uid ? { ...x, status: 'rejeitado', destinoRejeicao: destino } : x,
