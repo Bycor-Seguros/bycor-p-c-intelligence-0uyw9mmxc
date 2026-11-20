@@ -419,7 +419,7 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
   // seguinte é capturada e validada em código (só palavras capitalizadas, sem
   // dois-pontos) para não gravar o ramo truncado nem engolir o rótulo seguinte.
   const ramoPropHeaderMatch = p1.text.match(
-    /Ramo:\s*Proposta:\s*Endosso:\s*\n?\s*([0-9.]+)\s+([A-Za-zÀ-ÿ0-9\s/]+?)\s+(P\s*[-–—]?\s*[0-9A-Za-z]+)(?:\s+([0-9A-Za-z]+))?(?:\s*\n\s*([^\n]+))?/,
+    /Ramo:\s*Proposta:\s*Endosso:\s*\n?\s*([0-9.]+)\s+([A-Za-zÀ-ÿ0-9\s/]+?)\s+(P\s*[-–—]?\s*[0-9A-Za-z]+)(?:[^\S\n]+([0-9A-Za-z]+))?(?:\s*\n\s*([^\n]+))?/,
   )
 
   if (ramoPropHeaderMatch) {
