@@ -705,6 +705,58 @@ export async function runAllSuites() {
     assertEqual(result.premioTotal, 33794.47, 'Prêmio Total')
   })
 
+  // Teste B.2b (novo): ramo do PDF da AXA quebrado em DUAS linhas físicas —
+  // caso real APOLICE_RN_AXA_CDM_SAO_2026.pdf ("01.96 Riscos Nomeados e" +
+  // "Operacionais" na linha seguinte). Não deve gravar o ramo truncado.
+  runTest('AXA RN Apólice', 'Ramo em duas linhas físicas não é gravado truncado', () => {
+    const axaRn2LinhasPages: PdfPageText[] = [
+      {
+        pageNumber: 1,
+        lines: [
+          'Apólice: 02852.2026.0001.0196.0009211',
+          'Ramo: Proposta: Endosso:',
+          '01.96 Riscos Nomeados e P-0120729',
+          'Operacionais',
+          'Início de Vigência: Fim de Vigência:',
+          'Às 24h do dia 01/11/2026 Às 24h do dia 01/11/2027',
+          'Nome:   CONDOMÍNIO SÃO INTERNATIONAL SQUARE   CNPJ:   24.742.208/0002-25',
+        ],
+        text: [
+          'Apólice: 02852.2026.0001.0196.0009211',
+          'Ramo: Proposta: Endosso:',
+          '01.96 Riscos Nomeados e P-0120729',
+          'Operacionais',
+          'Início de Vigência: Fim de Vigência:',
+          'Às 24h do dia 01/11/2026 Às 24h do dia 01/11/2027',
+          'Nome:   CONDOMÍNIO SÃO INTERNATIONAL SQUARE   CNPJ:   24.742.208/0002-25',
+        ].join('\n'),
+      },
+      {
+        pageNumber: 2,
+        lines: [
+          'Seguradora: AXA Seguros S.A.',
+          'Prêmio R$ 46.351,41 Moeda: Real',
+          'Valor IOF(7,38%) R$ 3.420,73',
+          'PRÊMIO TOTAL R$ 49.772,14',
+        ],
+        text: [
+          'Seguradora: AXA Seguros S.A.',
+          'Prêmio R$ 46.351,41 Moeda: Real',
+          'Valor IOF(7,38%) R$ 3.420,73',
+          'PRÊMIO TOTAL R$ 49.772,14',
+        ].join('\n'),
+      },
+    ]
+    const res2 = extractAxaApolice(axaRn2LinhasPages)
+    assertEqual(
+      res2.ramoCompleto,
+      '01.96 Riscos Nomeados e Operacionais',
+      'Ramo completo deve juntar a continuação da linha seguinte',
+    )
+    assertEqual(res2.numeroProposta, 'P-0120729', 'Nº Proposta intacto com ramo em 2 linhas')
+    assertEqual(res2.numeroApolice, '02852.2026.0001.0196.0009211', 'Nº Apólice intacto')
+  })
+
   // Teste B.3: Parser AXA Empresa Flex (amostra representativa)
   runTest('AXA Empresa Flex', 'Parser AXA Empresa Flex: extrai dados e vigência', () => {
     const axaFlexPages: PdfPageText[] = [
@@ -1563,6 +1615,166 @@ export async function runAllSuites() {
         !semCategoria.temCorrespondencia ||
           semCategoria.nomeApolice !== 'Roubo De Valores Em Trânsito Em Mãos De Portadores',
         'Fallback não deve casar Bens de Hóspedes com Valores (Interior/Trânsito) — falso positivo do Anália',
+      )
+    },
+  )
+
+  // =========================================================================
+  // SUITE C1: SELEÇÃO DA APÓLICE VIGENTE NO CRUZAMENTO CARTÃO × APÓLICE
+  // (caso real São International Square, 19/11/2026: a prospect proc_risco_ criada
+  // pelo próprio Cartão vencia a emitida AXA e gerava divergências Cartão × Cartão.
+  // Helpers exportados do riskCardReader: isCandidataVigenteCartao,
+  // ramoCasaCartaoVigente, rankCandidataVigenteCartao, selecionarApoliceVigenteCartao.
+  // IDs/dados abaixo são do registro real verificado no banco PocketBase.)
+  // =========================================================================
+  console.log('\nSUITE C1: Seleção da apólice vigente (Cartão × Apólice, riskCardReader)')
+  const {
+    isCandidataVigenteCartao,
+    ramoCasaCartaoVigente,
+    rankCandidataVigenteCartao,
+    selecionarApoliceVigenteCartao,
+  } = await import('../riskCardReader')
+
+  runTest(
+    'C1 Apólice Vigente',
+    'Prospect do Cartão (proc_risco_, sem numero_apolice, origem Cartão de Risco) NÃO é candidata a vigente',
+    () => {
+      const prospect = {
+        id: 'avq31b3ubhp1x3n',
+        id_apolice: 'proc_risco_1792584862880_03l2',
+        numero_apolice: '',
+        origem: 'Cartão de Risco',
+        status: 'prospect',
+        ramo: 'Riscos Nomeados (Prédio + Conteúdo)',
+      }
+      const emitida = {
+        id: 'p38tg5cpnprke21',
+        id_apolice: 'emp_1792584860864_ha0fi_axa_2027',
+        numero_apolice: '02852.2026.0001.0196.0009211',
+        origem: '',
+        status: 'ativa',
+        ramo: '01.96 Riscos Nomeados e',
+      }
+      assert(
+        !isCandidataVigenteCartao(prospect),
+        'Prospect proc_risco_/status=prospect deve ser excluída das candidatas',
+      )
+      assert(isCandidataVigenteCartao(emitida), 'Apólice emitida ativa deve ser candidata')
+    },
+  )
+
+  runTest(
+    'C1 Apólice Vigente',
+    'Ramo por contenção de token: "Riscos Nomeados (Prédio + Conteúdo)" casa com ramo truncado "01.96 Riscos Nomeados e"',
+    () => {
+      assert(
+        ramoCasaCartaoVigente('01.96 Riscos Nomeados e', 'Riscos Nomeados (Prédio + Conteúdo)'),
+        'Ramo truncado da emitida AXA deve casar com o ramo do Cartão por token "riscos nomeados"',
+      )
+      assert(
+        ramoCasaCartaoVigente(
+          'Riscos Nomeados (Prédio + Conteúdo)',
+          'Riscos Nomeados (Prédio + Conteúdo)',
+        ),
+        'Ramo idêntico deve casar',
+      )
+      assert(
+        !ramoCasaCartaoVigente(
+          'Responsabilidade Civil Geral',
+          'Riscos Nomeados (Prédio + Conteúdo)',
+        ),
+        'Ramo de outro produto não deve casar',
+      )
+      assert(
+        ramoCasaCartaoVigente('Riscos Nomeados (Prédio)', 'Riscos Nomeados (Prédio + Conteúdo)'),
+        'Ramo Prédio (mesmo produto RN) deve casar',
+      )
+    },
+  )
+
+  runTest(
+    'C1 Apólice Vigente',
+    'Ranking: status=ativa com numero_apolice primeiro; empate resolvido pela data_inicio mais recente',
+    () => {
+      assertEqual(
+        rankCandidataVigenteCartao({
+          status: 'ativa',
+          numero_apolice: '02852.2026.0001.0196.0009211',
+        }),
+        0,
+        'Ativa com número deve ter melhor ranking',
+      )
+      assertEqual(
+        rankCandidataVigenteCartao({ status: 'vencida', numero_apolice: '123' }),
+        1,
+        'Emitida com número deve ficar abaixo da ativa',
+      )
+
+      // Caso real São International Square (ged5rswvsp92i4c): DUAS apólices —
+      // a prospect criada pelo Cartão (21/10) e a emitida AXA (vigência 01/11/2026)
+      const emitida = {
+        id: 'p38tg5cpnprke21',
+        id_apolice: 'emp_1792584860864_ha0fi_axa_2027',
+        numero_apolice: '02852.2026.0001.0196.0009211',
+        origem: '',
+        status: 'ativa',
+        ramo: '01.96 Riscos Nomeados e',
+        data_inicio: '2026-11-01 00:00:00.000Z',
+        data_fim: '2027-11-01 00:00:00.000Z',
+      }
+      const prospect = {
+        id: 'avq31b3ubhp1x3n',
+        id_apolice: 'proc_risco_1792584862880_03l2',
+        numero_apolice: '',
+        origem: 'Cartão de Risco',
+        status: 'prospect',
+        ramo: 'Riscos Nomeados (Prédio + Conteúdo)',
+        data_inicio: '2026-11-01 00:00:00.000Z',
+      }
+      const vencidaAnterior = {
+        id: 'ap_antiga_exemplo',
+        id_apolice: 'emp_ciclo_anterior',
+        numero_apolice: '02852.2025.0001.0196.0001234',
+        origem: '',
+        status: 'vencida',
+        ramo: '01.96 Riscos Nomeados e',
+        data_inicio: '2025-11-01 00:00:00.000Z',
+        data_fim: '2026-11-01 00:00:00.000Z',
+      }
+      const escolhida = selecionarApoliceVigenteCartao(
+        [prospect, vencidaAnterior, emitida],
+        'Riscos Nomeados (Prédio + Conteúdo)',
+      )
+      assert(Boolean(escolhida), 'Deve selecionar uma apólice vigente')
+      assertEqual(
+        String(escolhida!.id),
+        'p38tg5cpnprke21',
+        'Vigente deve ser a emitida AXA (p38tg5cpnprke21), nunca a prospect proc_risco_',
+      )
+      assertEqual(
+        String(escolhida!.numero_apolice),
+        '02852.2026.0001.0196.0009211',
+        'Vigente deve ter numero_apolice oficial',
+      )
+      // Sem a emitida no banco: a vencida anterior é a única candidata possível
+      const fallback = selecionarApoliceVigenteCartao(
+        [prospect, vencidaAnterior],
+        'Riscos Nomeados (Prédio + Conteúdo)',
+      )
+      assertEqual(
+        String(fallback!.id),
+        'ap_antiga_exemplo',
+        'Sem emitida do ciclo, deve cair na emitida anterior (nunca na prospect)',
+      )
+      // Só prospects: sem vigente — cai para NOVO_PRODUTO em vez de comparar Cartão × Cartão
+      const semEmitidas = selecionarApoliceVigenteCartao(
+        [prospect],
+        'Riscos Nomeados (Prédio + Conteúdo)',
+      )
+      assertEqual(
+        semEmitidas,
+        null,
+        'Somente prospects: nenhuma vigente (não comparar Cartão × Cartão)',
       )
     },
   )

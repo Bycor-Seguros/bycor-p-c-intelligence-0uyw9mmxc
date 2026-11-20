@@ -414,13 +414,30 @@ export function extractAxaApolice(pages: PdfPageText[]): ApoliceExtracaoResultad
 
   // Proposta e Ramo via cabeçalho tabular:
   // "Ramo: Proposta: Endosso:\n01.96 RISCOS NOMEADOS P-0119308"
+  // ATENÇÃO: o nome do ramo pode quebrar em DUAS linhas físicas no PDF da AXA
+  // ("01.96 Riscos Nomeados e" + "Operacionais" na linha seguinte). A linha
+  // seguinte é capturada e validada em código (só palavras capitalizadas, sem
+  // dois-pontos) para não gravar o ramo truncado nem engolir o rótulo seguinte.
   const ramoPropHeaderMatch = p1.text.match(
-    /Ramo:\s*Proposta:\s*Endosso:\s*\n?\s*([0-9.]+)\s+([A-Za-zÀ-ÿ0-9\s/]+?)\s+(P\s*[-–—]?\s*[0-9A-Za-z]+)(?:\s+([0-9A-Za-z]+))?/i,
+    /Ramo:\s*Proposta:\s*Endosso:\s*\n?\s*([0-9.]+)\s+([A-Za-zÀ-ÿ0-9\s/]+?)\s+(P\s*[-–—]?\s*[0-9A-Za-z]+)(?:\s+([0-9A-Za-z]+))?(?:\s*\n\s*([^\n]+))?/,
   )
 
   if (ramoPropHeaderMatch) {
     ramoCodigo = ramoPropHeaderMatch[1].trim()
     ramoNome = ramoPropHeaderMatch[2].trim()
+    // Continuação do nome do ramo na linha seguinte ("Operacionais"):
+    // só anexa se a linha for 1-3 palavras capitalizadas sem ":" (rótulo como
+    // "Início de Vigência:" não é continuação de ramo).
+    const linhaSeguinte = (ramoPropHeaderMatch[5] || '').trim().replace(/[:;,]+$/, '')
+    const palavrasSeg = linhaSeguinte.split(/\s+/)
+    const ehContinuacaoRamo =
+      palavrasSeg.length >= 1 &&
+      palavrasSeg.length <= 3 &&
+      palavrasSeg.every((w) => /^[A-ZÀ-Þ][A-Za-zÀ-ÿ'-]*$/.test(w)) &&
+      !linhaSeguinte.includes(':')
+    if (linhaSeguinte && ehContinuacaoRamo) {
+      ramoNome = `${ramoNome} ${linhaSeguinte}`.trim()
+    }
     ramoCompleto = `${ramoCodigo} ${ramoNome}`.trim()
     if (!numeroProposta) {
       numeroProposta = ramoPropHeaderMatch[3]

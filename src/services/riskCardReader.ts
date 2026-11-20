@@ -10,6 +10,7 @@ import {
   buildSinistroDedupeKey,
 } from '@/services/guardiaImporter'
 import { normalizarSeguradora, normalizarNomeSeguradoraSync } from '@/services/seguradoraNormalizer'
+import { normalizarRamoParaSucessao } from '@/services/apoliceStatusService'
 
 // ==========================================
 // TIPAGEM DO OBJETO ESTRUTURADO CARTÃO DE RISCO
@@ -972,6 +973,89 @@ export function parseRiskCardWorkbook(workbook: XLSX.WorkBook, fileName: string)
 // MOTOR DE CASAMENTO E DEDUPLICAÇÃO POR PRODUTO/RAMO
 // ==========================================
 
+/**
+ * REGRA DE PRODUTO (v0.0.243): candidatas a "apólice vigente" excluem PROSPECT —
+ * prospect é o PEDIDO (criado pelo próprio Cartão de Risco: sem numero_apolice,
+ * origem='Cartão de Risco', id_apolice proc_risco_...), não a apólice vigente.
+ * Comparar Cartão × prospect gerava "divergências" Cartão × Cartão (caso São
+ * International Square: a emitida AXA 02852.2026.0001.0196.0009211 perdia para a
+ * prospect proc_risco_... e a tela mostrava Incêndio 80M "divergindo" do 250k antigo).
+ */
+export function isCandidataVigenteCartao(ap: Record<string, unknown>): boolean {
+  const status = String(ap.status || '')
+    .toLowerCase()
+    .trim()
+  if (status === 'prospect') return false
+  if (/^proc_risco_/i.test(String(ap.id_apolice || ''))) return false
+  const temNumero = Boolean(String(ap.numero_apolice || '').trim())
+  const origemCartao = normalizeMatchText(ap.origem).includes('cartao de risco')
+  if (!temNumero && origemCartao) return false
+  return true
+}
+
+/**
+ * Casamento de ramo por CONTENÇÃO DE TOKEN (v0.0.243): "Riscos Nomeados (Prédio +
+ * Conteúdo)" casa com "01.96 Riscos Nomeados e" (ramo truncado da leitura do PDF) —
+ * o ramo da apólice NÃO precisa conter "prédio"/"conteúdo"; basta compartilhar o
+ * token significativo ("riscos nomeados") ou o ramo canônico de sucessão.
+ */
+export function ramoCasaCartaoVigente(ramoApRaw: unknown, ramoCanonicaCartao: string): boolean {
+  const ramoAp = normalizeMatchText(ramoApRaw)
+  const cardRamoNorm = normalizeMatchText(ramoCanonicaCartao)
+  if (!ramoAp) return cardRamoNorm === ''
+  if (ramoAp === cardRamoNorm) return true
+  // Igualdade de ramo canônico (sucessão): cobre "01.96 Riscos Nomeados…" vs "Riscos Nomeados (…)"
+  if (
+    normalizarRamoParaSucessao(String(ramoApRaw || '')) ===
+    normalizarRamoParaSucessao(ramoCanonicaCartao)
+  ) {
+    return true
+  }
+  // Contenção de token: todo token significativo do ramo da apólice está no ramo do cartão
+  const tokensAp = ramoAp.split(' ').filter((w) => w.length >= 4 && !/^\d+$/.test(w))
+  if (tokensAp.length > 0 && tokensAp.every((t) => cardRamoNorm.includes(t))) return true
+  return false
+}
+
+/**
+ * Ranking das candidatas (v0.0.243): preferir status='ativa' com numero_apolice,
+ * depois emitidas com número, depois demais emitidas; dentro de cada nível, a mais
+ * recente por data_inicio.
+ */
+export function rankCandidataVigenteCartao(ap: Record<string, unknown>): number {
+  const status = String(ap.status || '')
+    .toLowerCase()
+    .trim()
+  const temNumero = Boolean(String(ap.numero_apolice || '').trim())
+  if (status === 'ativa' && temNumero) return 0
+  if (temNumero) return 1
+  return 2
+}
+
+/**
+ * Seleciona a "apólice vigente" para o cruzamento Cartão × Apólice, aplicando as
+ * três regras acima (exclui prospect; ramo por contenção de token; ranking ativa
+ * com numero_apolice, mais recente por data_inicio).
+ */
+export function selecionarApoliceVigenteCartao(
+  apolices: Array<Record<string, unknown>>,
+  ramoCanonicaCartao: string,
+): Record<string, unknown> | null {
+  return (
+    apolices
+      .filter(isCandidataVigenteCartao)
+      .filter((ap) => ramoCasaCartaoVigente(ap.ramo, ramoCanonicaCartao))
+      .sort((a, b) => {
+        const rk = rankCandidataVigenteCartao(a) - rankCandidataVigenteCartao(b)
+        if (rk !== 0) return rk
+        const diA = String(a.data_inicio || '')
+        const diB = String(b.data_inicio || '')
+        if (diA !== diB) return diA < diB ? 1 : diA > diB ? -1 : 0
+        return 0
+      })[0] || null
+  )
+}
+
 export async function matchRiskCardAgainstDatabase(
   card: RiskCardData,
 ): Promise<RiskCardMatchResult> {
@@ -1050,33 +1134,7 @@ export async function matchRiskCardAgainstDatabase(
     // ignore
   }
 
-  // Compara produto/ramo: apólices que tratam do mesmo ramo/produto
-  let sameProductApolice: Record<string, unknown> | null = null
-  for (const ap of existingApolices) {
-    const ramoAp = normalizeMatchText(ap.ramo)
-    const cardRamoNorm = normalizeMatchText(ramoCanonicaCartao)
-
-    // Se ambos cobrem Prédio + Conteúdo, ou se o ramo coincide
-    const isSame =
-      ramoAp === cardRamoNorm ||
-      (cardRamoNorm.includes('predio') &&
-        cardRamoNorm.includes('conteudo') &&
-        ramoAp.includes('predio') &&
-        ramoAp.includes('conteudo')) ||
-      (cardRamoNorm.includes('predio') &&
-        !cardRamoNorm.includes('conteudo') &&
-        ramoAp.includes('predio') &&
-        !ramoAp.includes('conteudo')) ||
-      (cardRamoNorm.includes('conteudo') &&
-        !cardRamoNorm.includes('predio') &&
-        ramoAp.includes('conteudo') &&
-        !ramoAp.includes('predio'))
-
-    if (isSame) {
-      sameProductApolice = ap
-      break
-    }
-  }
+  const sameProductApolice = selecionarApoliceVigenteCartao(existingApolices, ramoCanonicaCartao)
 
   // CENÁRIO 1: RENOVAÇÃO (Empreendimento existe E produto coincide)
   if (sameProductApolice) {
