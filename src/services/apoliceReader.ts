@@ -1052,6 +1052,8 @@ interface AxaAnchor {
  * - Linhas e sufixos de franquia ("por reclamante", "por veículo", "corridos", etc.) pertencem à coluna 3.
  * - Cabeçalhos institucionais repetidos e rodapés de página são totalmente expurgados.
  * - Cabeçalhos de bloco ("Danos Materiais", "Responsabilidade Civil", "Lucros Cessantes") definem o bloco.
+ * - Título de cobertura truncado no FIM de uma página é reatado com a primeira
+ *   linha de texto da página seguinte (ver reatarTitulosCoberturaQuebradosEntrePaginas).
  */
 export function extractAxaCoberturas(
   pages4to6: PdfPageText[],
@@ -1500,6 +1502,11 @@ function extractAxaCoberturasGeometric(
     allAnchors.push(...pageAnchors)
   })
 
+  // 6b. Reata títulos de cobertura truncados no FIM de uma página com a primeira
+  // linha da página seguinte (ex.: "… De Bens Dos" fim da pág. 6 + "Hóspedes"
+  // topo da pág. 7). Precisa rodar ANTES da montagem final dos nomes.
+  reatarTitulosCoberturaQuebradosEntrePaginas(allAnchors)
+
   // 7. Montagem final das coberturas na ordem original das âncoras (ordem cronológica/espacial do PDF)
   const finalCoberturas: ExtractedApoliceCobertura[] = []
 
@@ -1710,6 +1717,7 @@ function extractAxaCoberturasTextFallback(
     nameBuffer.push(rawLine)
   }
 
+  reatarTitulosQuebradosEmListaCoberturas(coberturas)
   return postProcessAxaCoberturas(coberturas, posMap)
 }
 
@@ -1765,6 +1773,202 @@ function cleanAxaFranquia(franquia: string, nomeCobertura: string): string {
   }
 
   return f || 'Não Há'
+}
+
+/**
+ * Conectivos/genitivos que indicam um título de cobertura TRUNCADO no fim da
+ * página: um título de cobertura AXA bem-formado não termina em "De", "Dos",
+ * "E", "Com" etc. Caso real APOLICE_RN_AXA_CDM_SAO_2026.pdf (quebra pág. 6→7):
+ * a linha da cobertura termina na pág. 6 em "Roubo E/Ou Furto Qualificado De
+ * Bens Dos" e a palavra "Hóspedes" é a PRIMEIRA linha da pág. 7.
+ */
+const CONECTIVOS_FIM_TITULO_QUEBRADO = new Set([
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'no',
+  'na',
+  'nos',
+  'nas',
+  'em',
+  'e',
+  'ou',
+  'com',
+  'para',
+  'por',
+  'entre',
+  'sob',
+  'sobre',
+  'sem',
+  'a',
+  'o',
+  'as',
+  'os',
+  'ao',
+  'aos',
+  'à',
+  'às',
+  'até',
+  'ate',
+])
+
+/**
+ * Detecta título de cobertura truncado no fim da página: a última palavra é um
+ * conectivo/genitivo ("... De Bens Dos", "... Cobertura De", "... Elétricos E").
+ */
+export function tituloCoberturaTerminaTruncado(titulo: string): boolean {
+  if (!titulo) return false
+  const limpo = cleanAxaCoberturaNome(titulo)
+    .replace(/[\s.,;:]+$/, '')
+    .trim()
+  if (!limpo) return false
+  const m = limpo.match(/([A-Za-zÀ-ÿ/’'-]+)$/)
+  if (!m) return false
+  return CONECTIVOS_FIM_TITULO_QUEBRADO.has(m[1].toLowerCase())
+}
+
+/**
+ * Guarda anti-engolir: decide se uma linha (ou junção de linhas) da página
+ * seguinte pode ser continuação de título de cobertura truncado no fim da
+ * página anterior. NUNCA aceita cabeçalhos/rótulos/rodapé ("Item(s): todos",
+ * "Legenda:", "P.O.S", "Observações", títulos de seção da tabela como
+ * "Responsabilidade Civil", rodapé institucional AXA, textos com dígitos).
+ */
+export function ehContinuacaoTituloCoberturaAposQuebraDePagina(
+  texto: string,
+  tituloAtual: string,
+): boolean {
+  const t = (texto || '').replace(/\s+/g, ' ').trim()
+  if (!t || t.length > 60) return false
+  const atual = (tituloAtual || '').replace(/\s+/g, ' ').trim()
+  if (!atual) return false
+  if (t.toLowerCase() === atual.toLowerCase()) return false
+  if (atual.toLowerCase().endsWith(` ${t.toLowerCase()}`)) return false
+  if (/[:;?]/.test(t)) return false
+  if (/\d/.test(t)) return false
+  if (isAxaBoilerplateText(t)) return false
+  if (/^item\(s\)/i.test(t)) return false
+  if (/^legenda/i.test(t)) return false
+  if (/^p\.?\s*o\.?\s*s/i.test(t)) return false
+  if (/^observa/i.test(t)) return false
+  if (/^forma de contrata/i.test(t)) return false
+  // Títulos de seção da tabela — JAMAIS são continuação de cobertura
+  if (/^(danos materiais|responsabilidade civil|lucros cessantes)$/i.test(t)) return false
+  if (/axa|susep|cnpj|reserved|internal|©/i.test(t)) return false
+  const palavras = t.split(' ')
+  if (palavras.length > 4) return false
+  // Todas as palavras capitalizadas (título de cobertura) ou conector interno
+  const capitalizadas = palavras.every((w) => /^[A-ZÀ-Þ"'“‘(\-–]/.test(w))
+  if (!capitalizadas) return false
+  return true
+}
+
+/**
+ * Compositor do nome de uma âncora (linhas col1 atribuídas + col1Own), na
+ * ordem física do PDF (página crescente, y descendente). Compartilhado entre a
+ * montagem final e a reatação de títulos quebrados entre páginas.
+ */
+function comporNomeCoberturaAncora(anc: AxaAnchor): string {
+  const allCol1 = [...anc.col1Assigned]
+  if (anc.col1Own) {
+    allCol1.push({ text: anc.col1Own, y: anc.y, pageNumber: anc.pageNumber })
+  }
+  allCol1.sort((a, b) => {
+    if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
+    return b.y - a.y
+  })
+  return allCol1
+    .map((item) => item.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Reata títulos de cobertura truncados no FIM de uma página com a primeira
+ * linha de texto da página seguinte. A banda vertical do parser geométrico
+ * enfiava essas linhas na PRIMEIRA âncora da página seguinte (banda com topo
+ * infinito), poluindo a cobertura seguinte e deixando o título anterior
+ * truncado — que o pós-processador então classificava errado, criando duas
+ * coberturas com o mesmo nome/categoria (caso "… De Bens Dos" + "Hóspedes").
+ *
+ * Guardas (em camadas):
+ * 1. Só interessa o par (última âncora da página N, primeira âncora da página N+1);
+ * 2. O título atual precisa terminar em conectivo/genitivo (truncado);
+ * 3. A continuação precisa passar em ehContinuacaoTituloCoberturaAposQuebraDePagina
+ *    (curta, capitalizada, sem rótulos/cabeçalhos/rodapé/dígitos);
+ * 4. Veto anti-engolir: a cobertura da página seguinte precisa continuar com
+ *    nome próprio depois da remoção — se ficar sem nome, as linhas eram o
+ *    título DELA (ex.: título inteiro em linha acima da âncora).
+ */
+function reatarTitulosCoberturaQuebradosEntrePaginas(allAnchors: AxaAnchor[]): void {
+  if (!allAnchors || allAnchors.length < 2) return
+  for (let i = 0; i < allAnchors.length - 1; i++) {
+    const anc = allAnchors[i]
+    const next = allAnchors[i + 1]
+    if (next.pageNumber === anc.pageNumber) continue
+
+    const tituloAtual = comporNomeCoberturaAncora(anc)
+    if (!tituloCoberturaTerminaTruncado(tituloAtual)) continue
+
+    // Candidatas: linhas só-de-texto da coluna 1 da página seguinte ACIMA da
+    // primeira âncora dessa página (é onde a banda vertical as depositou).
+    const candidatas = next.col1Assigned
+      .filter((l) => l.pageNumber === next.pageNumber && l.y > next.y)
+      .sort((a, b) => b.y - a.y)
+    if (candidatas.length === 0) continue
+
+    const textoContinuacao = candidatas
+      .map((l) => l.text)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!ehContinuacaoTituloCoberturaAposQuebraDePagina(textoContinuacao, tituloAtual)) continue
+
+    const movidas = new Set(candidatas)
+    const restantes = next.col1Assigned.filter((l) => !movidas.has(l))
+    const nomeRestanteNext = cleanAxaCoberturaNome(
+      comporNomeCoberturaAncora({ ...next, col1Assigned: restantes }),
+    )
+    if (!nomeRestanteNext) continue
+
+    anc.col1Assigned.push(...candidatas)
+    next.col1Assigned = restantes
+  }
+}
+
+/**
+ * Variante em lista de coberturas já montadas (caminho fallback sem coordenadas,
+ * que achata as linhas de todas as páginas num único fluxo). Se a cobertura
+ * anterior terminou truncada no fim da página e a cobertura seguinte começou
+ * com o fragmento de continuação (o nameBuffer do fallback engoliu a primeira
+ * linha da página seguinte), move o(s) primeiro(s) fragmento(s) da próxima para
+ * o fim do título anterior. Mesmas guardas de ehContinuacaoTituloCoberturaAposQuebraDePagina.
+ */
+export function reatarTitulosQuebradosEmListaCoberturas(
+  coberturas: ExtractedApoliceCobertura[],
+): void {
+  if (!coberturas || coberturas.length < 2) return
+  for (let i = 0; i < coberturas.length - 1; i++) {
+    const atual = coberturas[i]
+    const proxima = coberturas[i + 1]
+    if (!tituloCoberturaTerminaTruncado(atual.nome)) continue
+    const palavras = (proxima.nome || '').split(' ').filter(Boolean)
+    for (let n = Math.min(palavras.length, 4); n >= 1; n--) {
+      const prefixo = palavras.slice(0, n).join(' ')
+      const restante = palavras.slice(n).join(' ')
+      if (!restante) continue
+      // Palavra-final com pontuação (vírgula/ponto) indica quebra de título
+      // DENTRO da mesma página — nunca é continuação entre páginas.
+      if (/[.,;:]$/.test(prefixo)) continue
+      if (!ehContinuacaoTituloCoberturaAposQuebraDePagina(prefixo, atual.nome)) continue
+      atual.nome = `${atual.nome} ${prefixo}`.replace(/\s+/g, ' ').trim()
+      proxima.nome = restante
+      break
+    }
+  }
 }
 
 /**
