@@ -386,6 +386,18 @@ function calcDesvio(
 }
 
 /**
+ * Verifica se o registro de apólice é um PROSPECT criado pelo Cartão de Risco
+ * (status 'prospect' ou id_apolice interno proc_risco_) — nunca uma apólice emitida real.
+ */
+function isRegistroProspect(ap: Record<string, unknown>): boolean {
+  const status = String(ap.status || '')
+    .toLowerCase()
+    .trim()
+  if (status === 'prospect') return true
+  return /^proc_risco_/i.test(String(ap.id_apolice || ''))
+}
+
+/**
  * Constrói a comparação estruturada completa entre o Cartão de Risco e a Apólice (com suas Coberturas)
  */
 export function buildAuditoriaSnapshot(
@@ -984,8 +996,20 @@ export async function resolverApoliceReferenciaReal(params: {
       return statusOk || (temNumeroOficial && Boolean(String(ap.numero_apolice || '').trim()))
     }
 
+    // A exclusão do id informado só vale quando ele é de fato um PROSPECT (status
+    // prospect / proc_risco_). Rodadas antigas podem ter gravado a própria apólice
+    // EMITIDA em rodada.apolice (caso do São International Square) — nesse caso
+    // excluir o id removeria justamente a emitida do ciclo atual e o recálculo
+    // falharia ("Nenhuma apólice do ciclo atual emitida encontrada"). Apólice
+    // emitida real NUNCA é excluída.
+    const registroExcluido = apoliceProspectId
+      ? apolicesList.find((ap) => String(ap.id) === String(apoliceProspectId))
+      : undefined
+    const excluirIdProspect = !registroExcluido || isRegistroProspect(registroExcluido)
+
     const emitidas = apolicesList.filter(
-      (ap) => isEmitida(ap) && String(ap.id) !== String(apoliceProspectId || ''),
+      (ap) =>
+        isEmitida(ap) && (!excluirIdProspect || String(ap.id) !== String(apoliceProspectId || '')),
     )
 
     if (emitidas.length === 0) return null
@@ -1057,6 +1081,41 @@ export async function recalcularRodadaAuditoria(
     )
   }
 
+  // 2b. Resolve o PROSPECT do Cartão (nunca a emitida) — usado para reconstruir as
+  //     coberturas do Cartão e gravado no campo apolice (como na Anália). Rodadas
+  //     antigas podem ter gravado a própria EMITIDA em rodada.apolice; nesse caso
+  //     procura o prospect real do empreendimento/ramo.
+  let idProspect = ''
+  const idCandidatoProspect = rodada.apolice || rodada.apolice_referencia_real || ''
+  if (idCandidatoProspect && idCandidatoProspect !== String(apoliceReal.id)) {
+    try {
+      const cand = (await pb
+        .collection('apolices')
+        .getOne(idCandidatoProspect)) as unknown as Record<string, unknown>
+      if (isRegistroProspect(cand)) idProspect = idCandidatoProspect
+    } catch {
+      // registro não existe mais — segue para a busca do prospect do empreendimento
+    }
+  }
+  if (!idProspect) {
+    try {
+      const apolicesEmp = (await pb.collection('apolices').getFullList({
+        filter: `id_empreendimento="${empreendimentoId}"`,
+        sort: '-created',
+      })) as unknown as Array<Record<string, unknown>>
+      const prospectsEmp = apolicesEmp.filter((ap) => isRegistroProspect(ap))
+      const ramoNormAlvo = ramoReferencia ? normalizarRamoParaSucessao(ramoReferencia) : ''
+      const porRamo = ramoNormAlvo
+        ? prospectsEmp.filter(
+            (ap) => normalizarRamoParaSucessao(String(ap.ramo || '')) === ramoNormAlvo,
+          )
+        : []
+      idProspect = String((porRamo[0] || prospectsEmp[0] || {}).id || '')
+    } catch {
+      // sem prospect — o Cartão será reconstruído do snapshot da rodada anterior
+    }
+  }
+
   // 3. Carrega dados vigentes
   const [coberturasApoliceReal, canonicas, sinonimos] = await Promise.all([
     pb.collection('coberturas').getFullList({
@@ -1070,7 +1129,6 @@ export async function recalcularRodadaAuditoria(
 
   // 4. Reconstrói o Cartão de Risco a partir do snapshot de identificação + coberturas
   //    gravadas no processo (coleção coberturas, origem 'Cartão de Risco') do prospect
-  const idProspect = rodada.apolice || rodada.apolice_referencia_real || ''
   const coberturasCartao = idProspect
     ? ((await pb.collection('coberturas').getFullList({
         filter: `id_apolice="${idProspect}" && origem="Cartão de Risco"`,
@@ -1078,7 +1136,7 @@ export async function recalcularRodadaAuditoria(
     : []
 
   // Fallback: se não houver coberturas marcadas com origem, usa todas as do prospect
-  const coberturasCartaoFinal =
+  let coberturasCartaoFinal =
     coberturasCartao.length > 0
       ? coberturasCartao
       : idProspect
@@ -1086,6 +1144,26 @@ export async function recalcularRodadaAuditoria(
             filter: `id_apolice="${idProspect}"`,
           })) as unknown as Array<Record<string, unknown>>)
         : []
+
+  // Último fallback: prospect sem coberturas gravadas (ou inexistente) — reconstrói as
+  // coberturas do Cartão a partir dos lados do cartão no snapshot da rodada anterior,
+  // para que o comparativo não saia vazio.
+  if (coberturasCartaoFinal.length === 0) {
+    const snapAnterior = rodada.snapshot_comparativo
+    const doSnapshot = [
+      ...(snapAnterior?.coberturas?.casadas || []),
+      ...(snapAnterior?.coberturas?.soNoCartao || []),
+    ]
+      .filter((i) => (i.nomeCartao || '').trim())
+      .map((i, idx) => ({
+        nome_cobertura: i.nomeCartao,
+        lmi_rs: typeof i.lmiCartao === 'number' ? i.lmiCartao : null,
+        franquia_pos: i.franquiaCartao || '',
+        observacao: '',
+        id: `snap_${idx}`,
+      }))
+    coberturasCartaoFinal = doSnapshot as unknown as Array<Record<string, unknown>>
+  }
 
   const cardReconstruido: RiskCardData = {
     segurado: idCartaoSnap?.segurado || '',
@@ -1207,6 +1285,8 @@ export async function recalcularRodadaAuditoria(
     novoSnapshot.vrdPorRubrica.filter((r) => r.divergente).length
 
   // 7. Grava a nova rodada (nova versão no histórico, preservando a anterior)
+  //    REGRA: campo apolice = PROSPECT do Cartão (nunca a emitida) e
+  //    apolice_referencia_real = apólice emitida do ciclo atual — como na Anália.
   const record = await pb.collection('auditoria_rodadas').create({
     empreendimento: empreendimentoId,
     apolice: idProspect || null,
@@ -1284,7 +1364,13 @@ export async function createAuditoriaRodada(params: {
   const payload = {
     empreendimento: params.empreendimentoId,
     apolice: params.apoliceId || null,
-    apolice_referencia_real: params.apoliceReferenciaRealId || params.apoliceId || null,
+    // REGRA: apolice = prospect do Cartão; apolice_referencia_real = apólice emitida do
+    // ciclo atual. Nunca gravar o prospect como referência real (sem fallback p/ apoliceId,
+    // e ignora referência real igual ao próprio prospect).
+    apolice_referencia_real:
+      params.apoliceReferenciaRealId && params.apoliceReferenciaRealId !== params.apoliceId
+        ? params.apoliceReferenciaRealId
+        : null,
     numero_rodada: nextRodada,
     data_rodada: new Date().toISOString().slice(0, 10),
     produto_ramo: params.produtoRamo,
